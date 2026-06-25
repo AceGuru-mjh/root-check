@@ -1,0 +1,51 @@
+# Sample encrypted fingerprint database structure
+# In production, this file is AES-256-GCM encrypted with the device key
+# and the offline Dilithium root key
+version: 1
+generated_at: "2026-06-22T12:00:00Z"
+entries:
+  - type: su_path
+    patterns:
+      - "/data/local/tmp/su"
+      - "/data/local/tmp/magisk"
+      - "/data/adb/magisk/magisk"
+      - "/data/adb/ksu/ksud"
+      - "/data/adb/ap/bin/apd"
+  - type: property_tamper
+    patterns:
+      - "ro.debuggable=1"
+      - "ro.secure=0"
+      - "ro.build.type=eng"
+      - "ro.build.type=userdebug"
+      - "ro.build.tags=test-keys"
+  - type: memory_pattern
+    patterns:
+      - "frida-agent"
+      - "lsposed"
+      - "edxp"
+      - "zygisk"
+  - type: kernel_module_hazard
+    patterns:
+      - "rootkit"
+      - "hide_proc"
+      - "sec_hook"
+  - type: syscall_latency_baseline
+    baseline_ns: 1500
+    threshold_sigma: 3.5
+  - type: mount_suspect
+    patterns:
+      - "overlay /data/adb"
+      - "/sbin/.magisk"
+      - "tmpfs /data/local/tmp"
+  - type: bootloader_indicators
+    patterns:
+      - "androidboot.verifiedbootstate=orange"
+      - "androidboot.flash.locked=0"
+      - "bootloader.unlocked=1"
+  - type: dangerous_packages
+    patterns:
+      - "com.topjohnwu.magisk"
+      - "me.weishu.kernelsu"
+      - "com.apatch.app"
+      - "com.lsposed.lsposed"
+      - "com.saurik.substrate"

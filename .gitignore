@@ -1,0 +1,47 @@
+# Android
+*.iml
+.gradle/
+build/
+/app/build/
+/local.properties
+/captures
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# NDK
+*.o
+*.so
+*.dylib
+*.dll
+
+# Python
+__pycache__/
+*.pyc
+
+# Liboqs
+app/src/main/cpp/liboqs/
+
+# Native prebuilts
+build/libs/
+
+# Gradle wrapper
+gradle/wrapper/gradle-wrapper.properties
+
+# Logs
+*.log
+
+# Environment
+.env

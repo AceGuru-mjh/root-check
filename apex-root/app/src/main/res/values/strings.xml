@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">APEX Root</string>
+    <string name="scan_title">APEX-Detect 检测引擎</string>
+    <string name="cure_title">APEX-Cure 修复系统</string>
+    <string name="island_title">APEX-Island 隔离沙箱</string>
+    <string name="guard_title">APEX-Guard 主动防护</string>
+    <string name="game_title">游戏模式</string>
+
+    <string name="quick_scan">快速检测</string>
+    <string name="deep_scan">深度检测</string>
+    <string name="scanning">扫描中...</string>
+    <string name="fix_recommendations">修复建议</string>
+    <string name="export_report">导出报告</string>
+    <string name="start_guard">启动守护</string>
+    <string name="check_integrity">校验系统</string>
+    <string name="create_sandbox">创建沙箱</string>
+    <string name="destroy_sandbox">销毁沙箱</string>
+    <string name="spoof_hwid">伪装HWID</string>
+    <string name="restore_hwid">恢复真实HWID</string>
+    <string name="risk_safe">安全</string>
+    <string name="risk_warning">轻度</string>
+    <string name="risk_danger">风险</string>
+    <string name="risk_critical">高危</string>
+</resources>

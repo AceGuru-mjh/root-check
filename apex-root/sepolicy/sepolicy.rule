@@ -1,0 +1,23 @@
+# APEX-Root SELinux policy overlay for Magisk/KSU/APatch
+# Place in: /data/adb/modules/apex-root/sepolicy.rule
+
+# APEX-Root daemon domain
+allow apex_firewall apex_firewall:capability { sys_admin sys_rawio sys_ptrace };
+allow apex_firewall self:bpf { prog_load prog_run map_create map_read map_write };
+allow apex_firewall self:tracepoint attach;
+allow apex_firewall sysfs_bpf:dir { read search };
+allow apex_firewall sysfs_bpf:file { read write open };
+
+# Legacy hide: mount namespace & process hiding
+allow apex_firewall self:process { ptrace getsched setsched };
+allow apex_firewall proc:dir { read search };
+allow apex_firewall proc_t:file { read open getattr };
+
+# Communication: APEX app -> firewall daemon
+allow apex_app apex_firewall:unix_stream_socket { connectto };
+allow apex_app apex_firewall:fd use;
+allow apex_firewall apex_app:unix_stream_socket { accept read write };
+
+# LD_PRELOAD hook (legacy path)
+allow apex_firewall system_lib_file:file { read execute };
+allow apex_firewall self:process { execmem };

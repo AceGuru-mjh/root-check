@@ -1,0 +1,221 @@
+package com.apex.root.ui.compose.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.apex.root.domain.trust.model.Finding
+import com.apex.root.domain.trust.model.GlobalSecureReport
+import com.apex.root.domain.trust.model.Severity
+import com.apex.root.ui.compose.*
+import com.apex.root.viewmodel.trusted.ScanViewModel
+import com.apex.root.viewmodel.trusted.UiState
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ReportScreen(
+    viewModel: ScanViewModel,
+    onBack: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val report = (uiState as? UiState.Report)?.report
+
+    Scaffold(
+        containerColor = Color.Transparent,
+        topBar = {
+            TopAppBar(
+                title = { Text("安全报告", fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, "返回")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        }
+    ) { padding ->
+        LiquidGlassContainer(fluidColorsDark = PageFluidColors.report, fluidColorsLight = PageFluidColors.reportLight) {
+        if (report == null) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                GlassEmptyState(
+                    title = "暂无报告数据",
+                    description = "运行扫描以生成安全报告",
+                    icon = {
+                        Box(Modifier.size(80.dp).background(if (LocalIsDarkTheme.current) AccentBlue.copy(alpha = 0.15f) else PastelBlue, CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Description, null, Modifier.size(40.dp), tint = AccentBlue)
+                        }
+                    },
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+            return@Scaffold
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item { ReportSummaryCard(report) }
+            items(report.results) { result ->
+                LayerResultCard(
+                    serviceName = result.serviceName,
+                    serviceId = result.serviceId,
+                    success = result.success,
+                    confidence = result.confidence,
+                    findings = result.findings,
+                    durationMs = result.durationMs
+                )
+            }
+        }
+    }
+    }
+}
+
+@Composable
+private fun ReportSummaryCard(report: GlobalSecureReport) {
+    val riskColor = when (report.overallRisk) {
+        Severity.CRITICAL -> ErrorRed
+        Severity.HIGH -> Color(0xFFFF7043)
+        Severity.MEDIUM -> AccentGold
+        Severity.LOW -> AccentMint
+        else -> AccentMint
+    }
+
+    GlassCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .liquidGlassIcon(28.dp, riskColor.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Shield, null, Modifier.size(28.dp), tint = riskColor)
+            }
+            Spacer(Modifier.width(16.dp))
+            Column {
+                Text("总体风险评估", fontSize = 12.sp, color = TextTertiary, letterSpacing = 0.3.sp)
+                Spacer(Modifier.height(2.dp))
+                Text(report.overallRisk.name, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                    color = riskColor, letterSpacing = 0.3.sp)
+                Text("风险评分: ${"%.1f".format(report.riskScore)}%",
+                    fontSize = 12.sp, color = TextSecondary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LayerResultCard(
+    serviceName: String,
+    serviceId: String,
+    success: Boolean,
+    confidence: Float,
+    findings: List<Finding>,
+    durationMs: Long
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val statusColor = if (success) AccentMint else ErrorRed
+
+    GlassCard(
+        modifier = Modifier.clickable { expanded = !expanded },
+        accentLine = statusColor
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GlassIconBox(
+                icon = if (success) Icons.Default.CheckCircle else Icons.Default.Warning,
+                accentColor = statusColor,
+                size = 32.dp, iconSize = 18.dp
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(serviceName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(serviceId, fontSize = 10.sp, color = TextTertiary)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(if (success) "通过" else "异常",
+                    color = statusColor, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Text("${(confidence * 100).toInt()}%", fontSize = 9.sp, color = TextTertiary)
+            }
+        }
+
+        if (expanded) {
+            Spacer(Modifier.height(14.dp))
+            Box(
+                Modifier.fillMaxWidth().height(0.5.dp)
+                    .background(Color.White.copy(alpha = 0.04f))
+            )
+            Spacer(Modifier.height(14.dp))
+            findings.forEach { finding ->
+                ReportFindingItem(finding)
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("${durationMs}ms", fontSize = 10.sp, color = TextTertiary)
+            Text(if (expanded) "收起" else "查看详情",
+                fontSize = 10.sp, color = AccentPurple)
+        }
+    }
+}
+
+@Composable
+private fun ReportFindingItem(finding: Finding) {
+    val sevColor = when (finding.severity) {
+        Severity.CRITICAL, Severity.HIGH -> ErrorRed
+        Severity.MEDIUM -> AccentGold
+        else -> AccentMint
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(Modifier.size(5.dp).background(sevColor, CircleShape).offset(y = 6.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(finding.description, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f))
+                Text(finding.severity.name, fontSize = 9.sp, color = sevColor,
+                    fontWeight = FontWeight.Bold)
+            }
+            if (finding.evidence.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(finding.evidence, fontSize = 10.sp, color = TextTertiary, maxLines = 3)
+            }
+        }
+    }
+}

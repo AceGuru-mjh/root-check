@@ -1,0 +1,137 @@
+#include "layer8_magisk.h"
+#include "../common/syscall.h"
+#include <cstring>
+
+static void read_file_to_buf(const char* path, char* buf, size_t size) {
+    int64_t fd;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+    if (fd < 0) { if (size > 0) buf[0] = '\0'; return; }
+    int64_t n;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8");
+    int64_t d;
+    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    if (n <= 0) { if (size > 0) buf[0] = '\0'; return; }
+    buf[n < (int64_t)size ? n : (int64_t)size-1] = '\0';
+}
+
+bool detectMagiskDaemon() {
+    char buf[4096];
+    // Check for magiskd in /proc
+    int64_t fd;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc"), "i"(O_DIRECTORY | O_RDONLY), "i"(0));
+    if (fd < 0) return false;
+
+    // Scan /proc for magiskd
+    char dentry_buf[4096];
+    int64_t n;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(n) : "i"(__NR_getdents64), "r"(fd), "r"(dentry_buf), "r"((int64_t)sizeof(dentry_buf)) : "x0", "x1", "x2", "x8");
+    int64_t d;
+    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    if (n <= 0) return false;
+
+    // Parse dirent64 entries for pid directories
+    // For each pid, check cmdline
+    struct linux_dirent64 {
+        uint64_t d_ino;
+        int64_t d_off;
+        unsigned short d_reclen;
+        unsigned char d_type;
+        char d_name[];
+    };
+
+    size_t pos = 0;
+    while (pos < (size_t)n) {
+        auto* dirent = (linux_dirent64*)(dentry_buf + pos);
+        if (dirent->d_type == 4) { // DT_DIR
+            // Check if name is all digits (pid)
+            bool all_digits = true;
+            for (int i = 0; dirent->d_name[i]; i++) {
+                if (dirent->d_name[i] < '0' || dirent->d_name[i] > '9') {
+                    all_digits = false; break;
+                }
+            }
+            if (all_digits) {
+                char cmdline_path[64];
+                // Build /proc/<pid>/cmdline
+                int idx = 0;
+                const char* pfx = "/proc/";
+                for (int i = 0; pfx[i]; i++) cmdline_path[idx++] = pfx[i];
+                for (int i = 0; dirent->d_name[i]; i++) cmdline_path[idx++] = dirent->d_name[i];
+                const char* sfx = "/cmdline";
+                for (int i = 0; sfx[i]; i++) cmdline_path[idx++] = sfx[i];
+                cmdline_path[idx] = '\0';
+
+                read_file_to_buf(cmdline_path, buf, sizeof(buf));
+                if (strstr(buf, "magiskd") || strstr(buf, "magisk")) {
+                    return true;
+                }
+            }
+        }
+        pos += dirent->d_reclen;
+    }
+    return false;
+}
+
+bool detectMagiskModules() {
+    char buf[256];
+    int64_t fd;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/data/adb/modules"), "i"(O_DIRECTORY | O_RDONLY), "i"(0));
+    if (fd >= 0) {
+        int64_t d;
+        asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+        return true;
+    }
+    return false;
+}
+
+bool detectMagiskFiles() {
+    const char* paths[] = {
+        "/data/adb/magisk", "/data/adb/magisk.db",
+        "/data/adb/magisk.img", "/data/adb/modules",
+        "/data/adb/post-fs-data.d", "/data/adb/service.d",
+        "/sbin/.magisk", "/data/adb/stock_boot.img",
+        "/data/adb/magisk/magisk", "/data/adb/magisk/magisk64",
+        "/data/adb/magisk/magiskpolicy", "/data/adb/magisk/busybox"
+    };
+    for (auto p : paths) {
+        int64_t ret;
+        asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
+                     : "=r"(ret) : "i"(__NR_access), "r"(p), "i"(F_OK) : "x0", "x1", "x8");
+        if (ret == 0) return true;
+    }
+    return false;
+}
+
+bool detectZygiskInjection() {
+    char buf[16384];
+    // Check for Zygisk in /proc/self/maps
+    int64_t fd;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/self/maps"), "i"(O_RDONLY), "i"(0));
+    if (fd < 0) return false;
+    int64_t n;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)sizeof(buf)) : "x0", "x1", "x2", "x8");
+    int64_t d;
+    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    if (n <= 0) return false;
+    buf[n < (int64_t)sizeof(buf) ? n : (int64_t)sizeof(buf)-1] = '\0';
+
+    // Check for Zygisk libraries
+    // Zygisk is inherently detectable from within the same process
+    if (strstr(buf, "zygisk")) return true;
+    if (strstr(buf, "lsposed")) return true;
+    if (strstr(buf, "riru")) return true;
+
+    // Check for memfd created by ZygiskNext
+    if (strstr(buf, "/memfd:")) return true;
+    if (strstr(buf, "anon_inode:dmabuf")) {
+        // Check for Zygisk-specific dmabuf
+    }
+    return false;
+}

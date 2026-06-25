@@ -1,0 +1,219 @@
+# Standard scan workflow for APEX-Root v3.1
+# All services are registered plugins in micro_services/services/
+
+workflows:
+  - name: "Quick Scan"
+    description: "Rapid assessment using minimal services"
+    version: 1
+    shuffle: true
+    cpu_bind: true
+    steps:
+      - service_id: 1
+        service_name: "File Scanner"
+        timeout_ms: 2000
+        optional: false
+      - service_id: 2
+        service_name: "Process Scanner"
+        timeout_ms: 2000
+        optional: false
+      - service_id: 15
+        service_name: "Property Check"
+        timeout_ms: 2000
+        optional: true
+
+  - name: "Standard Scan"
+    description: "Balanced detection with core security checks"
+    version: 1
+    shuffle: true
+    cpu_bind: true
+    steps:
+      - service_id: 1
+        service_name: "File Scanner"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 2
+        service_name: "Process Scanner"
+        timeout_ms: 3000
+        optional: false
+      - service_id: 3
+        service_name: "Memory Scanner"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 4
+        service_name: "Mount Check"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 5
+        service_name: "Side-channel Analysis"
+        timeout_ms: 10000
+        optional: true
+      - service_id: 13
+        service_name: "Hook Detector"
+        timeout_ms: 3000
+        optional: false
+      - service_id: 14
+        service_name: "SELinux Check"
+        timeout_ms: 3000
+        optional: false
+      - service_id: 15
+        service_name: "Property Check"
+        timeout_ms: 3000
+        optional: true
+
+  - name: "Deep Scan"
+    description: "Comprehensive detection activating all 12 L1-L12 plugins"
+    version: 1
+    shuffle: true
+    cpu_bind: true
+    steps:
+      - service_id: 1
+        service_name: "File Scanner"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 2
+        service_name: "Process Scanner"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 3
+        service_name: "Memory Scanner"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 4
+        service_name: "Mount Check (namespace fork)"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 5
+        service_name: "Side-channel Analysis"
+        timeout_ms: 30000
+        optional: false
+      - service_id: 6
+        service_name: "Kernel Integrity Probe"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 7
+        service_name: "TEE TrustZone Bypass"
+        timeout_ms: 5000
+        optional: true
+      - service_id: 8
+        service_name: "Bootloader Detector"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 9
+        service_name: "Custom ROM Detector"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 10
+        service_name: "Dangerous Apps Scanner"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 11
+        service_name: "Play Integrity Fix Detector"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 12
+        service_name: "Zygisk Detector"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 13
+        service_name: "Hook Detector"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 14
+        service_name: "SELinux Check"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 15
+        service_name: "Property Check"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 20
+        service_name: "Environment Detection"
+        timeout_ms: 5000
+        optional: false
+
+  - name: "Forensic Scan"
+    description: "Maximum coverage with all 20 services including AI analysis"
+    version: 1
+    shuffle: false
+    cpu_bind: false
+    steps:
+      - service_id: 1
+        service_name: "File Scanner"
+        timeout_ms: 30000
+        optional: false
+      - service_id: 2
+        service_name: "Process Scanner"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 3
+        service_name: "Memory Scanner"
+        timeout_ms: 30000
+        optional: false
+      - service_id: 4
+        service_name: "Mount Check"
+        timeout_ms: 30000
+        optional: false
+      - service_id: 5
+        service_name: "Side-channel Analysis"
+        timeout_ms: 60000
+        optional: false
+      - service_id: 6
+        service_name: "Kernel Integrity Probe"
+        timeout_ms: 30000
+        optional: false
+      - service_id: 7
+        service_name: "TEE TrustZone Bypass"
+        timeout_ms: 15000
+        optional: false
+      - service_id: 8
+        service_name: "Bootloader Detector"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 9
+        service_name: "Custom ROM Detector"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 10
+        service_name: "Dangerous Apps Scanner"
+        timeout_ms: 30000
+        optional: false
+      - service_id: 11
+        service_name: "Play Integrity Fix Detector"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 12
+        service_name: "Zygisk Detector"
+        timeout_ms: 15000
+        optional: false
+      - service_id: 13
+        service_name: "Hook Detector"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 14
+        service_name: "SELinux Check"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 15
+        service_name: "Property Check"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 16
+        service_name: "Network Monitor"
+        timeout_ms: 10000
+        optional: true
+      - service_id: 17
+        service_name: "Crypto Verification"
+        timeout_ms: 5000
+        optional: false
+      - service_id: 18
+        service_name: "Firmware Check"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 19
+        service_name: "Hardware Probe"
+        timeout_ms: 10000
+        optional: false
+      - service_id: 20
+        service_name: "Environment Detection"
+        timeout_ms: 10000
+        optional: false
