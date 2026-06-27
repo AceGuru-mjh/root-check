@@ -6,6 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# ─── Architecture detection ─────────────────────────────────
+# Only apply ARM-specific flags when building for AArch64/ARM64 targets
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _sys_proc)
+set(APEX_IS_ARM64 OFF)
+if(_sys_proc MATCHES "aarch64|arm64|arm")
+    set(APEX_IS_ARM64 ON)
+endif()
+
 # ─── liboqs post-quantum crypto ─────────────────────────────
 option(APEX_USE_LIBOQS "Enable post-quantum crypto via liboqs" ON)
 set(APEX_LIBOQS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/liboqs" CACHE PATH "Path to liboqs source/build")
