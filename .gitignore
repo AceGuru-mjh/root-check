@@ -1,7 +1,21 @@
-```
 # Project-specific specs directory
 .mjh/specs/
 
 # Backup/old specs directory (to prevent resurrection)
 .trae/specs/
-```
+
+# Android
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Legacy files
+*_OLD*
+*_old*

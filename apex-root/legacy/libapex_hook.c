@@ -4,28 +4,43 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdarg.h>
+#include <errno.h>
 
 static int apex_uid = -1;
 static int initialized = 0;
 
+/*
+ * Fixed: Use __atomic built-in for thread-safe one-time initialization.
+ * Original code used a plain int flag which is not thread-safe.
+ */
 static void ensure_init(void) {
-    if (initialized) return;
-    initialized = 1;
-    char *env = getenv("APEX_UID");
-    if (env) apex_uid = atoi(env);
+    int expected = 0;
+    if (__atomic_compare_exchange_n(&initialized, &expected, 1, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+        char *env = getenv("APEX_UID");
+        if (env) {
+            int val = atoi(env);
+            if (val > 0) {
+                __atomic_store_n(&apex_uid, val, __ATOMIC_SEQ_CST);
+            }
+        }
+    }
 }
 
+/*
+ * Fixed: When APEX_UID is not set (default -1), should_hide() returned true
+ * for ALL processes including system-critical ones, potentially causing
+ * device instability. Now returns false (no hiding) when APEX_UID is invalid.
+ */
 static int should_hide(void) {
     ensure_init();
-    uid_t uid = getuid();
-    return uid != (uid_t)apex_uid;
+    int uid = __atomic_load_n(&apex_uid, __ATOMIC_SEQ_CST);
+    if (uid <= 0) return 0;  /* Safety: no hiding if UID not configured */
+    return getuid() != (uid_t)uid;
 }
 
 typedef int (*orig_open_t)(const char *, int, ...);
 typedef int (*orig_stat_t)(const char *, struct stat *);
 typedef int (*orig_access_t)(const char *, int);
-typedef DIR *(*orig_opendir_t)(const char *);
-typedef struct dirent *(*orig_readdir_t)(DIR *);
 
 static const char *HIDE_STRINGS[] = {
     "/su", "/magisk", "/ksu", "/apatch",
@@ -103,4 +118,19 @@ int access(const char *path, int mode) {
     static orig_access_t orig = NULL;
     if (!orig) orig = (orig_access_t)dlsym(RTLD_NEXT, "access");
     return orig(path, mode);
+}
+
+/*
+ * Added: faccessat hook — Android 10+ frequently uses faccessat
+ * instead of the legacy access() syscall.
+ */
+int faccessat(int dirfd, const char *path, int mode, int flags) {
+    if (should_hide() && is_hidden_path(path)) {
+        errno = ENOENT;
+        return -1;
+    }
+    typedef int (*orig_faccessat_t)(int, const char *, int, int);
+    static orig_faccessat_t orig = NULL;
+    if (!orig) orig = (orig_faccessat_t)dlsym(RTLD_NEXT, "faccessat");
+    return orig(dirfd, path, mode, flags);
 }

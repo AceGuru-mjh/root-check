@@ -3,8 +3,6 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
-#define APEX_UID 10342
-
 struct clean_baseline {
     char kernel_ver[256];
     char cmdline[512];
@@ -32,6 +30,13 @@ struct {
     __type(value, u64);
 } open_result_map SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 64);
+    __type(key, u64);
+    __type(value, u64);
+} statx_result_map SEC(".maps");
+
 static __always_inline u32 get_uid(void) {
     u64 uid_gid = bpf_get_current_uid_gid();
     return uid_gid >> 32;
@@ -42,38 +47,62 @@ static __always_inline bool is_whitelisted(u32 uid) {
     return val != NULL && *val;
 }
 
-static __always_inline bool path_contains(const char *path, u32 max_len, const char c) {
-    for (u32 i = 0; i < max_len && i < 256; i++) {
-        char ch;
-        bpf_probe_read_kernel(&ch, 1, path + i);
-        if (ch == '\0') break;
-        if (ch == c) return true;
+/*
+ * Fixed: Rewrite is_sensitive_raw() with correct pattern iteration.
+ * Original code had a bug where `pi` was not reset at the start of each
+ * outer loop iteration, and bpf_probe_read_kernel was used unnecessarily
+ * on static const data (adding overhead and verifier complexity).
+ *
+ * New approach: Use a BPF-aware loop that directly compares characters
+ * from the static patterns array (no bpf_probe_read_kernel needed for
+ * rodata) against the user-space path.
+ */
+static __always_inline bool match_pattern(const char *path, u32 path_len,
+                                           const char *pattern, u32 pat_len) {
+    if (pat_len == 0 || pat_len > path_len) return false;
+
+    #pragma unroll
+    for (u32 j = 0; j <= path_len - pat_len; j++) {
+        bool match = true;
+        #pragma unroll
+        for (u32 k = 0; k < pat_len; k++) {
+            if (path[j + k] != pattern[k]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
     }
     return false;
 }
 
 static __always_inline bool is_sensitive_raw(const char *path, u32 max_len) {
-    const char patterns[] = "/su\0/magisk\0/ksu\0/apatch\0/data/adb\0/dev/__properties\0/proc/kallsyms\0/sbin/.magisk\0";
-    u32 pi = 0;
-    for (u32 i = 0; i < sizeof(patterns) - 1; i += pi) {
-        for (pi = 0; pi + i < sizeof(patterns) - 1; pi++) {
-            char pch;
-            bpf_probe_read_kernel(&pch, 1, patterns + i + pi);
-            if (pch == '\0') break;
+    /* Each pattern is null-terminated and packed sequentially */
+    const char patterns[] =
+        "/su\0"
+        "/magisk\0"
+        "/ksu\0"
+        "/apatch\0"
+        "/data/adb\0"
+        "/dev/__properties\0"
+        "/proc/kallsyms\0"
+        "/sbin/.magisk\0";
+
+    u32 i = 0;
+    while (i < sizeof(patterns) - 1) {
+        /* Compute current pattern length */
+        u32 pat_len = 0;
+        #pragma unroll
+        while (i + pat_len < sizeof(patterns) && patterns[i + pat_len] != '\0') {
+            pat_len++;
+            if (pat_len >= 64) break; /* safety bound */
         }
-        if (pi == 0) break;
-        bool match = false;
-        for (u32 j = 0; j <= max_len - pi; j++) {
-            match = true;
-            for (u32 k = 0; k < pi; k++) {
-                char pch, sch;
-                bpf_probe_read_kernel(&pch, 1, patterns + i + k);
-                bpf_probe_read_kernel(&sch, 1, path + j + k);
-                if (pch != sch) { match = false; break; }
-            }
-            if (match) return true;
+        if (pat_len == 0) { i++; continue; }
+
+        if (match_pattern(path, max_len, patterns + i, pat_len)) {
+            return true;
         }
-        i += pi + 1;
+        i += pat_len + 1; /* skip past pattern + null terminator */
     }
     return false;
 }
@@ -123,7 +152,7 @@ int tp_enter_statx(struct trace_event_raw_sys_enter *ctx) {
     if (is_sensitive_raw(path_buf, ret)) {
         u64 id = bpf_get_current_pid_tgid();
         u64 enoent = (u64)-2;
-        bpf_map_update_elem(&open_result_map, &id, &enoent, BPF_ANY);
+        bpf_map_update_elem(&statx_result_map, &id, &enoent, BPF_ANY);
     }
     return 0;
 }
@@ -134,10 +163,10 @@ int tp_exit_statx(struct trace_event_raw_sys_exit *ctx) {
     if (is_whitelisted(uid)) return 0;
 
     u64 id = bpf_get_current_pid_tgid();
-    u64 *val = bpf_map_lookup_elem(&open_result_map, &id);
+    u64 *val = bpf_map_lookup_elem(&statx_result_map, &id);
     if (!val) return 0;
 
-    bpf_map_delete_elem(&open_result_map, &id);
+    bpf_map_delete_elem(&statx_result_map, &id);
     ctx->ret = (long)*val;
     return 0;
 }
@@ -166,6 +195,10 @@ int tp_exit_getdents64(struct trace_event_raw_sys_exit *ctx) {
         bpf_probe_read_kernel(&reclen, sizeof(reclen), &entry->d_reclen);
         if (reclen == 0) break;
 
+        /* Safety: skip entries that would cross page boundaries */
+        long entry_end = total + reclen;
+        if (entry_end > ret || reclen > 4096) break;
+
         char name[64] = {0};
         bpf_probe_read_kernel_str(name, sizeof(name), entry->d_name);
         bool hidden = false;
@@ -173,8 +206,8 @@ int tp_exit_getdents64(struct trace_event_raw_sys_exit *ctx) {
         for (u32 i = 0; i < 5; i++) {
             u32 off = 0;
             for (; off < 63; off++) {
-                char hc, nc;
-                bpf_probe_read_kernel(&hc, 1, hide_names[i] + off);
+                char hc = hide_names[i][off];
+                char nc;
                 bpf_probe_read_kernel(&nc, 1, name + off);
                 if (hc == '\0' || nc != hc) break;
                 if (hc == '\0' && nc == '\0') { hidden = true; break; }
@@ -204,6 +237,22 @@ int tp_exit_access(struct trace_event_raw_sys_exit *ctx) {
     if (is_whitelisted(uid)) return 0;
 
     const char *path_ptr = (const char *)BPF_CORE_READ(ctx, args[0]);
+    char path_buf[256] = {0};
+    long ret = bpf_probe_read_user_str(path_buf, sizeof(path_buf), path_ptr);
+    if (ret < 0) return 0;
+
+    if (is_sensitive_raw(path_buf, ret)) {
+        ctx->ret = -2;
+    }
+    return 0;
+}
+
+SEC("tp/syscalls/sys_exit_faccessat")
+int tp_exit_faccessat(struct trace_event_raw_sys_exit *ctx) {
+    u32 uid = get_uid();
+    if (is_whitelisted(uid)) return 0;
+
+    const char *path_ptr = (const char *)BPF_CORE_READ(ctx, args[1]);
     char path_buf[256] = {0};
     long ret = bpf_probe_read_user_str(path_buf, sizeof(path_buf), path_ptr);
     if (ret < 0) return 0;
