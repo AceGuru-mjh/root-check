@@ -1,10 +1,16 @@
 package com.apex.root.island
 
+import com.apex.root.core.NativeLibraryLoader
+
 object NativeIsland {
-    init {
-        System.loadLibrary("apex_root")
+    fun createIsolatedEnv(name: String): Int = NativeLibraryLoader.safeCall(-1) {
+        createIsolatedEnvNative(name)
     }
 
-    external fun createIsolatedEnv(name: String): Int
-    external fun destroyIsolatedEnv(pid: Int): Boolean
+    fun destroyIsolatedEnv(pid: Int): Boolean = NativeLibraryLoader.safeCall(false) {
+        destroyIsolatedEnvNative(pid)
+    }
+
+    private external fun createIsolatedEnvNative(name: String): Int
+    private external fun destroyIsolatedEnvNative(pid: Int): Boolean
 }

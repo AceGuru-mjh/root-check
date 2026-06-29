@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ApexRoot" parent="android:Theme.Material.NoActionBar" />
+    <!-- 使用 Material3 兼容主题，避免与 Compose Material3 冲突 -->
+    <style name="Theme.ApexRoot" parent="android:Theme.MaterialLight.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 </resources>

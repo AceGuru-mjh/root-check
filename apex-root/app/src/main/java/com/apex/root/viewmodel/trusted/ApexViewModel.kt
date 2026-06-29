@@ -113,71 +113,78 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
 
     fun runScan() {
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = _uiState.value.copy(isScanning = true)
+            _uiState.update { it.copy(isScanning = true) }
             val result = repository.runQuickScan()
-            _uiState.value = _uiState.value.copy(
-                scanResult = result.details,
-                riskScore = result.riskScore,
-                isScanning = false
-            )
+            _uiState.update {
+                it.copy(
+                    scanResult = result.details,
+                    riskScore = result.riskScore,
+                    isScanning = false
+                )
+            }
         }
     }
 
     fun runDeepScan() {
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = _uiState.value.copy(isScanning = true)
-            val report = repository.runDeepDetection()
-            val memMask = repository.getMemoryFingerprintMask()
-            val rwxCount = NativeBridge.countRWXPages()
-            val shamiko = repository.hasShamiko()
-            val zygiskNext = repository.hasZygiskNext()
-            val selinuxJump = NativeBridge.detectSELinuxContextJump()
-            val selinuxMod = NativeBridge.detectSELinuxPolicyMod()
-            val selfCheck = SelfProtection.fullSelfCheck(getApplication())
-            val hookIssues = (selfCheck["hooks"] as? List<String>) ?: emptyList()
-            val injectIssues = (selfCheck["injections"] as? List<String>) ?: emptyList()
-            val dexIssues = (selfCheck["dexIssues"] as? List<String>) ?: emptyList()
+            _uiState.update { it.copy(isScanning = true) }
+            try {
+                val report = repository.runDeepDetection()
+                val memMask = repository.getMemoryFingerprintMask()
+                val rwxCount = NativeBridge.countRWXPages()
+                val shamiko = repository.hasShamiko()
+                val zygiskNext = repository.hasZygiskNext()
+                val selinuxJump = NativeBridge.detectSELinuxContextJump()
+                val selinuxMod = NativeBridge.detectSELinuxPolicyMod()
+                val selfCheck = SelfProtection.fullSelfCheck(getApplication())
+                val hookIssues = (selfCheck["hooks"] as? List<String>) ?: emptyList()
+                val injectIssues = (selfCheck["injections"] as? List<String>) ?: emptyList()
+                val dexIssues = (selfCheck["dexIssues"] as? List<String>) ?: emptyList()
 
-            _uiState.value = _uiState.value.copy(
-                scanResult = report.take(500),
-                riskScore = NativeBridge.getRiskScore(),
-                isScanning = false,
-                memFingerprintMask = memMask,
-                rwxPageCount = rwxCount,
-                hasShamiko = shamiko,
-                hasZygiskNext = zygiskNext,
-                selinuxCompromised = selinuxJump || selinuxMod,
-                deepReport = report,
-                selfCheckIssues = hookIssues + injectIssues + dexIssues
-            )
+                _uiState.update {
+                    it.copy(
+                        scanResult = report.take(500),
+                        riskScore = NativeBridge.getRiskScore(),
+                        isScanning = false,
+                        memFingerprintMask = memMask,
+                        rwxPageCount = rwxCount,
+                        hasShamiko = shamiko,
+                        hasZygiskNext = zygiskNext,
+                        selinuxCompromised = selinuxJump || selinuxMod,
+                        deepReport = report,
+                        selfCheckIssues = hookIssues + injectIssues + dexIssues
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isScanning = false, scanResult = "深度扫描失败: ${e.message}") }
+            }
         }
     }
 
     fun toggleGameMode() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.toggleGameMode()
-            _uiState.value = _uiState.value.copy(
-                gameMode = repository.getGameModeState()
-            )
+            _uiState.update {
+                it.copy(gameMode = repository.getGameModeState())
+            }
         }
     }
 
     fun applyCure(level: CureLevel) {
         viewModelScope.launch(Dispatchers.IO) {
             val result = repository.applyCure(level)
-            _uiState.value = _uiState.value.copy(
-                cureMessage = result.message
-            )
+            _uiState.update {
+                it.copy(cureMessage = result.message)
+            }
         }
     }
 
     fun createSandbox(name: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val pid = NativeIsland.createIsolatedEnv(name)
-            _uiState.value = _uiState.value.copy(
-                sandboxPid = pid,
-                sandboxActive = pid > 0
-            )
+            _uiState.update {
+                it.copy(sandboxPid = pid, sandboxActive = pid > 0)
+            }
         }
     }
 
@@ -185,10 +192,9 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val pid = _uiState.value.sandboxPid
             if (pid > 0) NativeIsland.destroyIsolatedEnv(pid)
-            _uiState.value = _uiState.value.copy(
-                sandboxPid = -1,
-                sandboxActive = false
-            )
+            _uiState.update {
+                it.copy(sandboxPid = -1, sandboxActive = false)
+            }
         }
     }
 
@@ -196,10 +202,10 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             if (_uiState.value.hwidSpoofed) {
                 NativeHwid.restoreReal()
-                _uiState.value = _uiState.value.copy(hwidSpoofed = false)
+                _uiState.update { it.copy(hwidSpoofed = false) }
             } else {
                 NativeHwid.spoofAll()
-                _uiState.value = _uiState.value.copy(hwidSpoofed = true)
+                _uiState.update { it.copy(hwidSpoofed = true) }
             }
         }
     }
@@ -207,21 +213,20 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshState() {
         viewModelScope.launch(Dispatchers.IO) {
             val gameMode = repository.getGameModeState()
-            _uiState.value = _uiState.value.copy(gameMode = gameMode)
+            _uiState.update { it.copy(gameMode = gameMode) }
         }
     }
 
     fun showFixRecommendations() {
         val layers = parseScanLayers(_uiState.value.scanResult)
         val recs = FixRecommendations.getRecommendationsForLayers(layers)
-        _uiState.value = _uiState.value.copy(
-            recommendations = recs,
-            showRecommendations = true
-        )
+        _uiState.update {
+            it.copy(recommendations = recs, showRecommendations = true)
+        }
     }
 
     fun dismissRecommendations() {
-        _uiState.value = _uiState.value.copy(showRecommendations = false)
+        _uiState.update { it.copy(showRecommendations = false) }
     }
 
     fun exportReport(context: Context) {

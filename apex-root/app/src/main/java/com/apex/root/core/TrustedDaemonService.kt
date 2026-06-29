@@ -6,27 +6,25 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 
 class TrustedDaemonService : Service() {
+
+    companion object {
+        private const val TAG = "TrustedDaemon"
+        private const val CHANNEL_ID = "apex_root_daemon"
+        private const val NOTIFICATION_ID = 1
+        var isRunning = false
+            private set
+    }
+
     override fun onCreate() {
         super.onCreate()
-        val channelId = "apex_root_daemon"
-        val channel = NotificationChannel(
-            channelId, "APEX Root Daemon",
-            NotificationManager.IMPORTANCE_LOW
-        )
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(channel)
-
-        val notification = Notification.Builder(this, channelId)
-            .setContentTitle("APEX Root")
-            .setContentText("Trusted daemon running")
-            .setSmallIcon(android.R.drawable.ic_menu_manage)
-            .setOngoing(true)
-            .build()
-        startForeground(1, notification)
-
-        loadNativeLibrary()
+        createNotificationChannel()
+        val notification = buildNotification()
+        startForeground(NOTIFICATION_ID, notification)
+        isRunning = true
+        Log.i(TAG, "Trusted daemon service started")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -35,19 +33,31 @@ class TrustedDaemonService : Service() {
         return START_STICKY
     }
 
-    private fun loadNativeLibrary() {
-        try {
-            System.loadLibrary("apex_root")
-        } catch (e: UnsatisfiedLinkError) {
-            // Library will be loaded by individual native bridge classes
-        }
+    override fun onDestroy() {
+        super.onDestroy()
+        isRunning = false
+        Log.i(TAG, "Trusted daemon service destroyed")
     }
 
-    companion object {
-        init {
-            try {
-                System.loadLibrary("apex_root")
-            } catch (_: UnsatisfiedLinkError) {}
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "APEX Root Daemon",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "保持根检测守护进程运行"
+            setShowBadge(false)
         }
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(channel)
+    }
+
+    private fun buildNotification(): Notification {
+        return Notification.Builder(this, CHANNEL_ID)
+            .setContentTitle("APEX Root")
+            .setContentText("安全守护进程运行中")
+            .setSmallIcon(android.R.drawable.ic_menu_manage)
+            .setOngoing(true)
+            .build()
     }
 }

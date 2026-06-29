@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
+// ─── 静态颜色（不随主题变化）──────────────────────────
 val DeepBackground = Color(0xFF0B0B10)
 val DeepSurface = Color(0xFF14141C)
 val DeepSurfaceVariant = Color(0xFF1C1C28)
@@ -22,18 +23,12 @@ val AccentMint = Color(0xFF4CAF50)
 val AccentMintSoft = Color(0xFF76D27A)
 val ErrorRed = Color(0xFFFF5252)
 val ErrorRedSoft = Color(0xFFFF7A7A)
-var TextPrimary: Color = Color(0xFFECECF5)
-var TextSecondary: Color = Color(0xFF9A9AB0)
-var TextTertiary: Color = Color(0xFF5C5C78)
 val TermuxBg = Color(0xFF08080E)
 val TermuxGreen = Color(0xFF66FF88)
 
 val LightBackground = Color(0xFFF8F7FF)
 val LightSurface = Color(0xFFFFFFFF)
 val LightSurfaceVariant = Color(0xFFF0EEF8)
-val LightTextPrimary = Color(0xFF1A1A2E)
-val LightTextSecondary = Color(0xFF6B6B80)
-val LightTextTertiary = Color(0xFF9D9DB0)
 
 val PastelPurple = Color(0xFFD4C5FF)
 val PastelBlue = Color(0xFFC5E0FF)
@@ -45,6 +40,44 @@ val GlassBaseDark = Color.White.copy(alpha = 0.07f)
 val GlassBorderDark = Color.White.copy(alpha = 0.22f)
 val GlassBaseLight = Color.Black.copy(alpha = 0.03f)
 val GlassBorderLight = Color.Black.copy(alpha = 0.08f)
+
+// ─── 主题感知颜色 — 通过 CompositionLocal 传递 ──────
+// 修复：原来的 var TextPrimary 等是 mutable 全局变量，
+// Compose 不跟踪变化，主题切换后颜色不会刷新。
+// 改为 CompositionLocal，确保主题切换时正确 recompose。
+
+data class ApexTextColors(
+    val primary: Color,
+    val secondary: Color,
+    val tertiary: Color
+)
+
+private val DarkTextColors = ApexTextColors(
+    primary = Color(0xFFECECF5),
+    secondary = Color(0xFF9A9AB0),
+    tertiary = Color(0xFF5C5C78)
+)
+
+private val LightTextColors = ApexTextColors(
+    primary = Color(0xFF1A1A2E),
+    secondary = Color(0xFF6B6B80),
+    tertiary = Color(0xFF9D9DB0)
+)
+
+val LocalApexTextColors = staticCompositionLocalOf { DarkTextColors }
+
+/**
+ * 便捷属性 — 在 @Composable 中使用 TextPrimary / TextSecondary / TextTertiary
+ * 这些现在通过 CompositionLocal 读取，会随主题自动刷新。
+ */
+val TextPrimary: Color
+    @Composable get() = LocalApexTextColors.current.primary
+
+val TextSecondary: Color
+    @Composable get() = LocalApexTextColors.current.secondary
+
+val TextTertiary: Color
+    @Composable get() = LocalApexTextColors.current.tertiary
 
 val LocalIsDarkTheme = staticCompositionLocalOf { true }
 
@@ -59,9 +92,9 @@ private val DarkColorScheme = darkColorScheme(
     onPrimary = Color.White,
     onSecondary = Color.White,
     onTertiary = Color(0xFF1A1A1A),
-    onBackground = TextPrimary,
-    onSurface = TextPrimary,
-    onSurfaceVariant = TextSecondary,
+    onBackground = Color(0xFFECECF5),
+    onSurface = Color(0xFFECECF5),
+    onSurfaceVariant = Color(0xFF9A9AB0),
     onError = Color.White,
     outline = DeepSurfaceBright
 )
@@ -77,9 +110,9 @@ private val LightColorScheme = lightColorScheme(
     onPrimary = Color.White,
     onSecondary = Color.White,
     onTertiary = Color(0xFF1A1A1A),
-    onBackground = LightTextPrimary,
-    onSurface = LightTextPrimary,
-    onSurfaceVariant = LightTextSecondary,
+    onBackground = Color(0xFF1A1A2E),
+    onSurface = Color(0xFF1A1A2E),
+    onSurfaceVariant = Color(0xFF6B6B80),
     onError = Color.White,
     outline = Color(0xFFE0E0F0)
 )
@@ -89,11 +122,12 @@ fun ApexRootTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    TextPrimary = if (darkTheme) Color(0xFFECECF5) else Color(0xFF1A1A2E)
-    TextSecondary = if (darkTheme) Color(0xFF9A9AB0) else Color(0xFF6B6B80)
-    TextTertiary = if (darkTheme) Color(0xFF5C5C78) else Color(0xFF9D9DB0)
+    val textColors = if (darkTheme) DarkTextColors else LightTextColors
 
-    CompositionLocalProvider(LocalIsDarkTheme provides darkTheme) {
+    CompositionLocalProvider(
+        LocalIsDarkTheme provides darkTheme,
+        LocalApexTextColors provides textColors
+    ) {
         MaterialTheme(
             colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
             typography = Typography(),

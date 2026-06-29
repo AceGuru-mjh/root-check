@@ -11,14 +11,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 private val fluidEase = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 
 data class OrbConfig(
-    val size: Dp,
-    val blurRadius: Dp,
+    val sizeFraction: Float,     // 相对于屏幕宽度的比例
+    val blurFraction: Float,     // 相对于 orb 尺寸的比例
     val color: Color,
     val alpha: Float,
     val scale: Float,
@@ -29,16 +30,21 @@ data class OrbConfig(
     val alignment: Alignment
 )
 
+/**
+ * 修复：Orb 尺寸改为基于屏幕宽度的比例，而非硬编码 dp 值。
+ * 原来 340dp/300dp/320dp/260dp 在小屏上溢出。
+ */
 private val orbs = listOf(
-    OrbConfig(340.dp, 120.dp, AccentPurple, 0.55f, 1.06f, -70f..70f, -50f..50f, 9000, 11000, Alignment.TopStart),
-    OrbConfig(300.dp, 100.dp, AccentBlue, 0.50f, 1.00f, 60f..(-60f), 50f..(-40f), 11000, 13000, Alignment.CenterEnd),
-    OrbConfig(320.dp, 130.dp, Color(0xFF7C4DFF), 0.45f, 1.04f, 0f..90f, 0f..(-70f), 14000, 15000, Alignment.BottomCenter),
-    OrbConfig(260.dp, 110.dp, AccentGold, 0.35f, 1.00f, -40f..40f, -60f..30f, 12000, 14000, Alignment.CenterStart)
+    OrbConfig(0.85f, 0.35f, AccentPurple, 0.55f, 1.06f, -70f..70f, -50f..50f, 9000, 11000, Alignment.TopStart),
+    OrbConfig(0.75f, 0.33f, AccentBlue, 0.50f, 1.00f, 60f..(-60f), 50f..(-40f), 11000, 13000, Alignment.CenterEnd),
+    OrbConfig(0.80f, 0.40f, Color(0xFF7C4DFF), 0.45f, 1.04f, 0f..90f, 0f..(-70f), 14000, 15000, Alignment.BottomCenter),
+    OrbConfig(0.65f, 0.42f, AccentGold, 0.35f, 1.00f, -40f..40f, -60f..30f, 12000, 14000, Alignment.CenterStart)
 )
 
 @Composable
 fun FluidBackground(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition()
+    val screenWidthDp = LocalConfiguration.current.screenWidthDp.dp
 
     Box(modifier = modifier.fillMaxSize()) {
         orbs.forEachIndexed { i, cfg ->
@@ -58,8 +64,10 @@ fun FluidBackground(modifier: Modifier = Modifier) {
                     repeatMode = RepeatMode.Reverse
                 )
             )
+            val orbSize = screenWidthDp * cfg.sizeFraction
+            val blurRadius = orbSize * cfg.blurFraction
             Orb(
-                size = cfg.size, blurRadius = cfg.blurRadius,
+                size = orbSize, blurRadius = blurRadius,
                 color1 = cfg.color, alpha = cfg.alpha, scale = cfg.scale,
                 offsetX = offsetX, offsetY = offsetY,
                 alignment = cfg.alignment

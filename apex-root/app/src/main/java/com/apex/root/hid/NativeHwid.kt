@@ -1,10 +1,16 @@
 package com.apex.root.hid
 
+import com.apex.root.core.NativeLibraryLoader
+
 object NativeHwid {
-    init {
-        System.loadLibrary("apex_root")
+    fun spoofAll(): Boolean = NativeLibraryLoader.safeCall(false) {
+        spoofAllNative()
     }
 
-    external fun spoofAll(): Boolean
-    external fun restoreReal(): Boolean
+    fun restoreReal(): Boolean = NativeLibraryLoader.safeCall(false) {
+        restoreRealNative()
+    }
+
+    private external fun spoofAllNative(): Boolean
+    private external fun restoreRealNative(): Boolean
 }

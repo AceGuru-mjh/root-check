@@ -486,7 +486,7 @@ fun GlassShareReportPreview(
     onShare: () -> Unit = {}
 ) {
     val isDark = LocalIsDarkTheme.current
-    val bgColor = if (isDark) Color(0xFF0B0B10) else Color(0xFF0F172A)
+    val bgColor = if (isDark) Color(0xFF0B0B10) else LightBackground
 
     Box(
         modifier = Modifier
@@ -501,19 +501,19 @@ fun GlassShareReportPreview(
             Column {
                 Text(
                     "APEX ENVIRONMENT SECURITY",
-                    color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp,
+                    color = if (isDark) Color.White.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.4f), fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(8.dp))
-                Text("环境扫描摘要报告", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text("环境扫描摘要报告", color = if (isDark) Color.White else Color.Black, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(40.dp))
                 Text(
-                    score.toString(), fontSize = 110.sp, fontWeight = FontWeight.Black,
+                    score.toString(), fontSize = 72.sp, fontWeight = FontWeight.Black,
                     color = AccentPurple
                 )
                 Text(
                     if (score > 90) "STATUS: SECURE" else "STATUS: WARNING",
-                    color = Color.White, fontSize = 18.sp
+                    color = if (isDark) Color.White else Color.Black, fontSize = 18.sp
                 )
             }
             Box(
@@ -526,7 +526,7 @@ fun GlassShareReportPreview(
             ) {
                 Text(
                     statusSummary,
-                    color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp
+                    color = if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.7f), fontSize = 13.sp
                 )
             }
             Row(
@@ -534,7 +534,7 @@ fun GlassShareReportPreview(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f)) {
-                    Text("关闭", color = Color.White)
+                    Text("关闭", color = if (isDark) Color.White else Color.Black)
                 }
                 Button(
                     onClick = onShare,

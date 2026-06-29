@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +37,11 @@ fun SplashScreen(onSplashComplete: () -> Unit) {
 
     if (!visible) return
 
+    // 使用屏幕实际尺寸自适应
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp.dp
+    val screenHeightDp = configuration.screenHeightDp.dp
+
     val transition = rememberInfiniteTransition()
     val animTime by transition.animateFloat(
         initialValue = 0f,
@@ -48,16 +54,17 @@ fun SplashScreen(onSplashComplete: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            MetaballEffect(animTime)
+            MetaballEffect(animTime, screenWidthDp, screenHeightDp)
         } else {
-            FallbackMetaball(animTime)
+            FallbackMetaball(animTime, screenWidthDp, screenHeightDp)
         }
 
         Column(
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(220.dp))
+            // 从 220.dp 改为屏幕高度的 25%
+            Spacer(Modifier.fillMaxHeight(0.25f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("APEX", color = Color.White,
                     style = MaterialTheme.typography.headlineLarge,
@@ -80,7 +87,7 @@ fun SplashScreen(onSplashComplete: () -> Unit) {
 
 @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
 @Composable
-private fun MetaballEffect(animTime: Float) {
+private fun MetaballEffect(animTime: Float, screenWidthDp: androidx.compose.ui.unit.Dp, screenHeightDp: androidx.compose.ui.unit.Dp) {
     val alphaMatrix = remember {
         ColorMatrix().apply {
             set(floatArrayOf(
@@ -92,9 +99,12 @@ private fun MetaballEffect(animTime: Float) {
         }
     }
 
+    // 自适应尺寸：取屏幕宽高的 80%，不超过 360dp
+    val effectSize = minOf(screenWidthDp, screenHeightDp) * 0.8f
+
     Box(
         modifier = Modifier
-            .size(360.dp)
+            .size(effectSize)
             .graphicsLayer {
                 val blur = RenderEffect.createBlurEffect(40f, 40f, Shader.TileMode.CLAMP)
                 val matrixFilter = RenderEffect.createColorFilterEffect(
@@ -133,9 +143,12 @@ private fun MetaballEffect(animTime: Float) {
 }
 
 @Composable
-private fun FallbackMetaball(animTime: Float) {
+private fun FallbackMetaball(animTime: Float, screenWidthDp: androidx.compose.ui.unit.Dp, screenHeightDp: androidx.compose.ui.unit.Dp) {
+    // 自适应尺寸
+    val effectSize = minOf(screenWidthDp, screenHeightDp) * 0.8f
+
     Box(
-        modifier = Modifier.size(360.dp),
+        modifier = Modifier.size(effectSize),
         contentAlignment = Alignment.Center
     ) {
         Box(

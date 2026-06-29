@@ -1,13 +1,31 @@
 package com.apex.root.cure
 
+import com.apex.root.core.NativeLibraryLoader
+
 object NativeCure {
-    init {
-        System.loadLibrary("apex_root")
+    fun detectRootType(): Int = NativeLibraryLoader.safeCall(-1) {
+        detectRootTypeNative()
     }
 
-    external fun detectRootType(): Int
-    external fun lightCleanup(): Boolean
-    external fun standardFix(rootType: Int): Boolean
-    external fun deepRecovery(): Boolean
-    external fun factoryReset(): Boolean
+    fun lightCleanup(): Boolean = NativeLibraryLoader.safeCall(false) {
+        lightCleanupNative()
+    }
+
+    fun standardFix(rootType: Int): Boolean = NativeLibraryLoader.safeCall(false) {
+        standardFixNative(rootType)
+    }
+
+    fun deepRecovery(): Boolean = NativeLibraryLoader.safeCall(false) {
+        deepRecoveryNative()
+    }
+
+    fun factoryReset(): Boolean = NativeLibraryLoader.safeCall(false) {
+        factoryResetNative()
+    }
+
+    private external fun detectRootTypeNative(): Int
+    private external fun lightCleanupNative(): Boolean
+    private external fun standardFixNative(rootType: Int): Boolean
+    private external fun deepRecoveryNative(): Boolean
+    private external fun factoryResetNative(): Boolean
 }

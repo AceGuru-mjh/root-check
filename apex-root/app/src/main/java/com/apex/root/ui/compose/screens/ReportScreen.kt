@@ -49,42 +49,41 @@ fun ReportScreen(
         }
     ) { padding ->
         LiquidGlassContainer(fluidColorsDark = PageFluidColors.report, fluidColorsLight = PageFluidColors.reportLight) {
-        if (report == null) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                GlassEmptyState(
-                    title = "暂无报告数据",
-                    description = "运行扫描以生成安全报告",
-                    icon = {
-                        Box(Modifier.size(80.dp).background(if (LocalIsDarkTheme.current) AccentBlue.copy(alpha = 0.15f) else PastelBlue, CircleShape), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Description, null, Modifier.size(40.dp), tint = AccentBlue)
-                        }
-                    },
-                    modifier = Modifier.padding(16.dp)
-                )
+            if (report == null) {
+                Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    GlassEmptyState(
+                        title = "暂无报告数据",
+                        description = "运行扫描以生成安全报告",
+                        icon = {
+                            Box(Modifier.size(80.dp).background(if (LocalIsDarkTheme.current) AccentBlue.copy(alpha = 0.15f) else PastelBlue, CircleShape), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Description, null, Modifier.size(40.dp), tint = AccentBlue)
+                            }
+                        },
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    item { ReportSummaryCard(report) }
+                    items(report.results) { result ->
+                        LayerResultCard(
+                            serviceName = result.serviceName,
+                            serviceId = result.serviceId,
+                            success = result.success,
+                            confidence = result.confidence,
+                            findings = result.findings,
+                            durationMs = result.durationMs
+                        )
+                    }
+                }
             }
-            return@Scaffold
         }
-
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item { ReportSummaryCard(report) }
-            items(report.results) { result ->
-                LayerResultCard(
-                    serviceName = result.serviceName,
-                    serviceId = result.serviceId,
-                    success = result.success,
-                    confidence = result.confidence,
-                    findings = result.findings,
-                    durationMs = result.durationMs
-                )
-            }
-        }
-    }
     }
 }
 
