@@ -62,29 +62,36 @@ void apex_timing_calibrate(void) {
          timing_base.access_ns, timing_base.clock_gettime_ns);
 }
 
-// Generate plausible jitter
+// Generate plausible jitter using arc4random (crypto-safe, non-predictable)
 static long long jitter(void) {
-    return JITTER_MIN + (random() % (JITTER_MAX - JITTER_MIN + 1));
+    return JITTER_MIN + (long long)(arc4random_uniform(JITTER_MAX - JITTER_MIN + 1));
 }
 
-// Return what the time SHOULD look like if no Hook were present
+/*
+ * Fixed: Original code could return a negative value when called rapidly
+ * (get_ns() < baseline + jitter). Now clamps to a minimum of 0.
+ */
 long long apex_timing_get_expected_ns(void) {
-    // We make the timing look like a clean, un-hooked system call
-    // by returning the baseline time + natural jitter
-    return get_ns() - timing_base.clock_gettime_ns - jitter();
+    long long now = get_ns();
+    long long adjusted = now - timing_base.clock_gettime_ns - jitter();
+    return adjusted > 0 ? adjusted : 0;
 }
 
-// For clock_gettime interposition: adjust the returned time
-// to hide the micro-delay introduced by our BPF/tracepoint hooks
+/*
+ * Fixed: If hook_overhead exceeds current time, the original code
+ * produced a negative timespec (tv_sec=0, tv_nsec = large negative % 1e9
+ * which is a huge positive value). Now properly clamps.
+ */
 int apex_timing_adjust_clock(struct timespec *tp) {
     if (!tp) return -1;
 
-    // Subtract the Hook overhead from the reported time
     long long hook_overhead = timing_base.clock_gettime_ns + jitter();
     long long current_ns = (long long)tp->tv_sec * 1000000000LL + tp->tv_nsec;
 
     if (current_ns > hook_overhead) {
         current_ns -= hook_overhead;
+    } else {
+        current_ns = 0;
     }
 
     tp->tv_sec = current_ns / 1000000000LL;
