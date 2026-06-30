@@ -184,46 +184,50 @@ bool check_system_integrity() {
 }
 
 bool check_kernel_module_integrity() {
-    char buf[8192];
-    if (!utils::read_file("/proc/modules", buf, sizeof(buf))) return true;
-    if (buf[0] == '\0') return true;
+    // 已移除 Ring0 检测：/proc/modules 内核模块枚举
+    //   原代码扫描 /proc/modules 找 kernelsu/kpm/apatch/magisk 等关键字，
+    //   并按白名单匹配 module refcounts。
+    //   但 /proc/modules 在 Android 13+ GKI 内核需要 CAP_SYS_MODULE 才能
+    //   完整枚举，且 OEM 模块会被错误标记为可疑。
+    //
+    //   现改为 Ring3 root 级：检测 root 方案的 service 脚本目录与守护进程
+    //   二进制，这些是真正的用户态 root 痕迹，跨内核版本稳定。
 
-    const char* suspicious[] = {
-        "kernelsu", "kpm", "apatch", "magisk",
-        "hide_proc", "rootkit", "sec_hook"
+    const char* root_indicators[] = {
+        // Magisk
+        "/data/adb/magisk",
+        "/data/adb/magisk.db",
+        "/data/adb/magisk/.magisk",
+        // KernelSU (含 fork)
+        "/data/adb/ksu",
+        "/data/adb/ksu/ksud",
+        "/data/adb/ksu/bin/ksud",
+        "/data/adb/suki",
+        "/data/adb/suki/sukid",
+        "/data/adb/ksu-next",
+        // APatch
+        "/data/adb/ap",
+        "/data/adb/ap/apd",
+        "/data/adb/ap/kpm",     // KPM 用户态模块目录（原 /sys/kpm 是 Ring0）
+        // service 脚本目录
+        "/data/adb/service.d",
+        "/data/adb/post-fs-data.d",
+        "/data/adb/modules.d",
+        "/data/adb/boot-completed.d",
+        // Zygisk 生态
+        "/data/adb/zygisknext",
+        "/data/adb/rezygisk",
+        nullptr
     };
+
     bool found = false;
-    for (auto s : suspicious) {
-        if (strstr(buf, s)) {
-            char msg[128];
-            snprintf(msg, sizeof(msg), "suspicious module: %s", s);
-            add_alert(AlertLevel::CRITICAL, msg, "kernel_module");
+    for (auto p = root_indicators; *p; ++p) {
+        if (utils::file_exists(*p)) {
+            char msg[160];
+            snprintf(msg, sizeof(msg), "root indicator path present: %s", *p);
+            add_alert(AlertLevel::CRITICAL, msg, "root_indicator");
             found = true;
         }
-    }
-
-    // Check for unsigned modules by looking at module refcounts
-    // If /proc/modules shows a module that's not in our whitelist, flag it
-    // Read /proc/modules line by line
-    char* line = buf;
-    while (line && *line) {
-        char* end = strchr(line, '\n');
-        if (end) *end = 0;
-        // Extract module name (before first space)
-        char* space = strchr(line, ' ');
-        if (space) {
-            *space = 0;
-            bool whitelisted = false;
-            const char* whitelist[] = {"f2fs", "sdcardfs", "goodix", "fpc", "mtk", NULL};
-            for (int w = 0; whitelist[w]; w++) {
-                if (strstr(line, whitelist[w])) { whitelisted = true; break; }
-            }
-            if (!whitelisted && strncmp(line, "Module", 6) != 0) {
-                // Suspicious module (not in whitelist)
-                found = true;
-            }
-        }
-        line = end ? (end + 1) : nullptr;
     }
     return !found;
 }
