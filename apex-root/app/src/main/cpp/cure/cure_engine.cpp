@@ -7,20 +7,38 @@ namespace apex {
 namespace cure {
 
 RootType detect_root_solution() {
-    // Check Magisk
+    // Check Magisk (含 fork: Delta / Kitsune / Kitana)
     if (utils::file_exists("/data/adb/magisk") ||
         utils::file_exists("/data/adb/magisk.db") ||
-        utils::file_exists("/sbin/.magisk")) {
+        utils::file_exists("/sbin/.magisk") ||
+        utils::file_exists("/data/adb/magisk/.delta") ||
+        utils::file_exists("/data/adb/magisk/.kitsune")) {
         return RootType::MAGISK;
     }
-    // Check KernelSU
+    // Check KernelSU (含 fork: SukiSU / KSU-NEXT)
+    // 已移除 Ring0 检测：/proc/kernelsu 内核 API
+    // 改为 root 级路径 + Manager APP 包名
     if (utils::file_exists("/data/adb/ksu") ||
-        utils::file_exists("/proc/kernelsu")) {
+        utils::file_exists("/data/adb/ksu/ksud") ||
+        utils::file_exists("/data/adb/ksu/bin/ksud") ||
+        utils::file_exists("/data/adb/suki") ||
+        utils::file_exists("/data/adb/suki/sukid") ||
+        utils::file_exists("/data/adb/ksu-next") ||
+        utils::file_exists("/data/data/me.weishu.kernelsu") ||
+        utils::file_exists("/data/data/io.github.rifsxd.kernelsu") ||
+        utils::file_exists("/data/data/io.github.rifsxd.sukisu") ||
+        utils::file_exists("/data/data/io.github.rifsxd.sukisu.ultra")) {
         return RootType::KERNELSU;
     }
     // Check APatch
+    // 已移除 Ring0 检测：/sys/kpm sysfs 节点
+    // 改为 root 级路径 + Manager APP 包名
     if (utils::file_exists("/data/adb/ap") ||
-        utils::file_exists("/sys/kpm")) {
+        utils::file_exists("/data/adb/ap/apd") ||
+        utils::file_exists("/data/adb/apatch") ||
+        utils::file_exists("/data/adb/ap/kpm") ||  // KPM 用户态模块目录
+        utils::file_exists("/data/data/me.bmax.apatch") ||
+        utils::file_exists("/data/data/io.github.rifsxd.apatch")) {
         return RootType::APATCH;
     }
     return RootType::UNKNOWN;
@@ -85,8 +103,8 @@ CureResult standard_fix(RootType root_type) {
         // Remove APatch
         utils::exec_su_command_quiet("rm -rf /data/adb/ap");
         utils::exec_su_command_quiet("rm -rf /data/adb/modules/apatch");
-        // Remove KPM
-        utils::exec_su_command_quiet("rm -rf /sys/kpm");
+        // Remove KPM user-space module directory (Ring3, not /sys/kpm)
+        utils::exec_su_command_quiet("rm -rf /data/adb/ap/kpm");
         result.items_removed = 3;
         break;
 
