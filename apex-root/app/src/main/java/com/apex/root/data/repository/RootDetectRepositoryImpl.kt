@@ -103,7 +103,10 @@ class RootDetectRepositoryImpl {
 
     fun runDeepDetection(): String {
         val sb = StringBuilder()
-        sb.appendLine("=== APEX 深度检测报告 ===")
+        sb.appendLine("=== APEX 深度检测报告 (Ring3 root 级) ===")
+        sb.appendLine()
+        sb.appendLine("[说明] 所有 Ring0 内核态检测已移除，仅保留 root 级 / 用户态检测")
+        sb.appendLine()
 
         // 1. Memory fingerprint
         val memMask = NativeBridge.fullMemoryFingerprint()
@@ -122,7 +125,32 @@ class RootDetectRepositoryImpl {
         // 4. Process/Mount hiding
         if (NativeBridge.detectProcessHiding()) sb.appendLine("进程隐藏: 检测到")
         if (NativeBridge.detectMountNamespaceHiding()) sb.appendLine("挂载命名空间隐藏: 检测到")
-        if (NativeBridge.detectSyscallTableHook()) sb.appendLine("系统调用表Hook: 检测到")
+        // 已移除：NativeBridge.detectSyscallTableHook()
+        // 改用 syscall 结果一致性检测
+        if (NativeBridge.detectSyscallResultInconsistency()) sb.appendLine("Syscall 结果不一致: 检测到（可能存在 hook）")
+
+        // 5. 新增 L14 - 虚拟框架
+        sb.appendLine()
+        sb.appendLine("--- L14 虚拟框架 / 双开分身 ---")
+        sb.appendLine(NativeBridge.virtualXposedFullScan())
+
+        // 6. 新增 L15 - 危险应用
+        sb.appendLine()
+        sb.appendLine("--- L15 危险应用 ---")
+        sb.appendLine(NativeBridge.dangerousAppsFullScan())
+
+        // 7. 新增 L16 - Magisk 扩展
+        sb.appendLine()
+        sb.appendLine("--- L16 Magisk 扩展 ---")
+        sb.appendLine(NativeBridge.magiskExtensionsFullScan())
+
+        // 8. 新增独立隐藏框架检测
+        sb.appendLine()
+        sb.appendLine("--- 隐藏框架 ---")
+        if (NativeBridge.detectHideMyApplist()) sb.appendLine("HideMyApplist: 检测到")
+        if (NativeBridge.detectStorageIsolation()) sb.appendLine("StorageIsolation: 检测到")
+        if (NativeBridge.detectMagiskHideLegacy()) sb.appendLine("MagiskHide (legacy): 检测到")
+        if (NativeBridge.detectMagiskDenyList()) sb.appendLine("Magisk DenyList: 检测到")
 
         return sb.toString()
     }

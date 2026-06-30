@@ -2,6 +2,18 @@
 #include "../common/syscall.h"
 #include <cstring>
 
+// ═══════════════════════════════════════════════════════════
+//  第五层 · 侧信道时延检测（root 级 / 用户态）
+// ----------------------------------------------------------------
+//  保留：syscall 时延 / cache 时延分析 — 纯用户态时延测量，
+//        不依赖内核态访问，可作为 Ring0 已移除后的 syscall
+//        hook 检测替代手段。
+//
+//  已移除：detectBinderLatencyAnomaly()
+//    原函数通过 /dev/binder 可访问性反推 SELinux 状态，
+//    误报率高、与 Ring3 root 检测定位不符。
+// ═══════════════════════════════════════════════════════════
+
 static int64_t get_ns() {
     int64_t ts[2];
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0"
@@ -57,16 +69,36 @@ bool detectCacheTimingAnomaly() {
     return variance > avg * avg;
 }
 
-bool detectBinderLatencyAnomaly() {
-    // Check if /dev/binder is accessible (should not be from app context
-    // if it is, system likely has modified SELinux policy)
-    int64_t fd;
+// 新增：基于 syscall 失败模式检测
+// Root 隐藏框架通常会修改 syscall 返回值（如 openat 对敏感路径返回 -ENOENT）
+// 通过对比敏感路径 vs 无关路径的 openat 结果差异来反推隐藏是否启用
+bool detectSyscallResultInconsistency() {
+    int64_t ret_root_path, ret_random_path;
+
+    // 尝试 open /data/adb（root 路径，正常 root 应能访问）
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/dev/binder"), "i"(O_RDWR), "i"(0));
-    if (fd >= 0) {
+                 : "=r"(ret_root_path)
+                 : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/data/adb"), "i"(O_RDONLY | O_DIRECTORY), "i"(0)
+                 : "x0", "x1", "x2", "x8");
+
+    // 尝试 open 不存在的随机路径
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(ret_random_path)
+                 : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/data/adb/.apex_nonexistent_probe_12345"), "i"(O_RDONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8");
+
+    // 关闭 fd
+    if (ret_root_path >= 0) {
         int64_t d;
-        asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
-        return true; // App can access binder directly = SELinux modified
+        asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(ret_root_path) : "x0","x8");
+    }
+
+    // 如果 /data/adb 不可访问 (-ENOENT 或 -EACCES)，但应用是 root
+    // 通常是 root 隐藏框架把 /data/adb 屏蔽了
+    if (ret_root_path < 0 && ret_random_path < 0) {
+        // 两个都失败 — 看错误码是否一致
+        // -ENOENT (2) for both = 隐藏框架伪造了"不存在"
+        if (ret_root_path == -2 && ret_random_path == -2) return true;
     }
     return false;
 }

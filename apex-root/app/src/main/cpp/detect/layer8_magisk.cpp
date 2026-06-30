@@ -66,7 +66,11 @@ bool detectMagiskDaemon() {
                 cmdline_path[idx] = '\0';
 
                 read_file_to_buf(cmdline_path, buf, sizeof(buf));
-                if (strstr(buf, "magiskd") || strstr(buf, "magisk")) {
+                // 扩充：检测所有 Magisk 家族 daemon
+                // magiskd / magisk / magisk32 / magisk64 / kitana / delta / kitsune
+                if (strstr(buf, "magiskd") || strstr(buf, "magisk") ||
+                    strstr(buf, "kitana") || strstr(buf, "kitsune") ||
+                    strstr(buf, "magisk-delta") || strstr(buf, "magisk-fork")) {
                     return true;
                 }
             }
@@ -90,15 +94,44 @@ bool detectMagiskModules() {
 }
 
 bool detectMagiskFiles() {
-    const char* paths[] = {
+    // 主流 Magisk 路径
+    static const char* paths[] = {
+        // 经典 Magisk 路径
         "/data/adb/magisk", "/data/adb/magisk.db",
         "/data/adb/magisk.img", "/data/adb/modules",
         "/data/adb/post-fs-data.d", "/data/adb/service.d",
         "/sbin/.magisk", "/data/adb/stock_boot.img",
         "/data/adb/magisk/magisk", "/data/adb/magisk/magisk64",
-        "/data/adb/magisk/magiskpolicy", "/data/adb/magisk/busybox"
+        "/data/adb/magisk/magiskpolicy", "/data/adb/magisk/busybox",
+        // 扩充：Magisk 内部目录
+        "/data/adb/magisk/.magisk",
+        "/data/adb/magisk/config",
+        "/data/adb/magisk/flags",
+        "/data/adb/magisk.db-journal",
+        "/data/adb/magisk.db-shm",
+        "/data/adb/magisk.db-wal",
+        // Magisk boot fingerprint
+        "/data/adb/magisk/boot_fingerprint",
+        // Magisk log
+        "/data/adb/magisk.log",
+        "/data/adb/magisk.log.old",
+        // Magisk Delta / Kitsune (fork)
+        "/data/adb/magisk/.delta",
+        "/data/adb/magisk/.kitsune",
+        "/data/adb/magisk/delta",
+        "/data/adb/magisk/kitsune",
+        // Magisk Kitsune Manager APP
+        "/data/data/io.github.huskydg.magisk",
+        // Magisk Alpha / Beta
+        "/data/data/com.topjohnwu.magisk.alpha",
+        "/data/data/com.topjohnwu.magisk.beta",
+        // Magisk WebUI X
+        "/data/adb/modules/magisk-webui",
+        // 经典 Magisk Manager
+        "/data/data/com.topjohnwu.magisk",
+        nullptr
     };
-    for (auto p : paths) {
+    for (auto p = paths; *p; ++p) {
         int64_t ret;
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
                      : "=r"(ret) : "i"(__NR_access), "r"(p), "i"(F_OK) : "x0", "x1", "x8");

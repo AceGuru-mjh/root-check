@@ -27,7 +27,7 @@ static int64_t check_access(const char* path) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  Shamiko Detection
+//  Shamiko Detection (root 级，无需内核态)
 // ═══════════════════════════════════════════════════════════
 
 bool detectShamiko() {
@@ -40,6 +40,14 @@ bool detectShamiko() {
     // Check for Shamiko whitelist
     if (check_access("/data/adb/shamiko/whitelist") == 0) return true;
     if (check_access("/data/adb/modules/shamiko/whitelist") == 0) return true;
+
+    // 扩充：Shamiko 新版路径
+    if (check_access("/data/adb/shamiko/empty") == 0) return true;
+    if (check_access("/data/adb/modules/shamiko/empty") == 0) return true;
+    if (check_access("/data/adb/shamiko/version") == 0) return true;
+    if (check_access("/data/adb/modules/shamiko/version") == 0) return true;
+    // Shamiko 的 dex 文件
+    if (check_access("/data/adb/modules/shamiko/system/framework/shamiko.jar") == 0) return true;
 
     // Check in memory
     char buf[65536];
@@ -159,7 +167,7 @@ int shamikoFullScan(char* out_report, size_t out_size) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  ZygiskNext Detection
+//  ZygiskNext Detection (root 级)
 // ═══════════════════════════════════════════════════════════
 
 bool detectZygiskNext() {
@@ -167,11 +175,24 @@ bool detectZygiskNext() {
     if (check_access("/data/adb/modules/ZygiskNext") == 0) return true;
     if (check_access("/data/adb/zygisknext") == 0) return true;
 
+    // 扩充：ZygiskNext 新版路径
+    if (check_access("/data/adb/modules/zygisknext/bin") == 0) return true;
+    if (check_access("/data/adb/modules/zygisknext/zygisknext") == 0) return true;
+    if (check_access("/data/adb/zygisknext/zygisknext.so") == 0) return true;
+
+    // ReZygisk (Rust 实现的 ZygiskNext 替代品)
+    if (check_access("/data/adb/modules/rezygisk") == 0) return true;
+    if (check_access("/data/adb/modules/ReZygisk") == 0) return true;
+    if (check_access("/data/adb/rezygisk") == 0) return true;
+    if (check_access("/data/adb/rezygisk/zygiskd") == 0) return true;
+
     // Check in memory
     char buf[65536];
     if (read_file("/proc/self/maps", buf, sizeof(buf))) {
         if (strstr(buf, "zygisknext")) return true;
         if (strstr(buf, "ZygiskNext")) return true;
+        if (strstr(buf, "rezygisk")) return true;
+        if (strstr(buf, "ReZygisk")) return true;
     }
     return false;
 }
@@ -186,6 +207,8 @@ bool detectZygiskNextMemfd() {
             if (strstr(buf, "/memfd:ZygiskNext")) return true;
             if (strstr(buf, "/memfd:dex")) return true;
             if (strstr(buf, "/memfd:jit")) return true;
+            // ReZygisk 也用 memfd
+            if (strstr(buf, "/memfd:rezygisk")) return true;
 
             // Count memfd entries for heuristics
             int count = 0;
@@ -245,7 +268,11 @@ int zygiskNextFullScan(char* out_report, size_t out_size) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  Generic Anti-Hiding Probes
+//  Generic Anti-Hiding Probes (root 级)
+// ----------------------------------------------------------------
+//  原 detectSyscallTableHook() 已移除——它依赖 /proc/kallsyms
+//  内核符号表扫描，属于 Ring0 检测。在新版中，syscall hook
+//  的检测统一由 layer5_sidechannel.cpp 的侧信道时延分析覆盖。
 // ═══════════════════════════════════════════════════════════
 
 bool detectProcessHiding() {
@@ -289,6 +316,19 @@ bool detectProcessHiding() {
         return true;
     }
 
+    // 扩充：检测 Magisk Hide / Magisk DenyList
+    if (check_access("/data/adb/magisk/denylist") == 0) return true;
+    if (check_access("/data/adb/magisk/hide") == 0) return true;
+    if (check_access("/data/adb/modules/.hide") == 0) return true;
+
+    // 扩充：检测 HideMyApplist
+    if (check_access("/data/adb/modules/hidemyapplist") == 0) return true;
+    if (check_access("/data/adb/modules/HideMyApplist") == 0) return true;
+
+    // 扩充：检测 StorageIsolation
+    if (check_access("/data/adb/modules/storage_isolation") == 0) return true;
+    if (check_access("/data/adb/modules/storageisolation") == 0) return true;
+
     return false;
 }
 
@@ -319,40 +359,42 @@ bool detectMountNamespaceHiding() {
     return false;
 }
 
-bool detectSyscallTableHook() {
-    char buf[16384];
+// ═══════════════════════════════════════════════════════════
+//  新增：检测额外的 Root 隐藏框架 (root 级)
+// ═══════════════════════════════════════════════════════════
 
-    // If we can read /proc/kallsyms, check for syscall table hooking
-    if (!read_file("/proc/kallsyms", buf, sizeof(buf))) {
-        // kallsyms not readable - this is normal on production kernels
-        return false;
-    }
-
-    // Check if sys_call_table address seems reasonable
-    const char* sct = strstr(buf, " sys_call_table");
-    if (!sct) {
-        // sys_call_table symbol hidden - possible APatch/KernelSU hiding
-        // But on some kernels this is normal
-        return false;
-    }
-
-    // Read the address
-    char addr_str[17];
-    for (int i = 0; i < 16; i++) {
-        char c = *(sct - 16 + i);
-        if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
-            addr_str[i] = c;
-        else
-            addr_str[i] = '0';
-    }
-    addr_str[16] = '\0';
-
-    // If address is 0x0000000000000000, kallsyms has been wiped
-    bool all_zero = true;
-    for (int i = 0; i < 16; i++) {
-        if (addr_str[i] != '0') { all_zero = false; break; }
-    }
-    if (all_zero) return true;
-
+bool detectHideMyApplist() {
+    // HideMyApplist (Rikka) 是常用的应用列表隐藏 Xposed 模块
+    if (check_access("/data/adb/modules/hidemyapplist") == 0) return true;
+    if (check_access("/data/adb/modules/HideMyApplist") == 0) return true;
+    if (check_access("/data/adb/modules/hma") == 0) return true;
+    if (check_access("/data/data/moe.haruishijima.hidemyapplist") == 0) return true;
     return false;
 }
+
+bool detectStorageIsolation() {
+    // Storage Isolation (Rikka) - 强制沙箱
+    if (check_access("/data/adb/modules/storage_isolation") == 0) return true;
+    if (check_access("/data/adb/modules/storageisolation") == 0) return true;
+    if (check_access("/data/data/moe.shizuku.privileged.api") == 0) return true;
+    return false;
+}
+
+bool detectMagiskHideLegacy() {
+    // 老式 MagiskHide (已废弃但仍可能存在)
+    if (check_access("/data/adb/magisk/.core/magiskhide") == 0) return true;
+    if (check_access("/data/adb/magisk/core/magiskhide") == 0) return true;
+    if (check_access("/data/adb/magiskimg") == 0) return true; // 老式 image 模式
+    return false;
+}
+
+bool detectMagiskDenyList() {
+    // 新版 Magisk DenyList (替代 MagiskHide)
+    if (check_access("/data/adb/magisk/denylist") == 0) return true;
+    if (check_access("/data/adb/magisk/deny/") == 0) return true;
+    return false;
+}
+
+// 已移除：detectSyscallTableHook()
+// 原函数依赖 /proc/kallsyms 内核符号表扫描，属 Ring0 检测。
+// 如需检测 syscall hook，请使用 layer5_sidechannel.cpp 的时延分析。

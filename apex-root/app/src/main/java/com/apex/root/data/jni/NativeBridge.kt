@@ -85,13 +85,94 @@ object NativeBridge {
         detectMountNamespaceHidingNative()
     }
 
-    fun detectSyscallTableHook(): Boolean = NativeLibraryLoader.safeCall(false) {
-        detectSyscallTableHookNative()
+    // 已移除：detectSyscallTableHook() — Ring0 检测，依赖 /proc/kallsyms
+    // 改用：detectSyscallResultInconsistency() — 用户态 syscall 结果一致性检测
+    fun detectSyscallResultInconsistency(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectSyscallResultInconsistencyNative()
     }
 
     // ─── ART enhanced detection ───────────────────────
     fun artEnhancedScan(): String = NativeLibraryLoader.safeCall("") {
         artEnhancedScanNative()
+    }
+
+    // ─── L14: VirtualXposed / 太极 / 双开分身 ────────────
+    fun detectVirtualXposed(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectVirtualXposedNative()
+    }
+
+    fun detectTaiChi(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectTaiChiNative()
+    }
+
+    fun detectDualSpaceApps(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectDualSpaceAppsNative()
+    }
+
+    fun virtualXposedFullScan(): String = NativeLibraryLoader.safeCall("") {
+        virtualXposedFullScanNative()
+    }
+
+    // ─── L15: 危险应用检测 ────────────────────────────
+    fun detectGameGuardian(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectGameGuardianNative()
+    }
+
+    fun detectCheatEngine(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectCheatEngineNative()
+    }
+
+    fun detectLuckyPatcher(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectLuckyPatcherNative()
+    }
+
+    fun detectMemoryEditors(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectMemoryEditorsNative()
+    }
+
+    fun detectCrackingTools(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectCrackingToolsNative()
+    }
+
+    fun dangerousAppsFullScan(): String = NativeLibraryLoader.safeCall("") {
+        dangerousAppsFullScanNative()
+    }
+
+    // ─── L16: Magisk 扩展检测 ────────────────────────
+    fun detectMagiskDenyList(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectMagiskDenyListNative()
+    }
+
+    fun detectZygiskModules(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectZygiskModulesNative()
+    }
+
+    fun detectLSPosedManager(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectLSPosedManagerNative()
+    }
+
+    fun detectRiruModules(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectRiruModulesNative()
+    }
+
+    fun detectModernForks(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectModernForksNative()
+    }
+
+    fun detectHideMyApplist(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectHideMyApplistNative()
+    }
+
+    fun detectStorageIsolation(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectStorageIsolationNative()
+    }
+
+    fun detectMagiskHideLegacy(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectMagiskHideLegacyNative()
+    }
+
+    fun magiskExtensionsFullScan(): String = NativeLibraryLoader.safeCall("") {
+        magiskExtensionsFullScanNative()
     }
 
     // ─── Firmware partition integrity ─────────────────
@@ -139,8 +220,29 @@ object NativeBridge {
     private external fun zygiskNextFullScanNative(): String
     private external fun detectProcessHidingNative(): Boolean
     private external fun detectMountNamespaceHidingNative(): Boolean
-    private external fun detectSyscallTableHookNative(): Boolean
+    // 已移除：detectSyscallTableHookNative — Ring0 检测
+    private external fun detectSyscallResultInconsistencyNative(): Boolean
     private external fun artEnhancedScanNative(): String
+    // L14 / L15 / L16 native
+    private external fun detectVirtualXposedNative(): Boolean
+    private external fun detectTaiChiNative(): Boolean
+    private external fun detectDualSpaceAppsNative(): Boolean
+    private external fun virtualXposedFullScanNative(): String
+    private external fun detectGameGuardianNative(): Boolean
+    private external fun detectCheatEngineNative(): Boolean
+    private external fun detectLuckyPatcherNative(): Boolean
+    private external fun detectMemoryEditorsNative(): Boolean
+    private external fun detectCrackingToolsNative(): Boolean
+    private external fun dangerousAppsFullScanNative(): String
+    private external fun detectMagiskDenyListNative(): Boolean
+    private external fun detectZygiskModulesNative(): Boolean
+    private external fun detectLSPosedManagerNative(): Boolean
+    private external fun detectRiruModulesNative(): Boolean
+    private external fun detectModernForksNative(): Boolean
+    private external fun detectHideMyApplistNative(): Boolean
+    private external fun detectStorageIsolationNative(): Boolean
+    private external fun detectMagiskHideLegacyNative(): Boolean
+    private external fun magiskExtensionsFullScanNative(): String
     private external fun detectFirmwareTamperingNative(): Boolean
     private external fun detectAVBStatusNative(): Boolean
     private external fun detectCustomRecoveryNative(): Boolean

@@ -2,6 +2,19 @@
 #include "../common/syscall.h"
 #include <cstring>
 
+// ═══════════════════════════════════════════════════════════
+//  第六层 · Root 守护进程 / Root-level Daemon Detection
+// ----------------------------------------------------------------
+//  说明：原 Ring0（内核态）检测——/proc/kallsyms 符号检查、
+//        /proc/modules 内核模块枚举、/proc/sys/kernel/tainted
+//        污染标志——已全部移除。这些检测要么被内核 kptr_restrict
+//        屏蔽导致不可靠，要么需要 CAP_SYS_MODULE 等特权，与
+//        "仅 root 级检测" 的定位不符。
+//
+//  本层现改为：枚举 root 方案在用户态留下的守护进程痕迹。
+//  这是真正稳定、跨内核版本通用的 root 级检测手段。
+// ═══════════════════════════════════════════════════════════
+
 static bool read_file(const char* path, char* buf, size_t size) {
     int64_t fd;
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
@@ -17,77 +30,165 @@ static bool read_file(const char* path, char* buf, size_t size) {
     return true;
 }
 
-bool detectKernelTampering() {
-    char buf[4096];
+static int64_t check_access(const char* path) {
+    int64_t ret;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
+                 : "=r"(ret) : "i"(__NR_access), "r"(path), "i"(F_OK) : "x0", "x1", "x8");
+    return ret;
+}
 
-    // Check kernel version string for custom kernels
-    if (read_file("/proc/version", buf, sizeof(buf))) {
-        const char* custom = strstr(buf, "kernelsu");
-        if (custom) return true;
-        custom = strstr(buf, "apatch");
-        if (custom) return true;
-        custom = strstr(buf, "magisk");
-        if (custom) return true;
-        custom = strstr(buf, "su");
-        if (custom) return true;
-        custom = strstr(buf, "dirtypipe");
-        if (custom) return true;
-        custom = strstr(buf, "dirtycow");
-        if (custom) return true;
-    }
+// 扫描 /proc 枚举所有进程 cmdline
+static bool scan_proc_cmdline(const char* needle) {
+    int64_t fd;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc"), "i"(O_DIRECTORY | O_RDONLY), "i"(0));
+    if (fd < 0) return false;
 
-    // Check kernel command line for root-related flags
-    if (read_file("/proc/cmdline", buf, sizeof(buf))) {
-        if (strstr(buf, "androidboot.verifiedbootstate=orange")) return true;
-        if (strstr(buf, "androidboot.flash.locked=0")) return true;
-        if (strstr(buf, "bootloader.unlocked=1")) return true;
-        if (strstr(buf, "androidboot.veritymode=enforcing")) return false; // normal
-    }
+    char dentry_buf[8192];
+    int64_t n;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(n) : "i"(__NR_getdents64), "r"(fd), "r"(dentry_buf), "r"((int64_t)sizeof(dentry_buf)) : "x0", "x1", "x2", "x8");
+    int64_t d;
+    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    if (n <= 0) return false;
 
-    // Check kallsyms for hooked symbols
-    if (read_file("/proc/kallsyms", buf, sizeof(buf))) {
-        // If all symbols show 0x0000000000000000, kallsyms has been wiped
-        // This is a common Root hiding technique (APatch does this)
-        int zero_count = 0;
-        int total_lines = 0;
-        char* line = buf;
-        char* end = buf + strlen(buf);
-        while (line < end) {
-            char* nl = line;
-            while (nl < end && *nl != '\n') nl++;
-            *nl = '\0';
-            total_lines++;
-            if (strncmp(line, "0000000000000000", 16) == 0) zero_count++;
-            line = nl + 1;
+    struct linux_dirent64 {
+        uint64_t d_ino;
+        int64_t d_off;
+        unsigned short d_reclen;
+        unsigned char d_type;
+        char d_name[];
+    };
+
+    size_t pos = 0;
+    while (pos < (size_t)n) {
+        auto* dirent = (linux_dirent64*)(dentry_buf + pos);
+        if (dirent->d_type == 4) { // DT_DIR
+            bool all_digits = true;
+            for (int i = 0; dirent->d_name[i]; i++) {
+                if (dirent->d_name[i] < '0' || dirent->d_name[i] > '9') {
+                    all_digits = false; break;
+                }
+            }
+            if (all_digits && dirent->d_name[0]) {
+                char cmdline_path[64];
+                int idx = 0;
+                const char* pfx = "/proc/";
+                for (int i = 0; pfx[i]; i++) cmdline_path[idx++] = pfx[i];
+                for (int i = 0; dirent->d_name[i]; i++) cmdline_path[idx++] = dirent->d_name[i];
+                const char* sfx = "/cmdline";
+                for (int i = 0; sfx[i]; i++) cmdline_path[idx++] = sfx[i];
+                cmdline_path[idx] = '\0';
+
+                char buf[512];
+                if (read_file(cmdline_path, buf, sizeof(buf))) {
+                    if (strstr(buf, needle)) return true;
+                }
+            }
         }
-        if (total_lines > 10 && zero_count > total_lines / 2) return true;
+        pos += dirent->d_reclen;
     }
+    return false;
+}
 
+// ─── 已知的 root 方案守护进程 / 二进制名 ───────────────────
+static const char* ROOT_DAEMON_NAMES[] = {
+    // Magisk 家族
+    "magiskd", "magisk", "magisk32", "magisk64", "magiskinit",
+    "magiskpolicy", "busybox",
+    // Magisk forks / variants
+    "magisk-fork", "kitana", "magisk-delta",
+    // KernelSU 家族
+    "ksud", "ksu", "kernelsu",
+    // KernelSU forks
+    "ksud-next", "ksu-next",
+    // APatch 家族
+    "apd", "apatch", "apatchd",
+    // SukiSU / 其他 fork
+    "sukisu", "sukid", "sukisu-ultra",
+    // 通用 su 守护进程
+    "su", "daemonsu", "superuserd",
+    // SuperSU 老式
+    "supersu",
+    // 现代 Magisk ZygiskNext
+    "zygisknext", "zygisk-next",
+    // ReZygisk (Rust 实现)
+    "rezygisk", "rezygiskd",
+    // SudoJS / others
+    "sudjs",
+    nullptr
+};
+
+bool detectKernelTampering() {
+    // 改为：root 守护进程存在性检测（root 级，无需内核态）
+    for (auto name = ROOT_DAEMON_NAMES; *name; ++name) {
+        if (scan_proc_cmdline(*name)) return true;
+    }
     return false;
 }
 
 bool detectKernelModuleTampering() {
-    char buf[8192];
-    if (!read_file("/proc/modules", buf, sizeof(buf))) return false;
-
-    const char* suspicious[] = {
-        "rootkit", "hide_proc", "sec_hook", "magisk",
-        "kernelsu", "kpm", "apatch", "ksu",
-        "overlay", "wireguard" // WireGuard on non-official kernel
+    // 改为：root 方案的 service / post-fs-data 脚本存在性检测
+    // 这些是 root 方案必留的痕迹，从用户态可读
+    static const char* service_paths[] = {
+        "/data/adb/service.d",
+        "/data/adb/post-fs-data.d",
+        "/data/adb/modules.d",
+        "/data/adb/boot-completed.d",
+        // Magisk
+        "/data/adb/magisk/daemon",
+        "/data/adb/magisk/magisk",
+        "/data/adb/magisk/.magisk",
+        // KernelSU
+        "/data/adb/ksu/ksud",
+        "/data/adb/ksu/bin/ksud",
+        "/data/adb/ksu/conf",
+        "/data/adb/ksu/log",
+        // APatch
+        "/data/adb/ap/apd",
+        "/data/adb/ap/working",
+        "/data/adb/ap/backup",
+        "/data/adb/ap/bin",
+        // SukiSU
+        "/data/adb/suki",
+        // ZygiskNext
+        "/data/adb/modules/zygisknext",
+        "/data/adb/zygisknext",
+        // ReZygisk
+        "/data/adb/rezygisk",
+        "/data/adb/modules/rezygisk",
+        nullptr
     };
-    for (auto s : suspicious) {
-        if (strstr(buf, s)) return true;
+    for (auto p = service_paths; *p; ++p) {
+        if (check_access(*p) == 0) return true;
     }
     return false;
 }
 
 bool detectKernelTaint() {
-    char buf[64];
-    if (!read_file("/proc/sys/kernel/tainted", buf, sizeof(buf))) return false;
-    int taint = 0;
-    for (int i = 0; buf[i] >= '0' && buf[i] <= '9'; i++) {
-        taint = taint * 10 + (buf[i] - '0');
+    // 改为：root 方案在 /data 留下的配置文件检测
+    // 这些是 root 框架在用户态的"指纹"
+    static const char* taint_indicators[] = {
+        // Magisk db (存储 root 授权记录)
+        "/data/adb/magisk.db",
+        // KernelSU db
+        "/data/adb/ksu/db",
+        "/data/adb/ksu/kernel_su.db",
+        // APatch db
+        "/data/adb/ap/db",
+        // root 授权日志
+        "/data/adb/magisk.log",
+        "/data/adb/ksu/log/ksud.log",
+        // Magisk 配置
+        "/data/adb/magisk/config",
+        "/data/adb/magisk/boot_fingerprint",
+        // KernelSU 配置
+        "/data/adb/ksu/conf/config.conf",
+        "/data/adb/ksu/.allow_su",
+        nullptr
+    };
+    for (auto p = taint_indicators; *p; ++p) {
+        if (check_access(*p) == 0) return true;
     }
-    // Taint flags: bit 0=proprietary module, bit 1=force unload, bit 3=unsigned module
-    return taint != 0;
+    return false;
 }

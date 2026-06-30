@@ -16,6 +16,9 @@
 #include "detect/layer11_hook.h"
 #include "detect/layer12_rom.h"
 #include "detect/layer13_firmware.h"
+#include "detect/layer14_virtualxposed.h"
+#include "detect/layer15_dangerous_apps.h"
+#include "detect/layer16_magisk_extensions.h"
 #include "detect/selinux_context.h"
 #include "detect/anti_hiding.h"
 #include "namespace/namespace_isolation.h"
@@ -34,7 +37,19 @@
 extern "C" {
 
 // ─────────────────────────────────────────────────────────────
-// APEX-Detect: Full 12-layer detection
+// APEX-Detect: Full 16-layer detection (Ring3 root-level only)
+// ----------------------------------------------------------------
+// 已移除所有 Ring0 内核态检测：
+//   - /proc/kallsyms 扫描
+//   - /proc/modules 内核模块枚举
+//   - /proc/sys/kernel/tainted 污染标志
+//   - /sys/kpm sysfs KPM 节点
+//   - /proc/kernelsu 内核 API
+//   - syscall_table 符号检查
+// 新增检测层：
+//   - L14: VirtualXposed / 太极 / 双开分身
+//   - L15: 危险应用 (GameGuardian / CE / Lucky Patcher 等)
+//   - L16: Magisk 扩展 (DenyList / ZygiskNext / ReZygisk / LSPosed / Riru)
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jstring JNICALL
@@ -46,32 +61,43 @@ Java_com_apex_root_data_jni_NativeBridge_runQuickScan(JNIEnv* env, jobject) {
     bool l3 = detectSuspiciousMemory();
     bool l4 = detectSuspiciousMounts();
     bool l5 = detectSyscallTimingAnomaly();
-    bool l6 = detectKernelTampering();
+    bool l6 = detectKernelTampering();          // 现为 root daemon 检测
     bool l7 = detectBootloaderStatus();
     bool l8 = detectMagiskDaemon();
     bool l9 = detectKernelSU();
     bool l10 = detectAPatch();
     bool l11 = detectXposedFramework();
     bool l12 = detectCustomROM();
+    // 新增三层 root 级检测
+    bool l14 = detectVirtualXposed();
+    bool l15 = detectGameGuardian() || detectCheatEngine() || detectLuckyPatcher() ||
+               detectGameKiller() || detectMemoryEditors() || detectCrackingTools();
+    bool l16 = detectMagiskDenyList() || detectZygiskModules() ||
+               detectLSPosedManager() || detectRiruModules() || detectModernForks();
 
     result += "L1 系统属性:     " + std::string(l1 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L2 ART注入:      " + std::string(l2 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L3 内存特征:     " + std::string(l3 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L4 挂载检查:     " + std::string(l4 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L5 侧信道:       " + std::string(l5 ? "❌ 异常" : "✅ 正常") + "\n";
-    result += "L6 内核完整性:   " + std::string(l6 ? "❌ 异常" : "✅ 正常") + "\n";
+    result += "L6 Root守护:     " + std::string(l6 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L7 Boot状态:     " + std::string(l7 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L8 Magisk:       " + std::string(l8 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L9 KernelSU:     " + std::string(l9 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L10 APatch:      " + std::string(l10 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L11 Hook框架:    " + std::string(l11 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L12 自定义ROM:   " + std::string(l12 ? "❌ 异常" : "✅ 正常") + "\n";
+    result += "L14 虚拟框架:    " + std::string(l14 ? "❌ 异常" : "✅ 正常") + "\n";
+    result += "L15 危险应用:    " + std::string(l15 ? "❌ 异常" : "✅ 正常") + "\n";
+    result += "L16 Magisk扩展:  " + std::string(l16 ? "❌ 异常" : "✅ 正常") + "\n";
 
-    int risk_count = (l1?1:0)+(l2?1:0)+(l3?1:0)+(l4?1:0)+(l5?1:0)+(l6?1:0)+(l7?1:0)+(l8?1:0)+(l9?1:0)+(l10?1:0)+(l11?1:0)+(l12?1:0);
-    result += "\n风险指标: " + std::to_string(risk_count) + "/12\n";
+    int risk_count = (l1?1:0)+(l2?1:0)+(l3?1:0)+(l4?1:0)+(l5?1:0)+(l6?1:0)+(l7?1:0)+
+                     (l8?1:0)+(l9?1:0)+(l10?1:0)+(l11?1:0)+(l12?1:0)+
+                     (l14?1:0)+(l15?1:0)+(l16?1:0);
+    result += "\n风险指标: " + std::to_string(risk_count) + "/15\n";
     if (risk_count == 0) result += "结论: ✅ 设备安全\n";
     else if (risk_count <= 3) result += "结论: ⚠️ 轻度风险\n";
-    else if (risk_count <= 6) result += "结论: ⚠️ 中等风险\n";
+    else if (risk_count <= 7) result += "结论: ⚠️ 中等风险\n";
     else result += "结论: ❌ 高风险\n";
 
     return env->NewStringUTF(result.c_str());
@@ -80,7 +106,11 @@ Java_com_apex_root_data_jni_NativeBridge_runQuickScan(JNIEnv* env, jobject) {
 JNIEXPORT jboolean JNICALL
 Java_com_apex_root_data_jni_NativeBridge_isDeviceRooted(JNIEnv*, jobject) {
     return detectSuspiciousProperties() || detectArtInjection() ||
-           detectSuspiciousMemory() || detectSuspiciousMounts();
+           detectSuspiciousMemory() || detectSuspiciousMounts() ||
+           detectMagiskDaemon() || detectKernelSU() || detectAPatch() ||
+           detectXposedFramework() || detectMagiskDenyList() ||
+           detectZygiskModules() || detectLSPosedManager() ||
+           detectRiruModules() || detectModernForks();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -194,14 +224,24 @@ Java_com_apex_root_hid_NativeHwid_restoreReal(JNIEnv*, jobject) {
 JNIEXPORT jint JNICALL
 Java_com_apex_root_data_jni_NativeBridge_getRiskScore(JNIEnv*, jobject) {
     int score = 0;
-    if (detectSuspiciousProperties()) score += 15;
-    if (detectArtInjection()) score += 15;
-    if (detectSuspiciousMemory()) score += 10;
-    if (detectSuspiciousMounts()) score += 15;
-    if (detectSyscallTimingAnomaly()) score += 10;
-    if (detectKernelTampering()) score += 15;
-    if (detectBootloaderStatus()) score += 10;
+    if (detectSuspiciousProperties()) score += 10;
+    if (detectArtInjection()) score += 12;
+    if (detectSuspiciousMemory()) score += 8;
+    if (detectSuspiciousMounts()) score += 12;
+    if (detectSyscallTimingAnomaly()) score += 8;
+    if (detectKernelTampering()) score += 12;        // root daemon
+    if (detectBootloaderStatus()) score += 8;
     if (detectMagiskDaemon()) score += 10;
+    // 新增的扩展检测
+    if (detectVirtualXposed()) score += 6;
+    if (detectGameGuardian() || detectCheatEngine() ||
+        detectLuckyPatcher() || detectGameKiller()) score += 6;
+    if (detectMemoryEditors() || detectCrackingTools()) score += 5;
+    if (detectMagiskDenyList()) score += 5;
+    if (detectZygiskModules()) score += 6;
+    if (detectLSPosedManager()) score += 5;
+    if (detectRiruModules()) score += 4;
+    if (detectModernForks()) score += 3;
     return score > 100 ? 100 : score;
 }
 
@@ -269,6 +309,124 @@ Java_com_apex_root_data_jni_NativeBridge_getPostQuantumInfo(JNIEnv* env, jobject
     info += "Secret Key Size: " + std::to_string(oqs.secretKeySize()) + " bytes\n";
     info += "Signature Size: " + std::to_string(oqs.signatureSize()) + " bytes\n";
     return env->NewStringUTF(info.c_str());
+}
+
+// ─────────────────────────────────────────────────────────────
+// 新增：L14 / L15 / L16 完整扫描接口
+// ─────────────────────────────────────────────────────────────
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_virtualXposedFullScan(JNIEnv* env, jobject) {
+    char report[4096];
+    report[0] = '\0';
+    virtualXposedFullScan(report, sizeof(report));
+    return env->NewStringUTF(report);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_dangerousAppsFullScan(JNIEnv* env, jobject) {
+    char report[4096];
+    report[0] = '\0';
+    dangerousAppsFullScan(report, sizeof(report));
+    return env->NewStringUTF(report);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_magiskExtensionsFullScan(JNIEnv* env, jobject) {
+    char report[4096];
+    report[0] = '\0';
+    magiskExtensionsFullScan(report, sizeof(report));
+    return env->NewStringUTF(report);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectVirtualXposed(JNIEnv*, jobject) {
+    return detectVirtualXposed();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectTaiChi(JNIEnv*, jobject) {
+    return detectTaiChi();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectDualSpaceApps(JNIEnv*, jobject) {
+    return detectDualSpaceApps();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectGameGuardian(JNIEnv*, jobject) {
+    return detectGameGuardian();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectCheatEngine(JNIEnv*, jobject) {
+    return detectCheatEngine();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectLuckyPatcher(JNIEnv*, jobject) {
+    return detectLuckyPatcher();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectMemoryEditors(JNIEnv*, jobject) {
+    return detectMemoryEditors();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectCrackingTools(JNIEnv*, jobject) {
+    return detectCrackingTools();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectMagiskDenyList(JNIEnv*, jobject) {
+    return detectMagiskDenyList();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectZygiskModules(JNIEnv*, jobject) {
+    return detectZygiskModules();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectLSPosedManager(JNIEnv*, jobject) {
+    return detectLSPosedManager();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectRiruModules(JNIEnv*, jobject) {
+    return detectRiruModules();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectModernForks(JNIEnv*, jobject) {
+    return detectModernForks();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectHideMyApplist(JNIEnv*, jobject) {
+    return detectHideMyApplist();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectStorageIsolation(JNIEnv*, jobject) {
+    return detectStorageIsolation();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectMagiskHideLegacy(JNIEnv*, jobject) {
+    return detectMagiskHideLegacy();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectMagiskDenyListCfg(JNIEnv*, jobject) {
+    return detectMagiskDenyList();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectSyscallResultInconsistency(JNIEnv*, jobject) {
+    return detectSyscallResultInconsistency();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -355,10 +513,8 @@ Java_com_apex_root_data_jni_NativeBridge_detectMountNamespaceHiding(JNIEnv*, job
     return detectMountNamespaceHiding();
 }
 
-JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectSyscallTableHook(JNIEnv*, jobject) {
-    return detectSyscallTableHook();
-}
+// 已移除：detectSyscallTableHook —— 原 Ring0 检测（依赖 /proc/kallsyms）
+// 改用 detectSyscallResultInconsistency 替代（用户态 syscall 结果一致性检测）
 
 // ─────────────────────────────────────────────────────────────
 // ART enhanced detection

@@ -221,31 +221,48 @@ Whether for technical discussion, bug reports, or simply to chat about Android s
 | **行为分析** | 缓存时序分析 | 分析 CPU 缓存行为中的时序差异 |
 | **行为分析** | 中断延迟测量 | 测量中断响应时间的异常波动 |
 | **行为分析** | 缺页异常监控 | 监控缺页异常的频率和模式异常 |
-| **内核完整性** | 系统调用表检查 | 验证系统调用表的完整性和未被挂钩 |
-| **内核完整性** | 内核模块枚举 | 枚举已加载的内核模块，检查可疑条目 |
-| **内核完整性** | kallsyms 验证 | 验证内核符号表的一致性和完整性 |
-| **内核完整性** | perf 事件监控 | 监控硬件性能计数器中的异常模式 |
+| **行为分析** | Syscall 结果一致性 | 对比敏感路径 vs 无关路径 openat 结果差异（替代原 syscall 表 hook 检测） |
+| **Root 守护进程** | Magisk 守护进程 | 扫描 /proc/*/cmdline 中的 magiskd / magisk32 / magisk64 / kitana |
+| **Root 守护进程** | KSU 守护进程 | 扫描 ksud / ksud-next / sukid / sukisu-ultra |
+| **Root 守护进程** | APatch 守护进程 | 扫描 apd / apatch / apatchd |
+| **Root 守护进程** | service / post-fs-data 脚本 | /data/adb/{service.d, post-fs-data.d, modules.d, boot-completed.d} |
+| **Root 守护进程** | 配置 DB 指纹 | /data/adb/magisk.db, /data/adb/ksu/db, /data/adb/ap/db 等 |
 | **启动路径** | Bootloader 状态 | 检测 Bootloader 的锁定/解锁状态 |
 | **启动路径** | AVB/dm-verity 状态 | 验证 Android Verified Boot 和 dm-verity 的状态 |
 | **启动路径** | VBmeta 摘要验证 | 验证 vbmeta 分区的签名和摘要 |
 | **启动路径** | 恢复模式检测 | 检测自定义恢复环境的存在 |
-| **Root 方案指纹** | Magisk 检测 | 检测 Magisk 的存在、版本、配置和隐藏状态 |
-| **Root 方案指纹** | KernelSU 检测 | 检测 KernelSU 的存在、版本和配置 |
-| **Root 方案指纹** | APatch 检测 | 检测 APatch 的存在、KPM 内核补丁和配置 |
-| **Root 方案指纹** | Zygisk 检测 | 检测 Zygisk 进程注入和模块加载 |
-| **Hook 框架检测** | Xposed 检测 | 检测 Xposed 框架 (Riru 和 Zygisk 模式) |
+| **Root 方案指纹** | Magisk 检测 | 检测 Magisk 主流 + Delta/Kitsune/Kitana fork、守护进程与配置 |
+| **Root 方案指纹** | KernelSU 检测 | 检测 KernelSU / SukiSU / KSU-NEXT 与 Manager APP 包名 |
+| **Root 方案指纹** | APatch 检测 | 检测 APatch 主目录、APD、KPM 用户态模块、Manager APP |
+| **Root 方案指纹** | Zygisk 检测 | 检测 Zygisk / ZygiskNext / ReZygisk 进程注入和模块加载 |
+| **Hook 框架检测** | Xposed 检测 | 检测 Xposed 框架 (Riru 和 Zygisk 模式) + LSPatch |
 | **Hook 框架检测** | LSPosed 检测 | 检测 LSPosed 模块管理器及其作用域 |
-| **Hook 框架检测** | Frida 检测 | 检测 Frida 动态插桩工具及其各种连接模式 |
+| **Hook 框架检测** | Frida 检测 | 检测 Frida server / gadget / agent 多种路径 |
 | **Hook 框架检测** | Substrate/Cydia 检测 | 检测 Substrate 和 Cydia 框架 |
-| **自定义 ROM 检测** | ROM 指纹识别 | 识别超过 30 种已知的自定义 ROM |
+| **Hook 框架检测** | ART inline Hook | SandHook / Pine / Epic / Whale / ShadowHook / ByteHook |
+| **自定义 ROM 检测** | ROM 指纹识别 | 识别超过 50 种已知的自定义 ROM（含 ArrowOS / Rising / Elixir / PixelOS / StatiX 等） |
 | **自定义 ROM 检测** | 厂商修改检测 | 检测厂商特定的系统修改和定制 |
+| **虚拟框架检测** | VirtualXposed | 检测 io.va.exposed 系列（免 root Xposed 注入） |
+| **虚拟框架检测** | 太极 / TaiChi | 检测 me.weishu.exp 系列（太极·阳 / 太极·阴） |
+| **虚拟框架检测** | 双开 / 分身空间 | 平行空间 / 分身大师 / 双开大师 / 微信分身 / 360 分身 |
+| **虚拟框架检测** | 应用沙箱 | Island / Shelter / Insular / App Cloner |
+| **危险应用检测** | 内存修改器 | GameGuardian / CheatEngine / GameKiller / SB Game Hacker / GameCIH |
+| **危险应用检测** | 内购破解 | Lucky Patcher / Freedom / CreeHack / LocalIAPStore |
+| **危险应用检测** | APK 破解 | AntiLVL / 八门神器 / 大师助手 |
+| **Magisk 扩展检测** | DenyList | 检测 Magisk DenyList 配置（替代 MagiskHide） |
+| **Magisk 扩展检测** | Zygisk 模块 | Zygisk / ZygiskNext / ReZygisk 模块路径与内存痕迹 |
+| **Magisk 扩展检测** | LSPosed Manager | 检测 LSPosed Manager APP + LSPatch |
+| **Magisk 扩展检测** | Riru 模块 | 检测 Riru 核心与 edxp / sandhook 模块 |
+| **Magisk 扩展检测** | 现代 fork | Magisk Delta / Kitsune / Kitana / Alpha / Beta |
 | **SELinux 分析** | 上下文跳转检测 | 检测 SELinux 上下文的异常跳转和转换 |
 | **SELinux 分析** | 域违规审计 | 审计进程域的非正常转换和权限提升 |
-| **反隐藏探测** | Shamiko 检测 | 检测 Shamiko Zygisk 隐藏模块 |
-| **反隐藏探测** | ZygiskNext 检测 | 检测 ZygiskNext 隐藏模块 |
+| **反隐藏探测** | Shamiko 检测 | 检测 Shamiko Zygisk 隐藏模块（含新版路径） |
+| **反隐藏探测** | ZygiskNext 检测 | 检测 ZygiskNext / ReZygisk 隐藏模块 |
 | **反隐藏探测** | 进程隐藏检测 | 检测进程列表中的隐藏条目 |
 | **反隐藏探测** | 命名空间隐藏检测 | 检测挂载命名空间的伪装和隔离 |
-| **反隐藏探测** | 系统调用挂钩检测 | 检测系统调用表的隐藏挂钩 |
+| **反隐藏探测** | HideMyApplist 检测 | 检测应用列表隐藏模块（含 hma 别名） |
+| **反隐藏探测** | StorageIsolation 检测 | 检测 Rikka 存储隔离模块 |
+| **反隐藏探测** | MagiskHide (legacy) | 检测老式 MagiskHide / magiskimg 残留 |
 
 ### English
 
@@ -269,31 +286,48 @@ The core capabilities of **Environment Detection** can be summarised in the foll
 | **Behavioural Analysis** | Cache Timing Analysis | Analyses timing differentials in CPU cache behaviour |
 | **Behavioural Analysis** | Interrupt Latency Measurement | Measures anomalous fluctuations in interrupt response times |
 | **Behavioural Analysis** | Page Fault Monitoring | Monitors frequency and pattern anomalies in page faults |
-| **Kernel Integrity** | Syscall Table Inspection | Verifies syscall table integrity and absence of hooks |
-| **Kernel Integrity** | Kernel Module Enumeration | Enumerates loaded kernel modules for suspicious entries |
-| **Kernel Integrity** | kallsyms Verification | Verifies kernel symbol table consistency and integrity |
-| **Kernel Integrity** | Perf Event Monitoring | Monitors hardware performance counters for anomalous patterns |
+| **Behavioural Analysis** | Syscall Result Consistency | Compares openat results on sensitive vs random paths (replaces syscall table hook check) |
+| **Root Daemon** | Magisk Daemon | Scans /proc/*/cmdline for magiskd / magisk32 / magisk64 / kitana |
+| **Root Daemon** | KSU Daemon | Scans for ksud / ksud-next / sukid / sukisu-ultra |
+| **Root Daemon** | APatch Daemon | Scans for apd / apatch / apatchd |
+| **Root Daemon** | service / post-fs-data scripts | /data/adb/{service.d, post-fs-data.d, modules.d, boot-completed.d} |
+| **Root Daemon** | Config DB Fingerprints | /data/adb/magisk.db, /data/adb/ksu/db, /data/adb/ap/db, etc. |
 | **Boot Path** | Bootloader Status | Detects bootloader locked/unlocked status |
 | **Boot Path** | AVB/dm-verity Status | Verifies Android Verified Boot and dm-verity status |
 | **Boot Path** | VBmeta Digest Verification | Verifies vbmeta partition signature and digest |
 | **Boot Path** | Recovery Mode Detection | Detects custom recovery environment presence |
-| **Root Fingerprinting** | Magisk Detection | Detects Magisk presence, version, configuration and hiding state |
-| **Root Fingerprinting** | KernelSU Detection | Detects KernelSU presence, version and configuration |
-| **Root Fingerprinting** | APatch Detection | Detects APatch presence, KPM kernel patches and configuration |
-| **Root Fingerprinting** | Zygisk Detection | Detects Zygisk process injection and module loading |
-| **Hook Detection** | Xposed Detection | Detects Xposed framework (both Riru and Zygisk modes) |
+| **Root Fingerprinting** | Magisk Detection | Detects Magisk mainstream + Delta/Kitsune/Kitana forks, daemon, config |
+| **Root Fingerprinting** | KernelSU Detection | Detects KernelSU / SukiSU / KSU-NEXT and Manager APP package names |
+| **Root Fingerprinting** | APatch Detection | Detects APatch main dir, APD, KPM user-space modules, Manager APP |
+| **Root Fingerprinting** | Zygisk Detection | Detects Zygisk / ZygiskNext / ReZygisk process injection and module loading |
+| **Hook Detection** | Xposed Detection | Detects Xposed framework (both Riru and Zygisk modes) + LSPatch |
 | **Hook Detection** | LSPosed Detection | Detects LSPosed module manager and its scopes |
-| **Hook Detection** | Frida Detection | Detects Frida dynamic instrumentation tool and its connection modes |
+| **Hook Detection** | Frida Detection | Detects Frida server / gadget / agent through multiple paths |
 | **Hook Detection** | Substrate/Cydia Detection | Detects Substrate and Cydia frameworks |
-| **Custom ROM Detection** | ROM Fingerprinting | Identifies over 30 known custom ROMs |
+| **Hook Detection** | ART inline Hook | SandHook / Pine / Epic / Whale / ShadowHook / ByteHook |
+| **Custom ROM Detection** | ROM Fingerprinting | Identifies over 50 known custom ROMs (ArrowOS / Rising / Elixir / PixelOS / StatiX etc.) |
 | **Custom ROM Detection** | Vendor Modification Detection | Detects vendor-specific system modifications and customisations |
+| **Virtual Framework** | VirtualXposed | Detects io.va.exposed family (root-free Xposed injection) |
+| **Virtual Framework** | TaiChi | Detects me.weishu.exp family (TaiChi yang / yin) |
+| **Virtual Framework** | Dual Space / Clone | Parallel Space / Dual Master / WeChat Clone / 360 Clone |
+| **Virtual Framework** | App Sandbox | Island / Shelter / Insular / App Cloner |
+| **Dangerous Apps** | Memory Editors | GameGuardian / CheatEngine / GameKiller / SB Game Hacker / GameCIH |
+| **Dangerous Apps** | IAP Crackers | Lucky Patcher / Freedom / CreeHack / LocalIAPStore |
+| **Dangerous Apps** | APK Crackers | AntiLVL / Bamen Shenqi / Dashi Zhushou |
+| **Magisk Extensions** | DenyList | Detects Magisk DenyList configuration (replaces MagiskHide) |
+| **Magisk Extensions** | Zygisk Modules | Zygisk / ZygiskNext / ReZygisk module paths and memory traces |
+| **Magisk Extensions** | LSPosed Manager | Detects LSPosed Manager APP + LSPatch |
+| **Magisk Extensions** | Riru Modules | Detects Riru core and edxp / sandhook modules |
+| **Magisk Extensions** | Modern Forks | Magisk Delta / Kitsune / Kitana / Alpha / Beta |
 | **SELinux Analysis** | Context Jump Detection | Detects anomalous SELinux context transitions and switches |
 | **SELinux Analysis** | Domain Violation Auditing | Audits abnormal domain transitions and privilege escalation |
-| **Anti-Hiding Probes** | Shamiko Detection | Detects Shamiko Zygisk hiding module |
-| **Anti-Hiding Probes** | ZygiskNext Detection | Detects ZygiskNext hiding module |
+| **Anti-Hiding Probes** | Shamiko Detection | Detects Shamiko Zygisk hiding module (incl. new paths) |
+| **Anti-Hiding Probes** | ZygiskNext Detection | Detects ZygiskNext / ReZygisk hiding module |
 | **Anti-Hiding Probes** | Process Hiding Detection | Detects hidden entries in process listings |
 | **Anti-Hiding Probes** | Namespace Hiding Detection | Detects mount namespace cloaking and isolation |
-| **Anti-Hiding Probes** | Syscall Hook Detection | Detects hidden hooks in the syscall table |
+| **Anti-Hiding Probes** | HideMyApplist Detection | Detects app-list hiding module (incl. hma alias) |
+| **Anti-Hiding Probes** | StorageIsolation Detection | Detects Rikka storage isolation module |
+| **Anti-Hiding Probes** | MagiskHide (legacy) | Detects legacy MagiskHide / magiskimg leftovers |
 
 <br>
 
@@ -368,17 +402,17 @@ Root 隐藏方案经常通过操作挂载命名空间（Mount Namespace）来隐
 
 这一层使用高精度计时器和统计分析方法，能够在其他检测维度都失败时提供决定性的证据。
 
-#### 第六层 · 内核完整性验证
+#### 第六层 · Root 守护进程检测（原内核完整性，已迁移到 Ring3）
 
-内核是 Android 安全模型的最终仲裁者。如果内核本身被篡改——无论是通过 KernelSU 的内核模块、APatch 的 KPM 补丁，还是直接的 syscall 表挂钩——那么所有运行在内核之上的检测都可能是不可信的。
+> **重要变更**：原"内核完整性"层依赖 `/proc/kallsyms`、`/proc/modules`、`/proc/sys/kernel/tainted` 等 Ring0（内核态）信息源。这些检测在现代 GKI 内核上受 `kptr_restrict` 限制，且需要 `CAP_SYS_MODULE` 等特权，与本项目"仅 root 级检测"的定位不符。已全部移除。
+
+现改为：**Root 守护进程 / service 脚本 / 配置 DB** 三类 root 级检测。这是真正稳定、跨内核版本通用的检测手段。
 
 本层的检测内容包括：
-- 系统调用表的哈希验证
-- 内核符号表（kallsyms）的一致性检查
-- 已加载内核模块的枚举和分析
-- 内核代码段的完整性校验
-- 内核安全模块（LSM）挂钩点的检查
-- CPU 漏洞缓解状态的验证
+- Magisk / KernelSU / APatch 守护进程（magiskd / ksud / apd / kitana / sukid 等）在 `/proc/*/cmdline` 中的痕迹
+- Root 方案的 service / post-fs-data / boot-completed 脚本目录
+- Root 方案的配置 DB（`/data/adb/magisk.db`、`/data/adb/ksu/db`、`/data/adb/ap/db` 等）
+- Root 方案的二进制 / 工具链 / 日志文件
 
 #### 第七层 · 启动链完整性
 
@@ -414,9 +448,26 @@ Hook 框架能够在不修改磁盘文件的情况下改变应用和系统行为
 
 这一层检测固件级别的篡改，包括 TEE（Trusted Execution Environment）的完整性和 Modem 固件的状态。
 
+#### 第十四层 · 虚拟框架 / 双开分身检测
+
+VirtualXposed、太极、平行空间等虚拟化框架可在不 root 的情况下注入 Xposed 模块到目标进程，绕过传统 root 检测。本层覆盖 io.va.exposed 系列、me.weishu.exp 系列、平行空间 / 分身大师 / 双开大师 / 360 分身 / 微信分身、Island / Shelter / Insular / App Cloner 等典型包名与进程痕迹。
+
+#### 第十五层 · 危险应用检测
+
+检测常见的游戏作弊 / 系统篡改工具，包括 GameGuardian、CheatEngine、Lucky Patcher、GameKiller、SB Game Hacker、GameCIH、Freedom、CreeHack、LocalIAPStore、八门神器等。这些应用通常需要 root 或本身就是 root 滥用工具。
+
+#### 第十六层 · Magisk 扩展生态检测
+
+Magisk 生态衍生品的覆盖检测，包括：
+- **DenyList**：替代 MagiskHide 的应用隐藏配置
+- **Zygisk 模块**：Zygisk / ZygiskNext / ReZygisk 的路径与内存痕迹
+- **LSPosed Manager**：LSPosed Manager APP 与 LSPatch（免 root patch）
+- **Riru 模块**：Riru 核心 + edxp / sandhook 等历史模块
+- **现代 fork**：Magisk Delta / Kitsune / Kitana / Alpha / Beta
+
 ### English
 
-The detection architecture of this project is built upon **thirteen detection layers**, each targeting a specific abstraction level of the Android security stack. This layered approach is not arbitrary — it is grounded in a deep understanding of modern root hiding techniques. Every hiding technique must operate on one or more layers of the stack, and our strategy is to conduct independent, cross-validating detection at every layer.
+The detection architecture of this project is built upon **sixteen detection layers**, each targeting a specific abstraction level of the Android security stack. This layered approach is not arbitrary — it is grounded in a deep understanding of modern root hiding techniques. Every hiding technique must operate on one or more layers of the stack, and our strategy is to conduct independent, cross-validating detection at every layer.
 
 #### Layer 1 · System Property Integrity
 
@@ -476,17 +527,17 @@ Detection at this layer includes:
 
 This layer employs high-precision timers and statistical analysis methods to provide decisive evidence when all other detection dimensions fail.
 
-#### Layer 6 · Kernel Integrity Verification
+#### Layer 6 · Root Daemon Detection (formerly Kernel Integrity, migrated to Ring3)
 
-The kernel serves as the ultimate arbiter of the Android security model. If the kernel itself has been compromised — whether through KernelSU kernel modules, APatch KPM patches, or direct syscall table hooks — then all detection operating above the kernel layer becomes potentially untrustworthy.
+> **Important change**: The former "Kernel Integrity" layer relied on Ring0 (kernel-space) sources such as `/proc/kallsyms`, `/proc/modules`, and `/proc/sys/kernel/tainted`. These sources are restricted by `kptr_restrict` on modern GKI kernels and require privileges such as `CAP_SYS_MODULE`, conflicting with this project's "root-level only" positioning. All such checks have been removed.
+
+The layer now performs three categories of root-level detection: **root daemons**, **service scripts**, and **config DBs**. These are stable, cross-kernel-version detection methods.
 
 Detection at this layer includes:
-- Syscall table hash verification
-- Kernel symbol table (kallsyms) consistency checking
-- Enumeration and analysis of loaded kernel modules
-- Integrity verification of kernel code segments
-- Inspection of Linux Security Module (LSM) hook points
-- Verification of CPU vulnerability mitigation status
+- Magisk / KernelSU / APatch daemon processes (magiskd / ksud / apd / kitana / sukid) in `/proc/*/cmdline`
+- Root-solution service / post-fs-data / boot-completed script directories
+- Root-solution config DBs (`/data/adb/magisk.db`, `/data/adb/ksu/db`, `/data/adb/ap/db`, etc.)
+- Root-solution binaries, toolchains and log files
 
 #### Layer 7 · Boot Chain Integrity
 
@@ -521,6 +572,23 @@ Over 30 known custom ROMs possess unique system signatures. This layer identifie
 #### Layer 13 · Firmware Integrity
 
 This layer detects firmware-level tampering, including TEE (Trusted Execution Environment) integrity and modem firmware status.
+
+#### Layer 14 · Virtual Framework / Dual Space Detection
+
+VirtualXposed, TaiChi, Parallel Space and similar virtualisation frameworks can inject Xposed modules into target processes without root, bypassing traditional root detection. This layer covers io.va.exposed series, me.weishu.exp series, Parallel Space / Dual Master / 360 Clone / WeChat Clone, and Island / Shelter / Insular / App Cloner.
+
+#### Layer 15 · Dangerous Apps Detection
+
+Detects common game cheating / system tampering tools including GameGuardian, CheatEngine, Lucky Patcher, GameKiller, SB Game Hacker, GameCIH, Freedom, CreeHack, LocalIAPStore, Bamen Shenqi, etc. These apps typically require root or are themselves root-abuse tools.
+
+#### Layer 16 · Magisk Extension Ecosystem Detection
+
+Coverage for Magisk ecosystem derivatives:
+- **DenyList**: app hiding configuration replacing MagiskHide
+- **Zygisk Modules**: paths and memory traces of Zygisk / ZygiskNext / ReZygisk
+- **LSPosed Manager**: LSPosed Manager APP + LSPatch (root-free patch)
+- **Riru Modules**: Riru core + edxp / sandhook historical modules
+- **Modern Forks**: Magisk Delta / Kitsune / Kitana / Alpha / Beta
 
 <br>
 

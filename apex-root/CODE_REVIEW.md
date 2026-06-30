@@ -107,3 +107,74 @@ Self-hide 绕过检测：        ⭐⭐⭐☆☆ 中
 - [ ] KPTI/KAISER 兼容性测试
 - [ ] Samsung RKP / Hypervisor 层绕过
 - [ ] 多白名单 UID 组管理 UI
+
+## 八、Ring0 → Ring3 检测迁移（已完成）
+
+### 背景
+
+原检测体系混用了 Ring0（内核态）与 Ring3（用户态 / root 级）两类信息源。Ring0 检测在以下方面存在严重可靠性问题：
+
+1. `/proc/kallsyms` 在生产内核受 `kptr_restrict=2` 屏蔽，符号地址显示为 `0x0000000000000000`，原"地址全零即视为被擦除"逻辑易误报。
+2. `/proc/modules` 在 Android 13+ GKI 内核需要 `CAP_SYS_MODULE` 才能完整枚举。
+3. `/proc/sys/kernel/tainted` 在生产设备上始终为非零（OEM 模块、out-of-tree 驱动）。
+4. `/sys/kpm`、`/proc/kernelsu` 等 sysfs / procfs 节点本质是 root 方案的内核 API，存在与否取决于该 root 方案是否安装了对应内核补丁，而不是 root 状态本身。
+5. eBPF / KPM 检测在 SELinux enforcing 下需要 `bpf { prog_load prog_run }` 等特权，普通 root 用户态不可用。
+
+### 已移除的 Ring0 检测点
+
+| 原检测点 | 原位置 | 替代方案 |
+|---|---|---|
+| kallsyms 符号全零扫描 | `layer6_kernel.cpp::detectKernelTampering` | root 守护进程进程扫描（magiskd / ksud / apd 等） |
+| `/proc/modules` 模块枚举 | `layer6_kernel.cpp::detectKernelModuleTampering` | service / post-fs-data 脚本目录检测 |
+| `/proc/sys/kernel/tainted` | `layer6_kernel.cpp::detectKernelTaint` | root 方案配置 DB（magisk.db / ksu/db / ap/db） |
+| `/proc/kallsyms` sys_call_table 地址 | `anti_hiding.cpp::detectSyscallTableHook` | `layer5_sidechannel.cpp::detectSyscallResultInconsistency` |
+| `/sys/kpm` sysfs 节点 | `layer10_apatch.cpp::detectAPatchKPM` | `/data/adb/ap/kpm` 用户态模块目录 |
+| `/proc/kernelsu` 内核 API | `layer9_ksu.cpp::detectKernelSU` | KSU Manager APP 包名 + 主目录 |
+| `/dev/binder` 直接访问反推 SELinux | `layer5_sidechannel.cpp::detectBinderLatencyAnomaly` | （移除，无替代——误报率太高） |
+| `/sys/kernel/security/ipe/audit` | `layer7_boot.cpp::detectTEECompromise` | （仍在 firmware 层保留 TEE 文件检查，但不再依赖内核 debugfs） |
+
+### 新增的 Ring3 检测点（L14 / L15 / L16）
+
+#### Layer 14 · 虚拟框架 / 双开分身
+
+- `detectVirtualXposed()`：io.va.exposed 系列包名 + 内存痕迹
+- `detectTaiChi()`：me.weishu.exp / me.weishu.taichi 包名 + 进程扫描
+- `detectDualSpaceApps()`：平行空间 / 分身大师 / 双开大师 / 360 分身 / 微信分身
+- `detectAppCloningFrameworks()`：Island / Shelter / Insular / App Cloner
+
+#### Layer 15 · 危险应用
+
+- `detectGameGuardian()`：GameGuardian 内存修改器
+- `detectCheatEngine()`：CheatEngine Android 移植版
+- `detectLuckyPatcher()`：Lucky Patcher 内购破解
+- `detectGameKiller()`：GameKiller 内存修改器
+- `detectMemoryEditors()`：Xmodgames / SB Game Hacker / GameCIH / DaxAttack
+- `detectCrackingTools()`：Freedom / CreeHack / LocalIAPStore / AntiLVL / 八门神器
+
+#### Layer 16 · Magisk 扩展生态
+
+- `detectMagiskDenyList()`：Magisk DenyList 配置（替代 MagiskHide）
+- `detectZygiskModules()`：Zygisk / ZygiskNext / ReZygisk 路径与内存痕迹
+- `detectLSPosedManager()`：LSPosed Manager APP + LSPatch
+- `detectRiruModules()`：Riru 核心 + edxp / sandhook 历史模块
+- `detectModernForks()`：Magisk Delta / Kitsune / Kitana / Alpha / Beta
+
+#### 新增独立隐藏框架检测
+
+- `detectHideMyApplist()`：Rikka HideMyApplist（含 hma 别名）
+- `detectStorageIsolation()`：Rikka 存储隔离
+- `detectMagiskHideLegacy()`：老式 MagiskHide / magiskimg 残留
+
+### 评分调整
+
+原 `getRiskScore()` 仅基于 8 个核心指标。现扩充到 18 个指标，新增项权重较轻（3-6 分），保持 root 守护进程 / Magisk 主流方案的高权重（10-15 分）。最大总分仍截断为 100。
+
+### 风险评估
+
+| 维度 | 评级 |
+|---|---|
+| Ring3 检测可靠性 | ⭐⭐⭐⭐⭐ 极高（不再依赖内核态信息源） |
+| 跨内核版本兼容性 | ⭐⭐⭐⭐⭐ 极高（不再受 kptr_restrict 影响） |
+| 检测覆盖率（root 方案） | ⭐⭐⭐⭐⭐ 极高（覆盖主流 + fork + 隐藏框架 + 危险应用） |
+| 反作弊对抗强度 | ⭐⭐⭐⭐☆ 高（Ring0 隐藏工具无法绕过 Ring3 文件路径检测） |
+| 已知限制 | Ring3 root 检测仍可被 Shamiko / ZygiskNext 等 Zygisk 模块通过 mount namespace + 进程隐藏绕过，但由 L4/L5/anti_hiding 交叉验证补位 |

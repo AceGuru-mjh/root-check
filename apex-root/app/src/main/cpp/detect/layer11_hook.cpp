@@ -23,6 +23,25 @@ bool detectXposedFramework() {
     if (check_maps_for("xposed")) return true;
     if (check_maps_for("edxp")) return true;
     if (check_maps_for("dexposed")) return true;
+    // 扩充：现代 Xposed 兼容框架
+    if (check_maps_for("lspd")) return true;
+    if (check_maps_for("lsposed")) return true;
+    if (check_maps_for("liblspd")) return true;
+    if (check_maps_for("riru")) return true;
+    if (check_maps_for("zygisk")) return true;
+    if (check_maps_for("zygisknext")) return true;
+    if (check_maps_for("rezygisk")) return true;
+    // ART inline hook 框架
+    if (check_maps_for("sandhook")) return true;
+    if (check_maps_for("libsandhook")) return true;
+    if (check_maps_for("pine")) return true;
+    if (check_maps_for("libpine")) return true;
+    if (check_maps_for("epic")) return true;
+    if (check_maps_for("libepic")) return true;
+    if (check_maps_for("whale")) return true;
+    if (check_maps_for("libwhale")) return true;
+    if (check_maps_for("shadowhook")) return true;
+    if (check_maps_for("bytehook")) return true;
     // Check Xposed app installation
     int64_t ret;
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
@@ -30,7 +49,15 @@ bool detectXposedFramework() {
     if (ret == 0) return true;
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
                  : "=r"(ret) : "i"(__NR_access), "r"("/data/data/com.solohsu.xposed.edxp"), "i"(F_OK) : "x0", "x1", "x8");
-    return ret == 0;
+    if (ret == 0) return true;
+    // 扩充：LSPosed Manager / LSPatch
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
+                 : "=r"(ret) : "i"(__NR_access), "r"("/data/data/org.lsposed.manager"), "i"(F_OK) : "x0", "x1", "x8");
+    if (ret == 0) return true;
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
+                 : "=r"(ret) : "i"(__NR_access), "r"("/data/data/org.lsposed.lspatch"), "i"(F_OK) : "x0", "x1", "x8");
+    if (ret == 0) return true;
+    return false;
 }
 
 bool detectLSPosed() {
@@ -53,11 +80,36 @@ bool detectFrida() {
     if (check_maps_for("frida-helper")) return true;
     if (check_maps_for("gadget")) return true;
     if (check_maps_for("gum")) return true;
-    // Check Frida server binary
-    int64_t ret;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_access), "r"("/data/local/tmp/frida-server"), "i"(F_OK) : "x0", "x1", "x8");
-    return ret == 0;
+    if (check_maps_for("gum-js-loop")) return true;
+    if (check_maps_for("linjector")) return true;
+    if (check_maps_for("frida-gum")) return true;
+    // 扩充：Frida server 二进制路径
+    static const char* frida_paths[] = {
+        "/data/local/tmp/frida-server",
+        "/data/local/tmp/frida",
+        "/data/local/tmp/re.frida.server",
+        "/data/local/tmp/fs",
+        "/system/bin/frida-server",
+        "/vendor/bin/frida-server",
+        "/data/local/tmp/frida-server-arm",
+        "/data/local/tmp/frida-server-arm64",
+        "/data/local/tmp/frida-server-x86",
+        "/data/local/tmp/frida-server-x86_64",
+        // Frida gadget (so 注入版本)
+        "/data/local/tmp/libfrida-gadget.so",
+        "/data/local/tmp/frida-gadget.so",
+        // Magisk 模块安装的 frida
+        "/data/adb/modules/frida",
+        "/data/adb/modules/frida-server",
+        nullptr
+    };
+    for (auto p = frida_paths; *p; ++p) {
+        int64_t ret;
+        asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
+                     : "=r"(ret) : "i"(__NR_access), "r"(*p), "i"(F_OK) : "x0", "x1", "x8");
+        if (ret == 0) return true;
+    }
+    return false;
 }
 
 bool detectSubstrate() {
