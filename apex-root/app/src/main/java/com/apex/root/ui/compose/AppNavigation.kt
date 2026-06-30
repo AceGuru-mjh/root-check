@@ -32,12 +32,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.apex.root.data.ThemeMode
 import com.apex.root.ui.compose.screens.AlertScreen
+import com.apex.root.ui.compose.screens.AboutScreen
 import com.apex.root.ui.compose.screens.BaselineComparisonScreen
 import com.apex.root.ui.compose.screens.ConfigScreen
 import com.apex.root.ui.compose.screens.DashboardScreen
 import com.apex.root.ui.compose.screens.FeatureTestScreen
 import com.apex.root.ui.compose.screens.GlassLogViewerScreen
 import com.apex.root.ui.compose.screens.GlassPermissionGuideScreen
+import com.apex.root.ui.compose.screens.HideModeScreen
 import com.apex.root.ui.compose.screens.HistoryScreen
 import com.apex.root.ui.compose.screens.KernelInfoScreen
 import com.apex.root.ui.compose.screens.ReportScreen
@@ -199,6 +201,8 @@ private fun MainApp(
                         onNavigateToTimingChart = { navController.navigate("timing_chart") },
                         onNavigateToWhitelist = { navController.navigate("whitelist") },
                         onNavigateToConfig = { navController.navigate("config") },
+                        onNavigateToHideMode = { navController.navigate("hide_mode") },
+                        onNavigateToAbout = { navController.navigate("about") },
                         apexViewModel = apexViewModel
                     )
                 }
@@ -312,6 +316,24 @@ private fun MainApp(
                     exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
                 ) {
                     ConfigScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = "hide_mode",
+                    enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(tween(300)) },
+                    exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
+                ) {
+                    HideModeScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = "about",
+                    enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(tween(300)) },
+                    exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
+                ) {
+                    AboutScreen(
                         onBack = { navController.popBackStack() }
                     )
                 }

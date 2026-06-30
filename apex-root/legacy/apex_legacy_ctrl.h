@@ -18,7 +18,6 @@ public:
     bool is_running() const;
 
     int mount_namespace_hide();
-    int dynamic_hook_hide();
 
 private:
     struct Impl;
@@ -27,6 +26,5 @@ private:
     bool loaded_;
 
     int fork_hide_daemon();
-    int apply_mount_ns_proxy();
     int install_ld_preload_hook();
 };

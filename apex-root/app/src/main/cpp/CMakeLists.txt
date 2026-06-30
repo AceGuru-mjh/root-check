@@ -47,6 +47,8 @@ if(HAVE_LIBOQS)
 endif()
 
 # ─── Core include paths ─────────────────────────────────────
+# 包含 ctrl/ 和 legacy/ 目录（位于仓库根 apex-root/ 下）
+set(APEX_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 set(CORE_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -65,6 +67,9 @@ set(CORE_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/micro_services
     ${CMAKE_CURRENT_SOURCE_DIR}/ai_engine
     ${CMAKE_CURRENT_SOURCE_DIR}/updater
+    # 新增：ctrl/ 和 legacy/ 在仓库根
+    ${APEX_ROOT_DIR}/ctrl
+    ${APEX_ROOT_DIR}/legacy
     ${APEX_LIBOQS_DIR}/include  # liboqs headers for prebuilt case
 )
 
@@ -86,6 +91,21 @@ file(GLOB_RECURSE GAME_SRC "game/*.cpp")
 file(GLOB_RECURSE HID_SRC "hid/*.cpp")
 file(GLOB_RECURSE COMMON_SRC "common/*.cpp")
 
+# ─── Hide mode sources (位于仓库根 ctrl/ 和 legacy/) ────────
+file(GLOB CTRL_SRC
+    "${APEX_ROOT_DIR}/ctrl/apex_self_hide.cpp"
+    "${APEX_ROOT_DIR}/ctrl/apex_firewall_ctrl.cpp"
+    "${APEX_ROOT_DIR}/ctrl/apex_runtime_engine.cpp"
+    "${APEX_ROOT_DIR}/ctrl/apex_pmu_spoof.c"
+    "${APEX_ROOT_DIR}/ctrl/apex_timing_spoof.c"
+    "${APEX_ROOT_DIR}/ctrl/apex_mem_spoof.c"
+)
+file(GLOB LEGACY_SRC
+    "${APEX_ROOT_DIR}/legacy/apex_legacy_ctrl.cpp"
+)
+# JNI hide mode bridge
+set(HIDE_JNI_SRC "${APEX_ROOT_DIR}/jni/native_bridge.cpp")
+
 # ─── Library: bare syscall (static) ────────────────────────
 add_library(baresyscall STATIC ${BARESYSCALL_SRC})
 target_include_directories(baresyscall PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/bare_syscall)
@@ -101,6 +121,7 @@ target_compile_options(trusted_root PRIVATE -fvisibility=hidden -fstack-protecto
 # ─── Main shared library: apex_root (all features + JNI) ──
 add_library(apex_root SHARED
     native-lib.cpp
+    ${HIDE_JNI_SRC}
     ${COMMON_SRC}
     ${DETECT_SRC}
     ${EBPF_SRC}
@@ -114,6 +135,9 @@ add_library(apex_root SHARED
     ${AI_ENGINE_SRC}
     ${UPDATER_SRC}
     ${MICRO_ENGINE_SRC}
+    # 新增：隐藏功能模块
+    ${CTRL_SRC}
+    ${LEGACY_SRC}
 )
 target_include_directories(apex_root PRIVATE ${CORE_INCLUDE_DIRS})
 target_link_libraries(apex_root PRIVATE baresyscall trusted_root ${LIBOQS_TARGET} dl log)

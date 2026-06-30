@@ -20,19 +20,19 @@ import com.apex.root.ui.compose.*
 @Composable
 fun WhitelistScreen(
     onBack: () -> Unit = {},
-    whitelist: List<String> = remember {
-        mutableStateOf(listOf(
-            "com.google.android.gms",
-            "com.android.systemui",
-            "com.android.phone"
-        ))
-    }.value,
+    whitelist: List<String> = listOf(
+        "com.google.android.gms",
+        "com.android.systemui",
+        "com.android.phone"
+    ),
     onAddPackage: (String) -> Unit = {},
     onRemovePackage: (String) -> Unit = {}
 ) {
     var showDialog by remember { mutableStateOf(false) }
     var newPackage by remember { mutableStateOf("") }
-    var items by remember { mutableStateOf(whitelist) }
+    // 修复：原代码 remember { mutableStateOf(whitelist) } 不依赖 whitelist 参数作为 key，
+    // 导致外部数据更新后 UI 仍显示旧数据。改为 remember(whitelist) 让 recomposition 时刷新。
+    var items by remember(whitelist) { mutableStateOf(whitelist) }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -102,8 +102,13 @@ fun WhitelistScreen(
                     }
                     Spacer(Modifier.height(4.dp))
 
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(items) { pkg ->
+                    // 修复：LazyColumn 加 weight(1f) 让它填充剩余空间并可滚动
+                    // 加 key 参数提升 Compose 性能
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f).fillMaxWidth()
+                    ) {
+                        items(items, key = { it }) { pkg ->
                             GlassCard(cornerRadius = 14.dp) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -111,7 +116,15 @@ fun WhitelistScreen(
                                 ) {
                                     GlassIconBox(icon = Icons.Default.CheckCircle, accentColor = AccentMint, size = 32.dp, iconSize = 16.dp)
                                     Spacer(Modifier.width(12.dp))
-                                    Text(pkg, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium, fontSize = 13.sp, color = TextPrimary)
+                                    Text(
+                                        pkg,
+                                        modifier = Modifier.weight(1f),
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.sp,
+                                        color = TextPrimary,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
                                     IconButton(onClick = {
                                         items = items - pkg
                                         onRemovePackage(pkg)

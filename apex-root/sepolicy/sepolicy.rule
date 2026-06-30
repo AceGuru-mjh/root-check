@@ -1,5 +1,11 @@
 # APEX-Root SELinux policy overlay for Magisk/KSU/APatch
 # Place in: /data/adb/modules/apex-root/sepolicy.rule
+#
+# 修复：原文件使用 apex_app / proc_t 等非标准 type 名。
+# 在 AOSP 标准 sepolicy 中：
+#   - proc_t 不存在，标准是 'proc' type
+#   - apex_app 不存在，应使用 untrusted_app domain
+# 现统一改为 AOSP 标准类型名。
 
 # APEX-Root daemon domain
 allow apex_firewall apex_firewall:capability { sys_admin sys_rawio sys_ptrace };
@@ -11,13 +17,36 @@ allow apex_firewall sysfs_bpf:file { read write open };
 # Legacy hide: mount namespace & process hiding
 allow apex_firewall self:process { ptrace getsched setsched };
 allow apex_firewall proc:dir { read search };
-allow apex_firewall proc_t:file { read open getattr };
+allow apex_firewall proc:file { read open getattr };
 
 # Communication: APEX app -> firewall daemon
-allow apex_app apex_firewall:unix_stream_socket { connectto };
-allow apex_app apex_firewall:fd use;
-allow apex_firewall apex_app:unix_stream_socket { accept read write };
+# 使用 AOSP 标准 untrusted_app domain (覆盖 API 25/27/29)
+allow untrusted_app apex_firewall:unix_stream_socket { connectto };
+allow untrusted_app apex_firewall:fd use;
+allow apex_firewall untrusted_app:unix_stream_socket { accept read write };
+allow untrusted_app_25 apex_firewall:unix_stream_socket { connectto };
+allow untrusted_app_27 apex_firewall:unix_stream_socket { connectto };
+allow untrusted_app_29 apex_firewall:unix_stream_socket { connectto };
+allow untrusted_app_25 apex_firewall:fd use;
+allow untrusted_app_27 apex_firewall:fd use;
+allow untrusted_app_29 apex_firewall:fd use;
 
 # LD_PRELOAD hook (legacy path)
 allow apex_firewall system_lib_file:file { read execute };
 allow apex_firewall self:process { execmem };
+
+# Mount operations for self-hide (bind-mount empty dir over /proc/<pid>)
+allow apex_firewall labeledfs:dir { mounton };
+allow apex_firewall proc:dir { mounton };
+
+# Access /data/adb for hide operations
+allow apex_firewall adb_data_file:dir { read search write add_name remove_name };
+allow apex_firewall adb_data_file:file { read write open create unlink getattr setattr };
+
+# Property service access (setprop apex.* )
+allow apex_firewall property_socket:sock_file write;
+allow apex_firewall default_prop:property_service set;
+
+# Read baseline files
+allow apex_firewall system_file:file { read open getattr };
+allow apex_firewall system_file:dir { read search };

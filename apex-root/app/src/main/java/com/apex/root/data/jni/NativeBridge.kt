@@ -175,6 +175,37 @@ object NativeBridge {
         magiskExtensionsFullScanNative()
     }
 
+    // ─── Hide Mode (隐藏模式控制) ──────────────────────
+    // 启动隐藏模式：对除 APEX 外的应用隐藏 root 痕迹
+    fun enableHideMode(appUid: Int): Int = NativeLibraryLoader.safeCall(-1) {
+        enableHideModeNative(appUid)
+    }
+
+    // 启动游戏模式：aggressive 隐藏 + 性能优化
+    fun enableGameMode(appUid: Int): Int = NativeLibraryLoader.safeCall(-1) {
+        enableGameModeNative(appUid)
+    }
+
+    // 停止隐藏模式，回到 Detection
+    fun disableHideMode() = NativeLibraryLoader.safeCall(Unit) {
+        disableHideModeNative()
+    }
+
+    // 隐藏模式是否激活
+    fun isHideModeActive(): Boolean = NativeLibraryLoader.safeCall(false) {
+        isHideModeActiveNative()
+    }
+
+    // 获取当前模式 (0=Detect / 1=Hide / 2=Game)
+    fun getCurrentMode(): Int = NativeLibraryLoader.safeCall(0) {
+        getCurrentModeNative()
+    }
+
+    // 获取 native 层最近一次错误信息
+    fun getLastError(): String = NativeLibraryLoader.safeCall("") {
+        getLastErrorNative()
+    }
+
     // ─── Firmware partition integrity ─────────────────
     fun detectFirmwareTampering(): Boolean = NativeLibraryLoader.safeCall(false) {
         detectFirmwareTamperingNative()
@@ -249,4 +280,12 @@ object NativeBridge {
     private external fun firmwareFullScanNative(): String
     private external fun getDeviceIdentifierNative(): String?
     private external fun sha3_512Native(data: ByteArray): ByteArray
+
+    // Hide Mode native methods (由 jni/native_bridge.cpp 实现)
+    private external fun enableHideModeNative(appUid: Int): Int
+    private external fun enableGameModeNative(appUid: Int): Int
+    private external fun disableHideModeNative()
+    private external fun isHideModeActiveNative(): Boolean
+    private external fun getCurrentModeNative(): Int
+    private external fun getLastErrorNative(): String
 }

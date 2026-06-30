@@ -48,13 +48,18 @@ fun DashboardScreen(
     onNavigateToTimingChart: (() -> Unit)? = null,
     onNavigateToWhitelist: (() -> Unit)? = null,
     onNavigateToConfig: (() -> Unit)? = null,
+    onNavigateToHideMode: (() -> Unit)? = null,
+    onNavigateToAbout: (() -> Unit)? = null,
     apexViewModel: ApexViewModel? = null
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var sandboxName by remember { mutableStateOf("game-sandbox") }
     var cureExpanded by remember { mutableStateOf(false) }
     var islandExpanded by remember { mutableStateOf(false) }
     var showExportPreview by remember { mutableStateOf(false) }
+    // 修复：治愈操作确认对话框（防止误触"完全重置"等不可逆操作）
+    var pendingCureLevel by remember { mutableStateOf<CureLevel?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -117,7 +122,7 @@ fun DashboardScreen(
                 Spacer(Modifier.height(16.dp))
 
                 GlassUpdateBanner(
-                    version = "3.2.0",
+                    version = "3.1.0",
                     onUpdate = { /* launch update */ },
                     onClose = { /* dismiss */ }
                 )
@@ -181,14 +186,14 @@ fun DashboardScreen(
                         Spacer(Modifier.height(10.dp))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CureButton("轻度处理", AccentMint) { onApplyCure(CureLevel.LIGHT) }
-                        CureButton("标准修复", AccentGold) { onApplyCure(CureLevel.STANDARD) }
+                        CureButton("轻度处理", AccentMint) { pendingCureLevel = CureLevel.LIGHT }
+                        CureButton("标准修复", AccentGold) { pendingCureLevel = CureLevel.STANDARD }
                     }
                     if (cureExpanded) {
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            CureButton("深度恢复", Color(0xFFFF7043)) { onApplyCure(CureLevel.DEEP) }
-                            CureButton("完全重置", ErrorRed) { onApplyCure(CureLevel.FACTORY) }
+                            CureButton("深度恢复", Color(0xFFFF7043)) { pendingCureLevel = CureLevel.DEEP }
+                            CureButton("完全重置", ErrorRed) { pendingCureLevel = CureLevel.FACTORY }
                         }
                         Spacer(Modifier.height(10.dp))
                         Box(
@@ -268,11 +273,24 @@ fun DashboardScreen(
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
-                            onClick = { },
+                            onClick = {
+                                // 修复：原 onClick 为空，现调用 NativeGuard.startGuardian
+                                val ok = com.apex.root.guard.NativeGuard.startGuardian()
+                                val msg = if (ok) "守护进程已启动" else "启动失败：原生库未加载或权限不足"
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
                             shape = RoundedCornerShape(10.dp)
                         ) { Text("启动守护") }
-                        OutlinedButton(onClick = { }, shape = RoundedCornerShape(10.dp)) { Text("校验系统") }
+                        OutlinedButton(
+                            onClick = {
+                                // 修复：原 onClick 为空，现调用 NativeGuard.checkIntegrity
+                                val ok = com.apex.root.guard.NativeGuard.checkIntegrity()
+                                val msg = if (ok) "系统完整性校验通过" else "检测到完整性异常"
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(10.dp)
+                        ) { Text("校验系统") }
                     }
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -339,7 +357,8 @@ fun DashboardScreen(
                 }
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ToolChip("详细配置", Icons.Default.Tune, AccentGold, onNavigateToConfig)
-                    if (onNavigateToConfig != null) Spacer(Modifier.weight(1f))
+                    ToolChip("隐藏模式", Icons.Default.VisibilityOff, AccentPurple, onNavigateToHideMode)
+                    ToolChip("关于", Icons.Default.Info, AccentMint, onNavigateToAbout)
                 }
 
                 Spacer(Modifier.height(32.dp))
@@ -371,6 +390,62 @@ fun DashboardScreen(
                     }
                 )
             }
+        }
+
+        // 治愈操作确认对话框
+        pendingCureLevel?.let { level ->
+            val levelInfo = when (level) {
+                CureLevel.LIGHT -> Triple("轻度处理", "清除常见 root 痕迹（su 二进制、临时文件）。风险：低", AccentMint)
+                CureLevel.STANDARD -> Triple("标准修复", "移除 root 框架并恢复 boot 分区。风险：中，需要重启", AccentGold)
+                CureLevel.DEEP -> Triple("深度恢复", "深度清理系统级 root 痕迹，可能影响系统设置。风险：高，需要重启", Color(0xFFFF7043))
+                CureLevel.FACTORY -> Triple("完全重置", "恢复出厂设置，所有数据将被清除。风险：极高，不可逆", ErrorRed)
+            }
+            AlertDialog(
+                onDismissRequest = { pendingCureLevel = null },
+                containerColor = if (LocalIsDarkTheme.current) DeepSurface else Color.White,
+                titleContentColor = if (LocalIsDarkTheme.current) TextPrimary else Color.Black,
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = levelInfo.third,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("确认${levelInfo.first}", fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Column {
+                        Text(levelInfo.second, fontSize = 14.sp, color = if (LocalIsDarkTheme.current) TextSecondary else Color(0xFF475569))
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "此操作不可撤销，请确保已备份重要数据。",
+                            fontSize = 12.sp,
+                            color = levelInfo.third,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            onApplyCure(level)
+                            pendingCureLevel = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = levelInfo.third),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("确认执行")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingCureLevel = null }) {
+                        Text("取消")
+                    }
+                }
+            )
         }
     }
 }

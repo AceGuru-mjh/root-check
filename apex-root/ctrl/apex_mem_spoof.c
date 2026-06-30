@@ -91,7 +91,7 @@ ssize_t apex_mem_spoof_read(int fd, void *buf, size_t count, off_t offset) {
          */
         if ((size_t)offset < (4ULL * 1024 * 1024 * 1024)) {
             /* Generate per-read pseudo-random data for high offsets */
-            uint64_t state = (uint64_t)offset ^ 0xAPEX5ECRETULL;
+            uint64_t state = (uint64_t)offset ^ 0xA1C0FFEE5E1C0ULL;
             size_t remaining = count;
             char *out = (char *)buf;
             while (remaining >= sizeof(uint64_t)) {
@@ -124,7 +124,7 @@ ssize_t apex_mem_spoof_read(int fd, void *buf, size_t count, off_t offset) {
     memcpy(buf, fake_mem + offset, to_copy);
     if (to_copy < count) {
         /* Fill remainder with generated data instead of zeros */
-        uint64_t state = (uint64_t)(offset + to_copy) ^ 0xAPEX5ECRETULL;
+        uint64_t state = (uint64_t)(offset + to_copy) ^ 0xA1C0FFEE5E1C0ULL;
         size_t remaining = count - to_copy;
         char *out = (char *)buf + to_copy;
         while (remaining >= sizeof(uint64_t)) {

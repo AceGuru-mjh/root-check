@@ -4,10 +4,13 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.apex.root.data.*
+import com.apex.root.data.jni.NativeBridge
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = SettingsRepository(application)
@@ -74,26 +77,71 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     // ── Hide / Spoof ──
 
+    /**
+     * 隐藏策略切换：UNIDIRECTIONAL / FULL / TARGETED
+     * 接线：调用 NativeBridge.enableHideMode(appUid) 真正激活 native 层隐藏。
+     * UNIDIRECTIONAL → 启用 Hide 模式
+     * FULL → 启用 Game 模式（aggressive 隐藏）
+     * TARGETED → 关闭 native 隐藏（仅依赖检测层）
+     */
     fun updateHideStrategy(strategy: HideStrategy) {
         _settings.value = _settings.value.copy(hideStrategy = strategy); persist()
+        // 接线 native 层
+        viewModelScope.launch(Dispatchers.IO) {
+            val appUid = getApplication<Application>().applicationInfo.uid
+            when (strategy) {
+                HideStrategy.UNIDIRECTIONAL -> { NativeBridge.enableHideMode(appUid) }
+                HideStrategy.FULL -> { NativeBridge.enableGameMode(appUid) }
+                HideStrategy.TARGETED -> { NativeBridge.disableHideMode() }
+            }
+        }
     }
 
     fun updateHwidSpoof(enabled: Boolean) {
         _settings.value = _settings.value.copy(hwidSpoofEnabled = enabled); persist()
+        // 接线：HWID 伪装由 NativeHwid.spoofAll / restoreReal 控制
+        viewModelScope.launch(Dispatchers.IO) {
+            if (enabled) {
+                com.apex.root.hid.NativeHwid.spoofAll()
+            } else {
+                com.apex.root.hid.NativeHwid.restoreReal()
+            }
+        }
     }
 
     fun updateBootloaderSpoof(enabled: Boolean) {
         _settings.value = _settings.value.copy(bootloaderSpoofEnabled = enabled); persist()
+        // Bootloader 伪装需要 root + resetprop，由 native 层处理
+        // TODO: 接入 NativeBridge.bootloaderSpoof (待实现)
     }
 
     // ── Game Mode ──
 
+    /**
+     * 游戏模式开关
+     * 接线：调用 NativeBridge.enableGameMode / disableHideMode
+     */
     fun updateGameMode(enabled: Boolean) {
         _settings.value = _settings.value.copy(gameModeEnabled = enabled); persist()
+        viewModelScope.launch(Dispatchers.IO) {
+            val appUid = getApplication<Application>().applicationInfo.uid
+            if (enabled) {
+                NativeBridge.enableGameMode(appUid)
+            } else {
+                NativeBridge.disableHideMode()
+            }
+        }
     }
 
     fun updateGameModeAggressive(enabled: Boolean) {
         _settings.value = _settings.value.copy(gameModeAggressive = enabled); persist()
+        // aggressive 模式：重新启用 game mode 以应用更激进的隐藏
+        if (_settings.value.gameModeEnabled) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val appUid = getApplication<Application>().applicationInfo.uid
+                NativeBridge.enableGameMode(appUid)
+            }
+        }
     }
 
     // ── Sandbox ──
@@ -363,17 +411,41 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ── Side-channel Spoof ──
+    // 这些 spoof 由 ctrl/ 下的 C 函数实现（apex_pmu_spoof.c / apex_timing_spoof.c / apex_mem_spoof.c）
+    // 当前通过 enableHideMode 间接激活；独立 JNI 接口待后续实现。
+    // 启用任一 spoof 时，自动激活 Hide 模式以确保 spoof 生效。
 
     fun updatePmuSpoof(enabled: Boolean) {
         _settings.value = _settings.value.copy(pmuSpoofEnabled = enabled); persist()
+        // PMU spoof 在 Hide 模式下由 apex_pmu_spoof.c::apex_pmu_spoof_read 提供
+        if (enabled && !NativeBridge.isHideModeActive()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val appUid = getApplication<Application>().applicationInfo.uid
+                NativeBridge.enableHideMode(appUid)
+            }
+        }
     }
 
     fun updateTimingSpoof(enabled: Boolean) {
         _settings.value = _settings.value.copy(timingSpoofEnabled = enabled); persist()
+        // Timing spoof 由 apex_timing_spoof.c::apex_timing_adjust_clock 提供
+        if (enabled && !NativeBridge.isHideModeActive()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val appUid = getApplication<Application>().applicationInfo.uid
+                NativeBridge.enableHideMode(appUid)
+            }
+        }
     }
 
     fun updateMemorySpoof(enabled: Boolean) {
         _settings.value = _settings.value.copy(memorySpoofEnabled = enabled); persist()
+        // Memory spoof 由 apex_mem_spoof.c::apex_mem_spoof_read 提供
+        if (enabled && !NativeBridge.isHideModeActive()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val appUid = getApplication<Application>().applicationInfo.uid
+                NativeBridge.enableHideMode(appUid)
+            }
+        }
     }
 
     // ── Sound & Haptic ──

@@ -77,7 +77,7 @@ fun AlertScreen(
                         color = ErrorRed, letterSpacing = 0.5.sp)
                     Spacer(Modifier.height(10.dp))
                     Text(alert.description, style = MaterialTheme.typography.bodyMedium,
-                        color = TextPrimary)
+                        color = TextPrimary, maxLines = 6, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Spacer(Modifier.height(24.dp))
                     Box(Modifier.fillMaxWidth().height(0.5.dp)
                         .background(Color.White.copy(alpha = 0.05f)))
