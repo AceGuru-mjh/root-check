@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.apex.root.ui.compose.screens
 
 import androidx.compose.foundation.clickable
@@ -281,6 +283,7 @@ fun SettingsScreen(
             AboutGroup(apexViewModel, onNavigateToLogs)
             Spacer(Modifier.height(40.dp))
         }
+    }
     }
 }
 
@@ -932,7 +935,7 @@ private fun NetworkFirewallGroup(settings: AppSettings, vm: SettingsViewModel) {
         GlassSettingsItem(
             label = "更新代理",
             subtitle = if (settings.updateProxy.isBlank()) "未设置" else settings.updateProxy,
-            icon = Icons.Default.Tunnel,
+            icon = Icons.Default.VpnKey,
             accentColor = AccentBlue,
             onClick = { proxyExpanded = !proxyExpanded }
         )
@@ -4332,7 +4335,7 @@ private fun WirelessGroup(settings: AppSettings, vm: SettingsViewModel) {
         GlassSettingsItem(
             label = "飞行模式行为",
             subtitle = if (settings.airplaneModeBehavior) "飞行模式开启时自动暂停检测" else "不受影响",
-            icon = Icons.Default.AirplaneModeActive,
+            icon = Icons.Default.AirplanemodeActive,
             accentColor = AccentGold,
             trailing = {
                 Switch(

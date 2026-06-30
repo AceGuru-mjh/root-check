@@ -2,6 +2,7 @@
 #include "bare_syscall/syscall_bridge.h"
 #include "trusted_root/crypto/crypto_primitives.h"
 #include <cstring>
+#include <fcntl.h>
 
 // ═══════════════════════════════════════════════════════════
 //  ms006 · Root 守护进程探测（原 Kernel Integrity Probe）

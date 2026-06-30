@@ -27,7 +27,7 @@ import com.apex.root.viewmodel.trusted.LogType
 fun GlassLogViewerScreen(viewModel: ApexViewModel, onBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
     val isDark = LocalIsDarkTheme.current
-    val hColor = if (isDark) TextPrimary else LightTextPrimary
+    val hColor = if (isDark) TextPrimary else TextPrimary
 
     // 修复：搜索框改为真正的 OutlinedTextField + 实现过滤逻辑
     var searchQuery by remember { mutableStateOf("") }

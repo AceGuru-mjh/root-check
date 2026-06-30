@@ -60,7 +60,7 @@ object DetectionProtocol {
         try {
             val dis = DataInputStream(ByteArrayInputStream(data))
             val magic = dis.readByte()
-            if (magic != MAGIC_REPORT.toInt()) return null
+            if (magic.toInt() != MAGIC_REPORT.toInt()) return null
             val version = dis.readByte()
             val timestamp = dis.readLong()
             val taskId = readString(dis, 36)
@@ -146,7 +146,7 @@ object DetectionProtocol {
         try {
             val dis = DataInputStream(ByteArrayInputStream(data))
             val magic = dis.readByte()
-            if (magic != MAGIC_ALERT.toInt()) return null
+            if (magic.toInt() != MAGIC_ALERT.toInt()) return null
             dis.readByte() // version
             val alertId = readString(dis, 36)
             val typeOrd = dis.readByte().toInt()

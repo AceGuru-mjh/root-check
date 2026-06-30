@@ -335,7 +335,7 @@ fun SectionHeader(title: String) {
 @Composable
 fun GlassSettingsGroup(
     title: String,
-    items: List<GlassSettingsItem>
+    content: @Composable () -> Unit
 ) {
     Column(modifier = Modifier.padding(horizontal = 20.dp)) {
         Text(
@@ -353,60 +353,59 @@ fun GlassSettingsGroup(
                 .liquidGlass(cornerRadius = 20.dp)
         ) {
             Column {
-                items.forEachIndexed { index, item ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { item.onClick() }
-                            .padding(horizontal = 20.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (item.icon != null) {
-                                GlassIconBox(
-                                    icon = item.icon,
-                                    accentColor = item.accentColor ?: TextTertiary,
-                                    size = 32.dp, iconSize = 16.dp
-                                )
-                                Spacer(Modifier.width(14.dp))
-                            }
-                            Column {
-                                Text(item.label, color = TextPrimary, fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium)
-                                if (item.subtitle.isNotEmpty()) {
-                                    Text(item.subtitle, color = TextTertiary, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                        if (item.trailing != null) {
-                            item.trailing()
-                        } else {
-                            Icon(
-                                Icons.Default.KeyboardArrowRight,
-                                contentDescription = null,
-                                tint = TextTertiary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                    if (index < items.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = hl(0.04f)
-                        )
-                    }
-                }
+                content()
             }
         }
     }
 }
 
-data class GlassSettingsItem(
-    val label: String,
-    val subtitle: String = "",
-    val icon: ImageVector? = null,
-    val accentColor: Color? = null,
-    val onClick: () -> Unit = {},
-    val trailing: @Composable (() -> Unit)? = null
-)
+@Composable
+fun GlassSettingsItem(
+    label: String,
+    subtitle: String = "",
+    icon: ImageVector? = null,
+    accentColor: Color? = null,
+    onClick: () -> Unit = {},
+    trailing: @Composable (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                GlassIconBox(
+                    icon = icon,
+                    accentColor = accentColor ?: TextTertiary,
+                    size = 32.dp, iconSize = 16.dp
+                )
+                Spacer(Modifier.width(14.dp))
+            }
+            Column {
+                Text(label, color = TextPrimary, fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium)
+                if (subtitle.isNotEmpty()) {
+                    Text(subtitle, color = TextTertiary, fontSize = 11.sp)
+                }
+            }
+        }
+        if (trailing != null) {
+            trailing()
+        } else {
+            Icon(
+                Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = TextTertiary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+    Divider(
+        modifier = Modifier.padding(horizontal = 20.dp),
+        color = hl(0.04f)
+    )
+}

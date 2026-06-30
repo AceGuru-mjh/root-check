@@ -5,6 +5,7 @@
 #include "bare_syscall/syscall_bridge.h"
 #include <cstring>
 #include <mutex>
+#include <android/log.h>
 
 namespace apex {
 namespace signing {

@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,8 +36,8 @@ data class TimingSeries(
 fun TimingChartScreen(
     onBack: () -> Unit = {},
     series: List<TimingSeries> = listOf(
-        TimingSeries("基线(Baseline)", (1..50).map { 100 + (Random.nextLong() * 20).mod(20) }, AccentMint),
-        TimingSeries("当前(Current)", (1..50).map { 100 + (Random.nextLong() * 80).mod(80) + (if (it > 30) 50 else 0) }, ErrorRed)
+        TimingSeries("基线(Baseline)", (1..50).map { 100L + (Random.nextLong() * 20).mod(20) }, AccentMint),
+        TimingSeries("当前(Current)", (1..50).map { 100L + (Random.nextLong() * 80).mod(80) + (if (it > 30) 50L else 0L) }, ErrorRed)
     )
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()

@@ -1,9 +1,15 @@
 #include "ebpf_manager.h"
 #include "../common/syscall.h"
+#include "../common/utils.h"
+#include "bare_syscall/syscall_bridge.h"
 #include <cstring>
+#include <cstdio>
 
 namespace apex {
 namespace ebpf {
+
+// 前向声明
+static void close_fd(int64_t fd);
 
 // BPF syscall command numbers
 #define BPF_SYSCALL 280
@@ -180,7 +186,7 @@ bool attach_kprobe(int prog_fd, const char* symbol) {
         g_kprobes[g_kprobe_count].prog_fd = prog_fd;
         strncpy(g_kprobes[g_kprobe_count].symbol, symbol, 127);
         g_kprobes[g_kprobe_count].symbol[127] = '\0';
-        g_kprobes[g_kprobe_count].attached_at = bs_clock_ns();
+        g_kprobes[g_kprobe_count].attached_at = ::bs_clock_ns();
         g_kprobe_count++;
     }
 
@@ -204,7 +210,7 @@ bool attach_tracepoint(int prog_fd, const char* category, const char* event) {
         g_kprobes[g_kprobe_count].prog_fd = prog_fd;
         snprintf(g_kprobes[g_kprobe_count].symbol, 127,
             "tracepoint_%s_%s", category, event);
-        g_kprobes[g_kprobe_count].attached_at = bs_clock_ns();
+        g_kprobes[g_kprobe_count].attached_at = ::bs_clock_ns();
         g_kprobe_count++;
     }
 
@@ -326,14 +332,14 @@ bool hide_file(const char* path) {
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
         "mount -o bind /dev/null '%s' 2>/dev/null", path);
-    bool result = utils::exec_su_command_quiet(cmd);
+    bool result = apex::utils::exec_su_command_quiet(cmd);
 
     if (!result) {
         // Fallback: try to rename/move the file to a hidden location
         char rename_cmd[512];
         snprintf(rename_cmd, sizeof(rename_cmd),
             "mv '%s' '%s.hidden' 2>/dev/null", path, path);
-        result = utils::exec_su_command_quiet(rename_cmd);
+        result = apex::utils::exec_su_command_quiet(rename_cmd);
     }
 
     // Also try umask-based hiding: set permissions to 000
@@ -341,7 +347,7 @@ bool hide_file(const char* path) {
         char chmod_cmd[512];
         snprintf(chmod_cmd, sizeof(chmod_cmd),
             "chmod 000 '%s' 2>/dev/null", path);
-        result = utils::exec_su_command_quiet(chmod_cmd);
+        result = apex::utils::exec_su_command_quiet(chmod_cmd);
     }
 
     return result;

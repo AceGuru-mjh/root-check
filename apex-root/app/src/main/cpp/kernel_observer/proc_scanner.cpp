@@ -1,10 +1,12 @@
 #include "proc_scanner.h"
 #include "bare_syscall/syscall_bridge.h"
+#include "common/syscall.h"
 #include "trusted_root/crypto/crypto_primitives.h"
 #include <cstring>
 #include <cinttypes>
 #include <cstdlib>
 #include <csignal>
+#include <fcntl.h>
 #include <android/log.h>
 
 #ifndef DT_DIR

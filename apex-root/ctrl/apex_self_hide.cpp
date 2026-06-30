@@ -4,10 +4,12 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/mount.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
+#include <sched.h>
 #include <android/log.h>
 
 #define LOG_TAG "APEX-SELF"

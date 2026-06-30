@@ -70,6 +70,13 @@ fun DashboardScreen(
     }
 
     val scanLogs = remember { mutableStateListOf<String>() }
+    // 修复：scoreLabel 提到顶层，使 GlassShareReportPreview 也能访问
+    val scoreLabel = when {
+        uiState.riskScore > 60 -> "高风险"
+        uiState.riskScore > 30 -> "有风险"
+        uiState.riskScore > 10 -> "轻度风险"
+        else -> "安全"
+    }
     LaunchedEffect(uiState.isScanning) {
         if (uiState.isScanning) {
             scanLogs.clear()
@@ -105,13 +112,6 @@ fun DashboardScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                val scoreLabel = when {
-                    uiState.riskScore > 60 -> "高风险"
-                    uiState.riskScore > 30 -> "有风险"
-                    uiState.riskScore > 10 -> "轻度风险"
-                    else -> "安全"
-                }
-
                 if (uiState.isLoading) {
                     GlassSkeletonCard()
                     Spacer(Modifier.height(12.dp))
@@ -597,7 +597,7 @@ private fun CureButton(label: String, color: Color, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ToolChip(label: String, icon: ImageVector, color: Color, onClick: (() -> Unit)?) {
+private fun RowScope.ToolChip(label: String, icon: ImageVector, color: Color, onClick: (() -> Unit)?) {
     if (onClick == null) return
     OutlinedButton(
         onClick = onClick,

@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -137,8 +138,8 @@ fun ConfigScreen(
                 Spacer(Modifier.height(12.dp))
 
                 when (activeTab) {
-                    0 -> DetectionConfigPanel()
-                    1 -> HideConfigPanel()
+                    0 -> DetectionConfigPanel(context, onRunDetection)
+                    1 -> HideConfigPanel(context, onApplyHide, onRevertHide)
                     2 -> GlobalSettingsPanel()
                     3 -> ResultsPanel()
                 }
@@ -149,8 +150,12 @@ fun ConfigScreen(
 
 // ═══════════════════════════ Detection Config ═══════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DetectionConfigPanel() {
+private fun DetectionConfigPanel(
+    context: android.content.Context,
+    onRunDetection: (() -> Unit)?
+) {
     var detectionLevel by remember { mutableIntStateOf(2) }
     val levelLabels = listOf("基础 L0", "标准 L1", "深度 L2", "取证 L3")
 
@@ -192,6 +197,8 @@ private fun DetectionConfigPanel() {
             detectionItems.values.flatten().associate { it.id to it.defaultEnabled }
         )
     }
+
+    val categoryList = remember { detectionItems.entries.toList() }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -256,7 +263,6 @@ private fun DetectionConfigPanel() {
             )
         }
 
-        val categoryList = remember { detectionItems.entries.toList() }
         items(categoryList) { (category, items) ->
             CategoryConfigSection(
                 title = category.label,
@@ -354,8 +360,13 @@ private fun CategoryConfigSection(
 
 // ═══════════════════════════ Hide Config ═══════════════════════════
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HideConfigPanel() {
+private fun HideConfigPanel(
+    context: android.content.Context,
+    onApplyHide: (() -> Unit)?,
+    onRevertHide: (() -> Unit)?
+) {
     var hideLevel by remember { mutableIntStateOf(2) }
     val levelLabels = listOf("基础 H0", "标准 H1", "深度 H2", "取证 H3")
 

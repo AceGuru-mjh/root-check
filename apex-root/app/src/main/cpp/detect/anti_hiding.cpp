@@ -388,12 +388,10 @@ bool detectMagiskHideLegacy() {
     return false;
 }
 
-bool detectMagiskDenyList() {
-    // 新版 Magisk DenyList (替代 MagiskHide)
-    if (check_access("/data/adb/magisk/denylist") == 0) return true;
-    if (check_access("/data/adb/magisk/deny/") == 0) return true;
-    return false;
-}
+// detectMagiskDenyList() is implemented in layer16_magisk_extensions.cpp
+// to avoid duplicate-symbol linker errors. The function is declared in
+// anti_hiding.h and layer16_magisk_extensions.h; only the layer16 .cpp
+// provides the definition.
 
 // 已移除：detectSyscallTableHook()
 // 原函数依赖 /proc/kallsyms 内核符号表扫描，属 Ring0 检测。

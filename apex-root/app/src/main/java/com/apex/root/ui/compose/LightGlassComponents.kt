@@ -49,7 +49,7 @@ fun LiquidRadarScanner(
     val isDark = LocalIsDarkTheme.current
     val coreColor = if (isDark) AccentMint else DayAccent
     val waveColor = if (isDark) AccentMint else DayAccentSoft
-    val textColor = if (isDark) TextPrimary else LightTextPrimary
+    val textColor = if (isDark) TextPrimary else TextPrimary
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -161,8 +161,8 @@ fun GlassModalBottomSheet(
     onConfirm: () -> Unit
 ) {
     val isDark = LocalIsDarkTheme.current
-    val textPrimary = if (isDark) TextPrimary else LightTextPrimary
-    val textSecondary = if (isDark) TextSecondary else LightTextSecondary
+    val textPrimary = if (isDark) TextPrimary else TextPrimary
+    val textSecondary = if (isDark) TextSecondary else TextSecondary
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -222,8 +222,8 @@ fun GlassEmptyState(
     modifier: Modifier = Modifier
 ) {
     val isDark = LocalIsDarkTheme.current
-    val hColor = if (isDark) TextPrimary else LightTextPrimary
-    val bColor = if (isDark) TextSecondary else LightTextSecondary
+    val hColor = if (isDark) TextPrimary else TextPrimary
+    val bColor = if (isDark) TextSecondary else TextSecondary
 
     Box(
         modifier = modifier
@@ -262,8 +262,8 @@ fun GlassPermissionGuide(
 ) {
     val isDark = LocalIsDarkTheme.current
     val bg = if (isDark) DeepBackground else DayBg
-    val hColor = if (isDark) TextPrimary else LightTextPrimary
-    val bColor = if (isDark) TextSecondary else LightTextSecondary
+    val hColor = if (isDark) TextPrimary else TextPrimary
+    val bColor = if (isDark) TextSecondary else TextSecondary
 
     Box(
         modifier = Modifier.fillMaxSize().background(bg),
@@ -332,7 +332,8 @@ fun GlassPermissionGuide(
 fun CollapsibleGlassTopBar(
     title: String,
     collapsedFraction: Float = 0f,
-    navigationIcon: @Composable (() -> Unit)? = null
+    navigationIcon: @Composable (() -> Unit)? = null,
+    actions: @Composable (() -> Unit)? = null
 ) {
     val isDark = LocalIsDarkTheme.current
     val baseBgColor = if (isDark) Color(0xFF0F172A) else Color.White
@@ -374,7 +375,7 @@ data class LogEntry(val type: LogType, val time: String, val message: String)
 @Composable
 fun GlassLogViewer(logs: List<LogEntry>) {
     val isDark = LocalIsDarkTheme.current
-    val textColor = if (isDark) TextPrimary else LightTextPrimary
+    val textColor = if (isDark) TextPrimary else TextPrimary
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Box(
@@ -436,7 +437,7 @@ fun GlassUpdateBanner(
     if (!visible) return
 
     val isDark = LocalIsDarkTheme.current
-    val hColor = if (isDark) TextPrimary else LightTextPrimary
+    val hColor = if (isDark) TextPrimary else TextPrimary
     val bColor = if (isDark) TextSecondary else Color(0xFF64748B)
 
     Box(

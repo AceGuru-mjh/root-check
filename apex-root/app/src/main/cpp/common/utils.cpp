@@ -1,6 +1,8 @@
 #include "utils.h"
 #include "syscall.h"
 #include <cstring>
+#include <fcntl.h>
+#include <sys/types.h>
 
 namespace apex {
 namespace utils {
@@ -40,11 +42,13 @@ ssize_t read_file(const char* path, char* buf, size_t size) {
 }
 
 bool write_file(const char* path, const char* content, size_t len) {
+    int flags = O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC;
+    int mode = 0644;
     int64_t fd = 0;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd)
-                 : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_WRONLY | O_CLOEXEC), "i"(0644)
-                 : "x0", "x1", "x2", "x8");
+    asm volatile("mov x8, %[nr]; mov x0, %[dir]; mov x1, %[path]; mov x2, %[flags]; mov x3, %[mode]; svc #0; mov %[fd], x0"
+                 : [fd] "=r"(fd)
+                 : [nr] "i"(__NR_openat), [dir] "i"(AT_FDCWD), [path] "r"(path), [flags] "r"((int64_t)flags), [mode] "r"((int64_t)mode)
+                 : "x0", "x1", "x2", "x3", "x8");
     if (fd < 0) return false;
 
     int64_t n;
@@ -217,6 +221,7 @@ std::string sha256_hash(const uint8_t* data, size_t len) {
     h[0] += a; h[1] += b; h[2] += c; h[3] += d;
     h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
 
+    static const char hex[] = "0123456789abcdef";
     char result[65];
     for (int i = 0; i < 8; i++) {
         int idx = i * 8;

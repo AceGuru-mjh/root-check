@@ -16,12 +16,7 @@
 #define DT_UNKNOWN 0
 #endif
 
-struct apex_dirent64 {
-    uint64_t d_ino;
-    int64_t d_off;
-    unsigned short d_reclen;
-    unsigned char d_type;
-    char d_name[];
-};
+// apex_dirent64 is defined in bare_syscall/syscall_bridge.h.
+// Include that header to use the struct.
 
 #endif

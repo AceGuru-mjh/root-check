@@ -1,5 +1,6 @@
 #include "hwid_spoof.h"
 #include "../common/utils.h"
+#include "../common/syscall.h"
 #include "../bare_syscall/syscall_bridge.h"
 #include <cstring>
 #include <cinttypes>

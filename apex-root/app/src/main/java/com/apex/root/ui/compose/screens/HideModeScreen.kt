@@ -360,7 +360,7 @@ private fun StatusCard(
                             .background(statusColor)
                     )
                 }
-                HorizontalDivider(color = TextTertiary.copy(alpha = 0.2f))
+                Divider(color = TextTertiary.copy(alpha = 0.2f))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -387,6 +387,7 @@ private fun StatusCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModeOptionCard(
     icon: ImageVector,

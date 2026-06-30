@@ -14,7 +14,9 @@ bool initialize_device_key() {
     if (g_initialized) return true;
 
     // Generate a Dilithium3 keypair using liboqs via our crypto wrapper
-    g_device_key = crypto::generate_dilithium_keypair();
+    auto kp = crypto::generate_dilithium_keypair();
+    g_device_key.public_key = kp.public_key;
+    g_device_key.secret_key = kp.secret_key;
 
     if (g_device_key.public_key.empty() || g_device_key.secret_key.empty()) {
         return false;

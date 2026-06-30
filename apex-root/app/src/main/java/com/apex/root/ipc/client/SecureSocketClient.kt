@@ -74,7 +74,7 @@ class SecureSocketClient(
         return withContext(dispatcher) {
             try {
                 val seq = sequenceNumber.incrementAndGet()
-                val header = ByteBuffer.allocate(12).putLong(seq).putInt(data.length).array()
+                val header = ByteBuffer.allocate(12).putLong(seq).putInt(data.size).array()
                 val payload = header + data
                 writer?.write(encodeHex(payload))
                 writer?.newLine()

@@ -2,9 +2,11 @@
 #include "bare_syscall/syscall_bridge.h"
 #include "p2p_comm/replica_socket.h"
 #include "trusted_root/crypto/oqs_signature.h"
+#include "trusted_root/crypto/crypto_primitives.h"
 #include <cstring>
 #include <mutex>
 #include <cinttypes>
+#include <android/log.h>
 
 namespace apex {
 namespace consensus {
@@ -103,7 +105,7 @@ bool start_replica(ReplicaRole role, bool with_isolation) {
                 uint8_t hb_msg[72];
                 hb_msg[0] = 0x01; // heartbeat
                 std::memcpy(hb_msg + 1, &now, 8);
-                std::memset(hb_msg + 9, 0, 64);
+                std::memset(hb_msg + 9, 0, 63);
                 // Sign heartbeat with replica's key
                 auto hb_sig = crypto::dilithium_sign(hb_msg + 1, 8,
                     g_replica_priv[idx].data(), g_replica_priv[idx].size());

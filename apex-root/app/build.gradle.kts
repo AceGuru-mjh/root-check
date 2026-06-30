@@ -37,7 +37,7 @@ android {
             cmake {
                 cppFlags += "-std=c++20 -fvisibility=hidden -fstack-protector-strong"
                 arguments += "-DANDROID_STL=c++_static"
-                arguments += "-DAPEX_USE_LIBOQS=ON"
+                arguments += "-DAPEX_USE_LIBOQS=OFF"
             }
         }
     }
@@ -78,7 +78,7 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.28.1"
+            version = "3.22.1"
         }
     }
 

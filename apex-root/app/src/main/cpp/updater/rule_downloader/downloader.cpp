@@ -91,7 +91,7 @@ UpdateManifest fetch_manifest() {
 bool download_rules(UpdateManifest& manifest, RulePackage& pkg) {
     // Try to read from local file first (simulating download)
     // In production: HTTPS download with certificate pinning
-    int fd = static_cast<int>(bs_openat(-100, manifest.download_url, 0, 0));
+    int fd = static_cast<int>(bs_openat(-100, manifest.download_url.c_str(), 0, 0));
     if (fd < 0) {
         // Fall back to bundled rules asset
         fd = static_cast<int>(bs_openat(-100, "/data/rules/bundled", 0, 0));
@@ -108,7 +108,6 @@ bool download_rules(UpdateManifest& manifest, RulePackage& pkg) {
                 pkg.signature = crypto::dilithium_sign(
                     pkg.data.data(), pkg.data.size(),
                     keypair.secret_key.data(), keypair.secret_key.size());
-                pkg.public_key = keypair.public_key;
             }
             return true;
         }

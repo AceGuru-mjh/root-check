@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cinttypes>
 #include <cstdlib>
+#include <fcntl.h>
 
 // ─── Constants ────────────────────────────────────────────
 

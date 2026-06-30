@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -111,7 +112,7 @@ private fun MetaballEffect(animTime: Float, screenWidthDp: androidx.compose.ui.u
                 val matrixFilter = RenderEffect.createColorFilterEffect(
                     ColorMatrixColorFilter(alphaMatrix)
                 )
-                renderEffect = RenderEffect.createChainEffect(matrixFilter, blur)
+                renderEffect = RenderEffect.createChainEffect(matrixFilter, blur).asComposeRenderEffect()
             },
         contentAlignment = Alignment.Center
     ) {

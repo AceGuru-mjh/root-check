@@ -387,9 +387,8 @@ DilithiumKeypair generate_dilithium_keypair() {
         uint64_t r = bs_get_random();
         std::memcpy(kp.secret_key.data() + i, &r, 8);
     }
-    kp.public_key = sha3_512(kp.secret_key.data(), kp.secret_key.size());
-    std::vector<uint8_t> pk_vec(kp.public_key.begin(), kp.public_key.end());
-    kp.public_key = pk_vec;
+    auto pk_array = sha3_512(kp.secret_key.data(), kp.secret_key.size());
+    kp.public_key = std::vector<uint8_t>(pk_array.begin(), pk_array.end());
     kp.valid = true;
     return kp;
 }

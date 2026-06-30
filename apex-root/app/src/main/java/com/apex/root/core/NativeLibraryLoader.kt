@@ -8,14 +8,14 @@ import android.util.Log
  * 避免重复加载和未捕获的 UnsatisfiedLinkError 崩溃。
  */
 object NativeLibraryLoader {
-    private const val TAG = "NativeLoader"
-    private const val LIB_NAME = "apex_root"
+    const val TAG = "NativeLoader"
+    const val LIB_NAME = "apex_root"
 
     @Volatile
-    private var loaded = false
+    var loaded = false
 
     @Volatile
-    private var loadFailed = false
+    var loadFailed = false
 
     /**
      * 安全加载 native 库。如果加载失败，不会抛出异常，而是标记为失败。

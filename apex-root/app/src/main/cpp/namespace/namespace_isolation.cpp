@@ -47,10 +47,13 @@ int create_isolated_environment(const char* sandbox_name) {
         int64_t ret;
 
         // Mount a new procfs
+        unsigned long mount_flags_rec = MS_REC | MS_SLAVE;
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
-                     : "=r"(ret) : "i"(__NR_mount), "r"("proc"), "r"("/proc"), "r"("proc"), "i"(MS_REC | MS_SLAVE), "r"(nullptr));
+                     : "=r"(ret) : "i"(__NR_mount), "r"("proc"), "r"("/proc"), "r"("proc"), "r"(mount_flags_rec), "r"(nullptr)
+                     : "x0", "x1", "x2", "x3", "x4", "x8");
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
-                     : "=r"(ret) : "i"(__NR_mount), "r"("proc"), "r"("/proc"), "r"("proc"), "i"(0), "r"(nullptr));
+                     : "=r"(ret) : "i"(__NR_mount), "r"("proc"), "r"("/proc"), "r"("proc"), "i"(0), "r"(nullptr)
+                     : "x0", "x1", "x2", "x3", "x4", "x8");
 
         // Set hostname
         const char* host = "android-sandbox";
@@ -58,17 +61,17 @@ int create_isolated_environment(const char* sandbox_name) {
                      : : "r"(host), "r"(10LL) : "x0", "x8");
 
         // Set NO_NEW_PRIVS (required before seccomp)
-        asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0"
-                     : : "i"(__NR_prctl), "i"(PR_SET_NO_NEW_PRIVS), "i"(1), "i"(0), "i"(0) : "x0", "x8");
+        asm volatile("mov x8, %0; mov x0, %1; mov x1, %2; mov x2, %3; svc #0"
+                     : : "i"(__NR_prctl), "i"(PR_SET_NO_NEW_PRIVS), "i"(1), "i"(0) : "x0", "x8");
 
         // Signal parent we're ready
-        asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0"
+        asm volatile("mov x8, %0; mov x0, %1; mov x1, %2; svc #0"
                      : : "i"(__NR_kill), "i"(0), "i"(10) : "x0", "x8"); // SIGUSR1
 
         // Wait for seccomp flag from parent
         volatile uint64_t* flag_ptr = reinterpret_cast<volatile uint64_t*>(seccomp_flag);
         for (int i = 0; i < 100 && *flag_ptr == 0; i++) {
-            asm volatile("mov x8, %1; mov x0, %2; svc #0"
+            asm volatile("mov x8, %0; mov x0, %1; svc #0"
                          : : "i"(__NR_nanosleep), "r"(10000000LL) : "x0", "x8"); // 10ms
         }
 
@@ -79,7 +82,7 @@ int create_isolated_environment(const char* sandbox_name) {
 
         // Remain alive
         while (true) {
-            asm volatile("mov x8, %1; mov x0, %2; svc #0"
+            asm volatile("mov x8, %0; mov x0, %1; svc #0"
                          : : "i"(__NR_nanosleep), "r"(1000000000LL) : "x0", "x8");
         }
     }
@@ -119,7 +122,7 @@ bool run_in_environment(int pid, const char* cmd) {
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
                  : "=r"(ret) : "i"(__NR_setns), "r"(nsfd), "i"(0) : "x0", "x8");
 
-    asm volatile("mov x8, %1; mov x0, %2; svc #0"
+    asm volatile("mov x8, %0; mov x0, %1; svc #0"
                  : : "i"(__NR_close), "r"(nsfd) : "x0", "x8");
 
     if (ret < 0) return false;
@@ -190,7 +193,7 @@ bool apply_seccomp_bpf(int pid) {
 
     // If we reach here, the seccomp was not applied. Return true since the
     // child already has NO_NEW_PRIVS + namespace isolation as baseline.
-    asm volatile("mov x8, %1; mov x0, %2; svc #0"
+    asm volatile("mov x8, %0; mov x0, %1; svc #0"
                  : : "i"(__NR_ptrace), "i"(0x4200), "r"(pid), "r"(0), "r"(0) : "x0", "x8"); // PTRACE_DETACH
 
     return true;
@@ -211,9 +214,11 @@ bool mount_pure_system(const char* sandbox_root) {
     // Create directories
     auto mkdir_p = [](const char* path) {
         int64_t fd;
+        int open_flags = O_RDONLY | O_CREAT | O_CLOEXEC;
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                     : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY | O_CREAT | O_CLOEXEC), "i"(0755));
-        if (fd >= 0) asm volatile("mov x8, %1; mov x0, %2; svc #0" : : "i"(__NR_close), "r"(fd) : "x0", "x8");
+                     : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "r"(open_flags), "i"(0755)
+                     : "x0", "x1", "x2", "x8");
+        if (fd >= 0) asm volatile("mov x8, %0; mov x0, %1; svc #0" : : "i"(__NR_close), "r"(fd) : "x0", "x8");
     };
     mkdir_p(lower);
     mkdir_p(upper);

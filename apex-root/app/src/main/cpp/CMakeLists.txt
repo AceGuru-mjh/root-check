@@ -48,7 +48,7 @@ endif()
 
 # ─── Core include paths ─────────────────────────────────────
 # 包含 ctrl/ 和 legacy/ 目录（位于仓库根 apex-root/ 下）
-set(APEX_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
+set(APEX_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../..")
 set(CORE_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -82,6 +82,7 @@ file(GLOB_RECURSE CONSENSUS_SRC "consensus/*.cpp")
 file(GLOB_RECURSE AI_ENGINE_SRC "ai_engine/*.cpp")
 file(GLOB_RECURSE UPDATER_SRC "updater/*.cpp")
 file(GLOB_RECURSE MICRO_ENGINE_SRC "micro_services/engine/*.cpp")
+file(GLOB_RECURSE MICRO_SANDBOX_SRC "micro_services/sandbox/*.cpp")
 file(GLOB_RECURSE DETECT_SRC "detect/*.cpp")
 file(GLOB_RECURSE EBPF_SRC "ebpf/*.cpp")
 file(GLOB_RECURSE NAMESPACE_SRC "namespace/*.cpp")
@@ -135,6 +136,7 @@ add_library(apex_root SHARED
     ${AI_ENGINE_SRC}
     ${UPDATER_SRC}
     ${MICRO_ENGINE_SRC}
+    ${MICRO_SANDBOX_SRC}
     # 新增：隐藏功能模块
     ${CTRL_SRC}
     ${LEGACY_SRC}
@@ -161,7 +163,10 @@ foreach(SVC ${PLUGIN_DIRS})
     if(SVC_SRC)
         add_library(${SVC} SHARED ${SVC_SRC})
         target_include_directories(${SVC} PRIVATE ${CORE_INCLUDE_DIRS})
-        target_link_libraries(${SVC} PRIVATE baresyscall trusted_root ${LIBOQS_TARGET} dl log)
+        # Plugins reference apex::engine::service_engine::register_service which
+        # lives in the main apex_root library. Link against it so the symbol
+        # resolves at link time (the host process provides it at runtime).
+        target_link_libraries(${SVC} PRIVATE baresyscall trusted_root apex_root ${LIBOQS_TARGET} dl log)
         set_target_properties(${SVC} PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/plugins"
         )

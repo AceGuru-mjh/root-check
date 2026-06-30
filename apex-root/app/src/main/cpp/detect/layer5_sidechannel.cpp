@@ -1,6 +1,7 @@
 #include "layer5_sidechannel.h"
 #include "../common/syscall.h"
 #include <cstring>
+#include <fcntl.h>
 
 // ═══════════════════════════════════════════════════════════
 //  第五层 · 侧信道时延检测（root 级 / 用户态）
@@ -16,17 +17,19 @@
 
 static int64_t get_ns() {
     int64_t ts[2];
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0"
+    // 修复：无 output operand 时，input 从 %0 开始
+    asm volatile("mov x8, %0; mov x0, %1; mov x1, %2; svc #0"
                  : : "i"(__NR_clock_gettime), "i"(1), "r"(ts)
-                 : "x0", "x1", "x8");
+                 : "x0", "x1", "x8", "memory");
     return ts[0] * 1000000000LL + ts[1];
 }
 
 static int64_t measure_syscall(int nr) {
     int64_t start = get_ns();
     int64_t ret;
+    // 修复：nr 是变量，不能用 "i" constraint，改用 "r"
     asm volatile("mov x8, %1; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(nr) : "x0", "x8");
+                 : "=r"(ret) : "r"((int64_t)nr) : "x0", "x8");
     int64_t end = get_ns();
     return end - start;
 }
@@ -75,16 +78,18 @@ bool detectCacheTimingAnomaly() {
 bool detectSyscallResultInconsistency() {
     int64_t ret_root_path, ret_random_path;
 
-    // 尝试 open /data/adb（root 路径，正常 root 应能访问）
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(ret_root_path)
-                 : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/data/adb"), "i"(O_RDONLY | O_DIRECTORY), "i"(0)
+    // 修复：O_RDONLY|O_DIRECTORY = 0200000 不是合法 ARM64 mov 立即数
+    // 改用 register constraint "r"
+    int flags_dir = O_RDONLY | O_DIRECTORY;
+    int flags_ro = O_RDONLY;
+    asm volatile("mov x8, %[nr]; mov x0, %[dir]; mov x1, %[path]; mov x2, %[flags]; svc #0; mov %[ret], x0"
+                 : [ret] "=r"(ret_root_path)
+                 : [nr] "i"(__NR_openat), [dir] "i"(AT_FDCWD), [path] "r"("/data/adb"), [flags] "r"((int64_t)flags_dir)
                  : "x0", "x1", "x2", "x8");
 
-    // 尝试 open 不存在的随机路径
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(ret_random_path)
-                 : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/data/adb/.apex_nonexistent_probe_12345"), "i"(O_RDONLY), "i"(0)
+    asm volatile("mov x8, %[nr]; mov x0, %[dir]; mov x1, %[path]; mov x2, %[flags]; svc #0; mov %[ret], x0"
+                 : [ret] "=r"(ret_random_path)
+                 : [nr] "i"(__NR_openat), [dir] "i"(AT_FDCWD), [path] "r"("/data/adb/.apex_nonexistent_probe_12345"), [flags] "r"((int64_t)flags_ro)
                  : "x0", "x1", "x2", "x8");
 
     // 关闭 fd

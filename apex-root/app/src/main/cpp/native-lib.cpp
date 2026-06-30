@@ -33,6 +33,7 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 #include "trusted_root/crypto/oqs_signature.h"
+#include "trusted_root/crypto/crypto_primitives.h"
 
 extern "C" {
 

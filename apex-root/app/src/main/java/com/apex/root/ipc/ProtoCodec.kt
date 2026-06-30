@@ -68,7 +68,7 @@ object ProtoCodec {
         return ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(value).array()
     }
 
-    fun encodeTag(field: Int, wireType: Int): ByteArray = encodeVarint((field shl 3) or wireType.toLong())
+    fun encodeTag(field: Int, wireType: Int): ByteArray = encodeVarint(((field shl 3) or wireType).toLong())
 
     fun encodeString(tag: ByteArray, value: String): ByteArray {
         val bytes = value.encodeToByteArray()
@@ -94,13 +94,13 @@ object ProtoCodec {
     fun encodeMapEntry(field: Int, key: String, value: ByteArray): ByteArray {
         val entry = ByteArrayOutputStream()
         val keyBytes = encodeString(
-            encodeVarint((1 shl 3) or LENGTH_DELIMITED.toLong()), key)
+            encodeVarint(((1 shl 3) or LENGTH_DELIMITED).toLong()), key)
         val valBytes = encodeBytes(
-            encodeVarint((2 shl 3) or LENGTH_DELIMITED.toLong()), value)
+            encodeVarint(((2 shl 3) or LENGTH_DELIMITED).toLong()), value)
         entry.write(keyBytes)
         entry.write(valBytes)
         val entryArray = entry.toByteArray()
-        return encodeVarint((field shl 3) or LENGTH_DELIMITED.toLong()) +
+        return encodeVarint(((field shl 3) or LENGTH_DELIMITED).toLong()) +
                 encodeVarint(entryArray.size.toLong()) + entryArray
     }
 
@@ -110,13 +110,13 @@ object ProtoCodec {
         parameters: Map<String, ByteArray> = emptyMap()
     ): ByteArray {
         val out = ByteArrayOutputStream()
-        val tReq = encodeVarint((FIELD_REQUEST_ID shl 3) or LENGTH_DELIMITED.toLong())
+        val tReq = encodeVarint(((FIELD_REQUEST_ID shl 3) or LENGTH_DELIMITED).toLong())
         out.write(encodeString(tReq, requestId))
-        val tLvl = encodeVarint((FIELD_LEVEL shl 3) or VARINT.toLong())
+        val tLvl = encodeVarint(((FIELD_LEVEL shl 3) or VARINT).toLong())
         out.write(encodeUInt64(tLvl, level.toLong()))
-        val tNon = encodeVarint((FIELD_NONCE shl 3) or LENGTH_DELIMITED.toLong())
+        val tNon = encodeVarint(((FIELD_NONCE shl 3) or LENGTH_DELIMITED).toLong())
         out.write(encodeBytes(tNon, nonce))
-        val tTs = encodeVarint((FIELD_TIMESTAMP shl 3) or VARINT.toLong())
+        val tTs = encodeVarint(((FIELD_TIMESTAMP shl 3) or VARINT).toLong())
         out.write(encodeUInt64(tTs, timestamp))
         for ((k, v) in context) {
             out.write(encodeMapEntry(FIELD_CONTEXT, k, v))
@@ -133,15 +133,15 @@ object ProtoCodec {
         result: Map<String, ByteArray> = emptyMap()
     ): ByteArray {
         val out = ByteArrayOutputStream()
-        val tReq = encodeVarint((FIELD_REQUEST_ID shl 3) or LENGTH_DELIMITED.toLong())
+        val tReq = encodeVarint(((FIELD_REQUEST_ID shl 3) or LENGTH_DELIMITED).toLong())
         out.write(encodeString(tReq, requestId))
-        val tSuc = encodeVarint((FIELD_SUCCESS shl 3) or VARINT.toLong())
+        val tSuc = encodeVarint(((FIELD_SUCCESS shl 3) or VARINT).toLong())
         out.write(encodeBool(tSuc, success))
-        val tConf = encodeVarint((FIELD_CONFIDENCE shl 3) or FIXED32.toLong())
+        val tConf = encodeVarint(((FIELD_CONFIDENCE shl 3) or FIXED32).toLong())
         out.write(encodeFloat(tConf, confidence))
-        val tDesc = encodeVarint((FIELD_DESCRIPTION shl 3) or LENGTH_DELIMITED.toLong())
+        val tDesc = encodeVarint(((FIELD_DESCRIPTION shl 3) or LENGTH_DELIMITED).toLong())
         out.write(encodeString(tDesc, description))
-        val tSig = encodeVarint((FIELD_SIGNATURE shl 3) or LENGTH_DELIMITED.toLong())
+        val tSig = encodeVarint(((FIELD_SIGNATURE shl 3) or LENGTH_DELIMITED).toLong())
         out.write(encodeBytes(tSig, signature))
         for ((k, v) in result) {
             out.write(encodeMapEntry(FIELD_RESULT, k, v))
@@ -151,13 +151,13 @@ object ProtoCodec {
 
     fun encodeServiceInfo(serviceId: String, name: String, version: String, weight: Int): ByteArray {
         val out = ByteArrayOutputStream()
-        val tId = encodeVarint((FIELD_SERVICE_ID shl 3) or LENGTH_DELIMITED.toLong())
+        val tId = encodeVarint(((FIELD_SERVICE_ID shl 3) or LENGTH_DELIMITED).toLong())
         out.write(encodeString(tId, serviceId))
-        val tName = encodeVarint((FIELD_NAME shl 3) or LENGTH_DELIMITED.toLong())
+        val tName = encodeVarint(((FIELD_NAME shl 3) or LENGTH_DELIMITED).toLong())
         out.write(encodeString(tName, name))
-        val tVer = encodeVarint((FIELD_VERSION shl 3) or LENGTH_DELIMITED.toLong())
+        val tVer = encodeVarint(((FIELD_VERSION shl 3) or LENGTH_DELIMITED).toLong())
         out.write(encodeString(tVer, version))
-        val tWt = encodeVarint((FIELD_WEIGHT shl 3) or VARINT.toLong())
+        val tWt = encodeVarint(((FIELD_WEIGHT shl 3) or VARINT).toLong())
         out.write(encodeUInt64(tWt, weight.toLong()))
         return out.toByteArray()
     }

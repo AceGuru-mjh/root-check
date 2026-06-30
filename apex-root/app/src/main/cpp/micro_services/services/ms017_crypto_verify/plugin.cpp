@@ -17,7 +17,7 @@ extern "C" apex::engine::ServiceResult execute(const apex::engine::ScanConfig& c
 
     // Self-test: SHA3-512 compute
     const char* test = "APEX_ROOT_INTEGRITY_CHECK";
-    auto hash = crypto::sha3_512(
+    auto hash = apex::crypto::sha3_512(
         reinterpret_cast<const uint8_t*>(test),
         std::strlen(test));
 

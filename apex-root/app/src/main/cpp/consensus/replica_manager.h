@@ -42,7 +42,7 @@ struct SignedVote {
 
 namespace replica_manager {
 
-bool start_replica(ReplicaRole role, bool with_isolation = true);
+bool start_replica(ReplicaRole role, bool with_isolation);
 bool stop_replica(ReplicaRole role);
 ReplicaStatus get_status(ReplicaRole role);
 bool monitor_replicas();
