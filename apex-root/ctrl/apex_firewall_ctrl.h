@@ -30,6 +30,9 @@ public:
     int switch_mode(Mode mode);
     Mode current_mode() const;
 
+    // 采集干净基线（/proc/version, /proc/cmdline, /system/build.prop）
+    static int collect_baseline(CleanBaseline &baseline);
+
     std::string last_error() const { return last_error_; }
 
 private:

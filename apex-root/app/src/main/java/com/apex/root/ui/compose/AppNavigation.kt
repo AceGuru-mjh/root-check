@@ -38,6 +38,7 @@ import com.apex.root.ui.compose.screens.DashboardScreen
 import com.apex.root.ui.compose.screens.FeatureTestScreen
 import com.apex.root.ui.compose.screens.GlassLogViewerScreen
 import com.apex.root.ui.compose.screens.GlassPermissionGuideScreen
+import com.apex.root.ui.compose.screens.HideModeScreen
 import com.apex.root.ui.compose.screens.HistoryScreen
 import com.apex.root.ui.compose.screens.KernelInfoScreen
 import com.apex.root.ui.compose.screens.ReportScreen
@@ -199,6 +200,7 @@ private fun MainApp(
                         onNavigateToTimingChart = { navController.navigate("timing_chart") },
                         onNavigateToWhitelist = { navController.navigate("whitelist") },
                         onNavigateToConfig = { navController.navigate("config") },
+                        onNavigateToHideMode = { navController.navigate("hide_mode") },
                         apexViewModel = apexViewModel
                     )
                 }
@@ -312,6 +314,15 @@ private fun MainApp(
                     exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
                 ) {
                     ConfigScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = "hide_mode",
+                    enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(tween(300)) },
+                    exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
+                ) {
+                    HideModeScreen(
                         onBack = { navController.popBackStack() }
                     )
                 }

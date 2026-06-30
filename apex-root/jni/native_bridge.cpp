@@ -2,7 +2,9 @@
 #include <android/log.h>
 #include <cstring>
 #include <mutex>
-#include "ctrl/apex_firewall_ctrl.h"
+// 修复：原 #include "ctrl/apex_firewall_ctrl.h" 假设从仓库根 include，
+// 但 CMakeLists.txt 已把 ctrl/ 加入 include path，改为直接引用。
+#include "apex_firewall_ctrl.h"
 
 #define LOG_TAG "APEX-JNI"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)

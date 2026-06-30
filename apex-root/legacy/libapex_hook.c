@@ -39,6 +39,7 @@ static int should_hide(void) {
 }
 
 typedef int (*orig_open_t)(const char *, int, ...);
+typedef int (*orig_openat_t)(int, const char *, int, ...);
 typedef int (*orig_stat_t)(const char *, struct stat *);
 typedef int (*orig_access_t)(const char *, int);
 
@@ -78,8 +79,8 @@ int __openat(int dirfd, const char *path, int flags, ...) {
         errno = ENOENT;
         return -1;
     }
-    static orig_open_t orig = NULL;
-    if (!orig) orig = (orig_open_t)dlsym(RTLD_NEXT, "__openat");
+    static orig_openat_t orig = NULL;
+    if (!orig) orig = (orig_openat_t)dlsym(RTLD_NEXT, "__openat");
     if (flags & O_CREAT) {
         va_list ap;
         va_start(ap, flags);

@@ -39,7 +39,7 @@ int apex_pmu_init(void) {
     pe.exclude_kernel = 1;
     pe.exclude_hv = 1;
 
-    pmu_fd = syscall(__NR_perf_event_open, &pe, 0, -1, -1, 0);
+    pmu_fd = syscall(241 /* __NR_perf_event_open on ARM64 */, &pe, 0, -1, -1, 0);
     if (pmu_fd < 0) {
         LOGD("PMU init failed (expected on some kernels): %s", strerror(errno));
         return -1;

@@ -48,6 +48,7 @@ fun DashboardScreen(
     onNavigateToTimingChart: (() -> Unit)? = null,
     onNavigateToWhitelist: (() -> Unit)? = null,
     onNavigateToConfig: (() -> Unit)? = null,
+    onNavigateToHideMode: (() -> Unit)? = null,
     apexViewModel: ApexViewModel? = null
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -339,7 +340,8 @@ fun DashboardScreen(
                 }
                 Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ToolChip("详细配置", Icons.Default.Tune, AccentGold, onNavigateToConfig)
-                    if (onNavigateToConfig != null) Spacer(Modifier.weight(1f))
+                    ToolChip("隐藏模式", Icons.Default.VisibilityOff, AccentPurple, onNavigateToHideMode)
+                    if (onNavigateToConfig == null && onNavigateToHideMode == null) Spacer(Modifier.weight(1f))
                 }
 
                 Spacer(Modifier.height(32.dp))

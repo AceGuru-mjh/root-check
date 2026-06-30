@@ -57,14 +57,31 @@ int ApexLegacyHide::mount_namespace_hide() {
         return -1;
     }
 
+    // 修复：原代码 mkdir(tmpdir, 0000) 权限为 0，bind-mount source
+    // 虽然不要求权限，但 0000 会导致后续 access/stat 失败。
+    // 改为 0700，并确保目录真实创建成功后再 mount。
+    const char *empty_base = "/data/local/tmp/.apex_hide";
+    if (mkdir(empty_base, 0700) != 0 && errno != EEXIST) {
+        LOGE("mkdir(%s) failed: %s", empty_base, strerror(errno));
+        // 回退到 /tmp 风格路径
+        empty_base = "/apex_hide_empty";
+        if (mkdir(empty_base, 0700) != 0 && errno != EEXIST) {
+            LOGE("fallback mkdir also failed: %s", strerror(errno));
+            return -1;
+        }
+    }
+
     for (int i = 0; HIDE_PATHS[i]; i++) {
         struct stat st;
         if (stat(HIDE_PATHS[i], &st) == 0) {
-            char tmpdir[256];
-            snprintf(tmpdir, sizeof(tmpdir), "/apex_hidden_%d", i);
+            // 验证 empty_base 仍然存在（前面已创建）
+            struct stat empty_st;
+            if (stat(empty_base, &empty_st) != 0) {
+                LOGE("empty dir disappeared: %s", strerror(errno));
+                continue;
+            }
 
-            mkdir(tmpdir, 0000);
-            if (mount(tmpdir, HIDE_PATHS[i], NULL, MS_BIND, NULL) == 0) {
+            if (mount(empty_base, HIDE_PATHS[i], NULL, MS_BIND, NULL) == 0) {
                 LOGD("Bind-mounted empty dir over %s", HIDE_PATHS[i]);
             } else {
                 LOGE("mount bind over %s failed: %s", HIDE_PATHS[i], strerror(errno));
