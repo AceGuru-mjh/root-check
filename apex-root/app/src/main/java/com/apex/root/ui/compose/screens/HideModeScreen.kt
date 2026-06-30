@@ -3,6 +3,7 @@ package com.apex.root.ui.compose.screens
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,20 +47,27 @@ fun HideModeScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isDark = isSystemInDarkTheme()
     val hideManager = remember { HideModeManager(context) }
 
     var currentMode by remember { mutableStateOf(HideModeManager.MODE_DETECT) }
     var isActive by remember { mutableStateOf(false) }
     var lastError by remember { mutableStateOf("") }
     var switching by remember { mutableStateOf(false) }
+    var nativeAvailable by remember { mutableStateOf(true) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
 
-    // 初始化：读取当前模式
+    // 初始化：读取当前模式（包 try-catch 防止 UnsatisfiedLinkError 闪退）
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            currentMode = hideManager.currentMode()
-            isActive = hideManager.isActive()
-            lastError = hideManager.lastError()
+            try {
+                currentMode = hideManager.currentMode()
+                isActive = hideManager.isActive()
+                lastError = hideManager.lastError()
+            } catch (e: Throwable) {
+                nativeAvailable = false
+                lastError = e.message ?: e.javaClass.simpleName
+            }
         }
     }
 
@@ -73,15 +81,24 @@ fun HideModeScreen(
     }
 
     fun switchMode(target: Int) {
+        if (!nativeAvailable) {
+            showToast("原生库未加载，无法切换模式")
+            return
+        }
         scope.launch {
             switching = true
             withContext(Dispatchers.IO) {
-                val ok = hideManager.switchToMode(target)
-                currentMode = hideManager.currentMode()
-                isActive = hideManager.isActive()
-                lastError = hideManager.lastError()
-                val modeName = HideModeManager.modeName(target)
-                showToast(if (ok) "$modeName 模式切换成功" else "切换失败: $lastError")
+                try {
+                    val ok = hideManager.switchToMode(target)
+                    currentMode = hideManager.currentMode()
+                    isActive = hideManager.isActive()
+                    lastError = hideManager.lastError()
+                    val modeName = HideModeManager.modeName(target)
+                    showToast(if (ok) "$modeName 模式切换成功" else "切换失败: $lastError")
+                } catch (e: Throwable) {
+                    lastError = e.message ?: e.javaClass.simpleName
+                    showToast("切换异常: $lastError")
+                }
             }
             switching = false
         }
@@ -174,7 +191,7 @@ fun HideModeScreen(
                         .clip(RoundedCornerShape(16.dp))
                         .liquidGlass(
                             cornerRadius = 16.dp,
-                            baseColor = LightSurface.copy(alpha = 0.5f)
+                            baseColor = if (isDark) DeepSurface.copy(alpha = 0.5f) else LightSurface.copy(alpha = 0.5f)
                         )
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -213,11 +230,16 @@ fun HideModeScreen(
                         scope.launch {
                             switching = true
                             withContext(Dispatchers.IO) {
-                                hideManager.stopHideMode()
-                                currentMode = hideManager.currentMode()
-                                isActive = hideManager.isActive()
-                                lastError = hideManager.lastError()
-                                showToast("已停止隐藏")
+                                try {
+                                    hideManager.stopHideMode()
+                                    currentMode = hideManager.currentMode()
+                                    isActive = hideManager.isActive()
+                                    lastError = hideManager.lastError()
+                                    showToast("已停止隐藏")
+                                } catch (e: Throwable) {
+                                    lastError = e.message ?: e.javaClass.simpleName
+                                    showToast("停止失败: $lastError")
+                                }
                             }
                             switching = false
                         }
@@ -234,6 +256,43 @@ fun HideModeScreen(
                     Text("紧急停止", fontWeight = FontWeight.Medium)
                 }
             }
+
+            // 原生库不可用警告
+            if (!nativeAvailable) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFE53935).copy(alpha = 0.1f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color(0xFFE53935),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                "原生库未加载",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFE53935)
+                            )
+                            Text(
+                                "隐藏模式需要原生库支持。请确认应用已正确安装且设备已 root。",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -244,6 +303,7 @@ private fun StatusCard(
     isActive: Boolean,
     lastError: String
 ) {
+    val isDark = isSystemInDarkTheme()
     val statusColor = when {
         lastError.isNotEmpty() -> Color(0xFFE53935)
         isActive -> Color(0xFFFF9800)
@@ -256,6 +316,9 @@ private fun StatusCard(
     }
     val modeText = HideModeManager.modeName(currentMode)
 
+    // 修复：深色模式用 DeepSurface，浅色模式用 LightSurface，避免深色模式泛白
+    val glassBaseColor = if (isDark) DeepSurface.copy(alpha = 0.6f) else LightSurface.copy(alpha = 0.7f)
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -267,7 +330,7 @@ private fun StatusCard(
                 .clip(RoundedCornerShape(20.dp))
                 .liquidGlass(
                     cornerRadius = 20.dp,
-                    baseColor = LightSurface.copy(alpha = 0.7f)
+                    baseColor = glassBaseColor
                 )
                 .padding(20.dp)
         ) {

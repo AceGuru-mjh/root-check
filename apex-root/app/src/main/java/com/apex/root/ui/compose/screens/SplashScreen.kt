@@ -63,8 +63,9 @@ fun SplashScreen(onSplashComplete: () -> Unit) {
             modifier = Modifier.align(Alignment.Center),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 从 220.dp 改为屏幕高度的 25%
-            Spacer(Modifier.fillMaxHeight(0.25f))
+            // 修复：原 fillMaxHeight(0.25f) 在 Box.align(Center) 内会推下内容到屏幕外
+            // 改为固定 Spacer，让 CircularProgressIndicator 在小屏上也能显示
+            Spacer(Modifier.height(60.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("APEX", color = Color.White,
                     style = MaterialTheme.typography.headlineLarge,

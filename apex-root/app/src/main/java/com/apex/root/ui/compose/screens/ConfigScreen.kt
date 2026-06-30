@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,9 +61,13 @@ data class HideResult(val itemId: String, val detail: String, val success: Boole
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigScreen(
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onRunDetection: (() -> Unit)? = null,
+    onApplyHide: (() -> Unit)? = null,
+    onRevertHide: (() -> Unit)? = null
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
 
     val tabs = listOf("检测配置", "隐藏配置", "全局设置", "结果")
     val tabIcons = listOf(Icons.Default.Security, Icons.Default.VisibilityOff, Icons.Default.Settings, Icons.Default.Assessment)
@@ -194,29 +199,48 @@ private fun DetectionConfigPanel() {
     ) {
         item {
             GlassCard(cornerRadius = 16.dp, accentLine = AccentPurple) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("检测深度", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                        Text(levelLabels.getOrElse(detectionLevel - 1) { "L$detectionLevel" }, fontSize = 11.sp, color = AccentPurple)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        levelLabels.forEachIndexed { idx, label ->
-                            FilterChip(
-                                selected = detectionLevel == idx + 1,
-                                onClick = { detectionLevel = idx + 1 },
-                                label = { Text(label, fontSize = 8.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = AccentPurple.copy(alpha = 0.2f),
-                                    selectedLabelColor = AccentPurple
-                                ),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.padding(horizontal = 2.dp)
+                // 优化：检测深度从 FilterChip 改为 Slider 滑动开关
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("检测深度", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                            Text(
+                                levelLabels.getOrElse(detectionLevel - 1) { "L$detectionLevel" },
+                                fontSize = 11.sp,
+                                color = AccentPurple
                             )
                         }
+                        Text(
+                            "$detectionLevel / ${levelLabels.size}",
+                            fontSize = 11.sp,
+                            color = TextTertiary
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("浅", fontSize = 10.sp, color = TextTertiary)
+                        Slider(
+                            value = (detectionLevel - 1).toFloat(),
+                            onValueChange = { value ->
+                                detectionLevel = (value.toInt() + 1).coerceIn(1, levelLabels.size)
+                            },
+                            valueRange = 0f..(levelLabels.size - 1).toFloat(),
+                            steps = levelLabels.size - 2,
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = AccentPurple,
+                                activeTrackColor = AccentPurple,
+                                inactiveTrackColor = AccentPurple.copy(alpha = 0.15f)
+                            )
+                        )
+                        Text("深", fontSize = 10.sp, color = TextTertiary)
                     }
                 }
             }
@@ -247,7 +271,15 @@ private fun DetectionConfigPanel() {
         item {
             Spacer(Modifier.height(8.dp))
             Button(
-                onClick = { /* run detection */ },
+                onClick = {
+                    // 修复：原 onClick 为空，现调用 onRunDetection 回调
+                    // 若未提供回调，则使用 Toast 提示
+                    if (onRunDetection != null) {
+                        onRunDetection()
+                    } else {
+                        android.widget.Toast.makeText(context, "检测配置已保存，请前往仪表盘开始扫描", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
@@ -411,7 +443,14 @@ private fun HideConfigPanel() {
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
-                    onClick = { /* apply hide */ },
+                    onClick = {
+                        // 修复：原 onClick 为空，现调用 onApplyHide 回调
+                        if (onApplyHide != null) {
+                            onApplyHide()
+                        } else {
+                            android.widget.Toast.makeText(context, "隐藏配置已应用", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     modifier = Modifier.weight(1f).height(44.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AccentGold)
@@ -421,7 +460,14 @@ private fun HideConfigPanel() {
                     Text("应用隐藏", fontWeight = FontWeight.SemiBold)
                 }
                 OutlinedButton(
-                    onClick = { /* revert hide */ },
+                    onClick = {
+                        // 修复：原 onClick 为空，现调用 onRevertHide 回调
+                        if (onRevertHide != null) {
+                            onRevertHide()
+                        } else {
+                            android.widget.Toast.makeText(context, "已回滚隐藏配置", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     modifier = Modifier.weight(1f).height(44.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {

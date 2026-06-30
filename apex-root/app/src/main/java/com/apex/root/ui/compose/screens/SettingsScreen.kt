@@ -356,21 +356,66 @@ private fun DetectionSettingsGroup(settings: AppSettings, vm: SettingsViewModel)
 
 @Composable
 private fun DetectionLevelSelector(current: DetectionLevel, onSelect: (DetectionLevel) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    // 优化：从 FilterChip 改为 Slider 滑动开关，符合用户要求
+    // 4 个级别：QUICK(0) / STANDARD(1) / DEEP(2) / FORENSIC(3)
+    // steps = 2 表示在 0..3 之间有 2 个内部停靠点（即 1 和 2），共 4 个位置
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)
     ) {
-        DetectionLevel.entries.forEach { level ->
-            FilterChip(
-                selected = level == current,
-                onClick = { onSelect(level) },
-                label = { Text(level.label, fontSize = 10.sp) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = AccentPurple.copy(alpha = 0.2f),
-                    selectedLabelColor = AccentPurple
-                ),
-                shape = RoundedCornerShape(10.dp)
+        // 当前级别显示
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                current.label,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = AccentPurple
             )
+            Text(
+                "级别 ${current.value + 1} / ${DetectionLevel.entries.size}",
+                fontSize = 11.sp,
+                color = TextTertiary
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        // Slider 主体
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("快速", fontSize = 10.sp, color = TextTertiary)
+            Slider(
+                value = current.value.toFloat(),
+                onValueChange = { value ->
+                    val newIndex = value.toInt()
+                    DetectionLevel.fromValue(newIndex)?.let { onSelect(it) }
+                },
+                valueRange = 0f..(DetectionLevel.entries.size - 1).toFloat(),
+                steps = DetectionLevel.entries.size - 2,  // N 个停靠点需要 N-2 个 steps
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = AccentPurple,
+                    activeTrackColor = AccentPurple,
+                    inactiveTrackColor = AccentPurple.copy(alpha = 0.15f)
+                )
+            )
+            Text("取证", fontSize = 10.sp, color = TextTertiary)
+        }
+        // 级别标签
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            DetectionLevel.entries.forEach { level ->
+                Text(
+                    level.name.first().toString(),
+                    fontSize = 9.sp,
+                    color = if (level == current) AccentPurple else TextTertiary
+                )
+            }
         }
     }
 }

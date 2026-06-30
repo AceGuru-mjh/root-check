@@ -213,7 +213,7 @@ private fun ReportFindingItem(finding: Finding) {
             }
             if (finding.evidence.isNotBlank()) {
                 Spacer(Modifier.height(2.dp))
-                Text(finding.evidence, fontSize = 10.sp, color = TextTertiary, maxLines = 3)
+                Text(finding.evidence, fontSize = 10.sp, color = TextTertiary, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
     }

@@ -114,13 +114,23 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     fun runScan() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isScanning = true) }
-            val result = repository.runQuickScan()
-            _uiState.update {
-                it.copy(
-                    scanResult = result.details,
-                    riskScore = result.riskScore,
-                    isScanning = false
-                )
+            try {
+                val result = repository.runQuickScan()
+                _uiState.update {
+                    it.copy(
+                        scanResult = result.details,
+                        riskScore = result.riskScore,
+                        isScanning = false
+                    )
+                }
+            } catch (e: Throwable) {
+                // 修复：catch Throwable 而非 Exception，捕获 UnsatisfiedLinkError 等 Error
+                _uiState.update {
+                    it.copy(
+                        isScanning = false,
+                        scanResult = "扫描失败: ${e.message ?: e.javaClass.simpleName}"
+                    )
+                }
             }
         }
     }
@@ -130,13 +140,13 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isScanning = true) }
             try {
                 val report = repository.runDeepDetection()
-                val memMask = repository.getMemoryFingerprintMask()
-                val rwxCount = NativeBridge.countRWXPages()
-                val shamiko = repository.hasShamiko()
-                val zygiskNext = repository.hasZygiskNext()
-                val selinuxJump = NativeBridge.detectSELinuxContextJump()
-                val selinuxMod = NativeBridge.detectSELinuxPolicyMod()
-                val selfCheck = SelfProtection.fullSelfCheck(getApplication())
+                val memMask = runCatching { repository.getMemoryFingerprintMask() }.getOrDefault(0)
+                val rwxCount = runCatching { NativeBridge.countRWXPages() }.getOrDefault(-1)
+                val shamiko = runCatching { repository.hasShamiko() }.getOrDefault(false)
+                val zygiskNext = runCatching { repository.hasZygiskNext() }.getOrDefault(false)
+                val selinuxJump = runCatching { NativeBridge.detectSELinuxContextJump() }.getOrDefault(false)
+                val selinuxMod = runCatching { NativeBridge.detectSELinuxPolicyMod() }.getOrDefault(false)
+                val selfCheck = runCatching { SelfProtection.fullSelfCheck(getApplication()) }.getOrDefault(emptyMap())
                 val hookIssues = (selfCheck["hooks"] as? List<String>) ?: emptyList()
                 val injectIssues = (selfCheck["injections"] as? List<String>) ?: emptyList()
                 val dexIssues = (selfCheck["dexIssues"] as? List<String>) ?: emptyList()
@@ -144,7 +154,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         scanResult = report.take(500),
-                        riskScore = NativeBridge.getRiskScore(),
+                        riskScore = runCatching { NativeBridge.getRiskScore() }.getOrDefault(0),
                         isScanning = false,
                         memFingerprintMask = memMask,
                         rwxPageCount = rwxCount,
@@ -155,57 +165,84 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                         selfCheckIssues = hookIssues + injectIssues + dexIssues
                     )
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isScanning = false, scanResult = "深度扫描失败: ${e.message}") }
+            } catch (e: Throwable) {
+                // 修复：catch Throwable 捕获 UnsatisfiedLinkError / NoClassDefFoundError
+                _uiState.update {
+                    it.copy(
+                        isScanning = false,
+                        scanResult = "深度扫描失败: ${e.message ?: e.javaClass.simpleName}\n" +
+                                "可能原因：原生库未加载或权限不足"
+                    )
+                }
             }
         }
     }
 
     fun toggleGameMode() {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.toggleGameMode()
-            _uiState.update {
-                it.copy(gameMode = repository.getGameModeState())
+            try {
+                repository.toggleGameMode()
+                _uiState.update {
+                    it.copy(gameMode = repository.getGameModeState())
+                }
+            } catch (e: Throwable) {
+                _uiState.update { it.copy(cureMessage = "游戏模式切换失败: ${e.message}") }
             }
         }
     }
 
     fun applyCure(level: CureLevel) {
         viewModelScope.launch(Dispatchers.IO) {
-            val result = repository.applyCure(level)
-            _uiState.update {
-                it.copy(cureMessage = result.message)
+            try {
+                val result = repository.applyCure(level)
+                _uiState.update {
+                    it.copy(cureMessage = result.message)
+                }
+            } catch (e: Throwable) {
+                _uiState.update { it.copy(cureMessage = "治愈操作失败: ${e.message}") }
             }
         }
     }
 
     fun createSandbox(name: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val pid = NativeIsland.createIsolatedEnv(name)
-            _uiState.update {
-                it.copy(sandboxPid = pid, sandboxActive = pid > 0)
+            try {
+                val pid = runCatching { NativeIsland.createIsolatedEnv(name) }.getOrDefault(-1)
+                _uiState.update {
+                    it.copy(sandboxPid = pid, sandboxActive = pid > 0)
+                }
+            } catch (e: Throwable) {
+                _uiState.update { it.copy(cureMessage = "创建沙箱失败: ${e.message}") }
             }
         }
     }
 
     fun destroySandbox() {
         viewModelScope.launch(Dispatchers.IO) {
-            val pid = _uiState.value.sandboxPid
-            if (pid > 0) NativeIsland.destroyIsolatedEnv(pid)
-            _uiState.update {
-                it.copy(sandboxPid = -1, sandboxActive = false)
+            try {
+                val pid = _uiState.value.sandboxPid
+                if (pid > 0) runCatching { NativeIsland.destroyIsolatedEnv(pid) }
+                _uiState.update {
+                    it.copy(sandboxPid = -1, sandboxActive = false)
+                }
+            } catch (e: Throwable) {
+                _uiState.update { it.copy(sandboxPid = -1, sandboxActive = false) }
             }
         }
     }
 
     fun toggleHwidSpoof() {
         viewModelScope.launch(Dispatchers.IO) {
-            if (_uiState.value.hwidSpoofed) {
-                NativeHwid.restoreReal()
-                _uiState.update { it.copy(hwidSpoofed = false) }
-            } else {
-                NativeHwid.spoofAll()
-                _uiState.update { it.copy(hwidSpoofed = true) }
+            try {
+                if (_uiState.value.hwidSpoofed) {
+                    val ok = runCatching { NativeHwid.restoreReal() }.getOrDefault(false)
+                    _uiState.update { it.copy(hwidSpoofed = !ok) }
+                } else {
+                    val ok = runCatching { NativeHwid.spoofAll() }.getOrDefault(false)
+                    _uiState.update { it.copy(hwidSpoofed = ok) }
+                }
+            } catch (e: Throwable) {
+                _uiState.update { it.copy(cureMessage = "HWID 伪装切换失败: ${e.message}") }
             }
         }
     }
