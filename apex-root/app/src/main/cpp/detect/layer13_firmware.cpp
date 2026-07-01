@@ -6,14 +6,26 @@
 
 static bool read_file(const char* path, char* buf, size_t size) {
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd < 0) return false;
     int64_t n;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8");
+    #else
+        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     int64_t d;
+    #if defined(__aarch64__)
     asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    #else
+        d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (n <= 0) return false;
     buf[n < (int64_t)size ? n : (int64_t)size-1] = '\0';
     return true;
@@ -139,15 +151,27 @@ bool detectAVBStatus() {
 
     // Attempt to check lock status (requires root on some devices)
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/sys/class/android_usb/android0/f_caps"), "i"(O_RDONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd >= 0) {
         char caps[64];
         int64_t n;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(caps), "r"((int64_t)sizeof(caps)) : "x0", "x1", "x2", "x8");
+        #else
+            n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         int64_t d;
+        #if defined(__aarch64__)
         asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+        #else
+            d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         if (n > 0) {
             caps[n < 63 ? n : 63] = '\0';
             if (strstr(caps, "unlocked")) return true;

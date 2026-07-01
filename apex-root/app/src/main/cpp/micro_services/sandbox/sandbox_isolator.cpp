@@ -2,6 +2,7 @@
 #include "micro_services/engine/service_engine.h"
 #include "bare_syscall/syscall_bridge.h"
 #include <cstring>
+#include <unistd.h>
 
 // ─── BPF macros (file-scope, self-contained) ─────────────
 
@@ -481,9 +482,16 @@ namespace sandbox {
 // ─── PMU: user-space cycle counter ──────────────────────
 
 uint64_t pmu_cycle_count() {
+#if defined(__aarch64__)
     uint64_t cnt;
     asm volatile("mrs %0, cntvct_el0" : "=r"(cnt));
     return cnt;
+#else
+    // arm32/x86_64: use clock_gettime as fallback cycle counter
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+#endif
 }
 
 // ─── PMU: perf_event_open wrapper ───────────────────────
@@ -870,14 +878,19 @@ static SandboxResult do_run(const SandboxConfig& config) {
             // execve syscall number = 221 on arm64
             // For now, use execve via libc or inline asm
             // execve(filename, argv, envp)
+            #if defined(__aarch64__)
             register int64_t x8 asm("x8") = 221;
             register int64_t x0 asm("x0") = (int64_t)config.target_path;
             register int64_t x1 asm("x1") = (int64_t)config.argv;
             register int64_t x2 asm("x2") = 0;  // NULL envp
             asm volatile("svc #0"
-                : "+r"(x0)
-                : "r"(x8), "r"(x1), "r"(x2)
-                : "memory");
+                    : "+r"(x0)
+                    : "r"(x8), "r"(x1), "r"(x2)
+                    : "memory");
+            #else
+            /* arm32/x64: use libc execve */
+            execve(config.target_path, (char* const*)config.argv, nullptr);
+            #endif
             // If execve returns, it failed
             bs_exit(255);
         }

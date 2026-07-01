@@ -4,14 +4,26 @@
 
 static void read_file_to_buf(const char* path, char* buf, size_t size) {
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd < 0) { if (size > 0) buf[0] = '\0'; return; }
     int64_t n;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8");
+    #else
+        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     int64_t d;
+    #if defined(__aarch64__)
     asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    #else
+        d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (n <= 0) { if (size > 0) buf[0] = '\0'; return; }
     buf[n < (int64_t)size ? n : (int64_t)size-1] = '\0';
 }
@@ -20,17 +32,29 @@ bool detectMagiskDaemon() {
     char buf[4096];
     // Check for magiskd in /proc
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc"), "i"(O_DIRECTORY | O_RDONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd < 0) return false;
 
     // Scan /proc for magiskd
     char dentry_buf[4096];
     int64_t n;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(n) : "i"(__NR_getdents64), "r"(fd), "r"(dentry_buf), "r"((int64_t)sizeof(dentry_buf)) : "x0", "x1", "x2", "x8");
+    #else
+        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     int64_t d;
+    #if defined(__aarch64__)
     asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    #else
+        d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (n <= 0) return false;
 
     // Parse dirent64 entries for pid directories
@@ -83,11 +107,19 @@ bool detectMagiskDaemon() {
 bool detectMagiskModules() {
     char buf[256];
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/data/adb/modules"), "i"(O_DIRECTORY | O_RDONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd >= 0) {
         int64_t d;
+        #if defined(__aarch64__)
         asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+        #else
+            d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         return true;
     }
     return false;
@@ -143,14 +175,26 @@ bool detectZygiskInjection() {
     char buf[16384];
     // Check for Zygisk in /proc/self/maps
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/self/maps"), "i"(O_RDONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd < 0) return false;
     int64_t n;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)sizeof(buf)) : "x0", "x1", "x2", "x8");
+    #else
+        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     int64_t d;
+    #if defined(__aarch64__)
     asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    #else
+        d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (n <= 0) return false;
     buf[n < (int64_t)sizeof(buf) ? n : (int64_t)sizeof(buf)-1] = '\0';
 

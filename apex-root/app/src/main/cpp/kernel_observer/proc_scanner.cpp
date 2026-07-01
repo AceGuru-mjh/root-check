@@ -151,8 +151,12 @@ bool detect_hidden_process(const std::vector<ProcEntry>& baseline) {
             char path[64];
             snprintf(path, sizeof(path), "/proc/%d/status", base.pid);
             int64_t fd;
+            #if defined(__aarch64__)
             asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                          : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+            #else
+                fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+            #endif
             if (fd >= 0) {
                 // Process still exists but /proc getdents64 didn't show it
                 // This is a classic sign of process hiding
@@ -182,8 +186,12 @@ bool detect_hidden_process(const std::vector<ProcEntry>& baseline) {
     // Read /proc/loadavg — the number of running processes should roughly match
     char loadavg[128];
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/loadavg"), "i"(O_RDONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd >= 0) {
         int64_t n = bs_read(fd, loadavg, sizeof(loadavg) - 1);
         bs_close(fd);

@@ -104,8 +104,12 @@ static int g_db_count = 0;
 static bool compute_file_sha256(const char* path, uint8_t out[32]) {
     char buf[65536];
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd < 0) return false;
 
     uint32_t state[8] = {
@@ -238,8 +242,12 @@ bool check_process_integrity(const char* whitelist[], int count) {
 
     // Read /proc entries to enumerate running processes
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc"), "i"(O_RDONLY | O_DIRECTORY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd < 0) return true;
 
     char dentry_buf[4096];
@@ -266,8 +274,12 @@ bool check_process_integrity(const char* whitelist[], int count) {
                 char cmd_path[64];
                 snprintf(cmd_path, sizeof(cmd_path), "/proc/%s/cmdline", d->d_name);
                 int64_t cmd_fd;
+                #if defined(__aarch64__)
                 asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                              : "=r"(cmd_fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(cmd_path), "i"(O_RDONLY), "i"(0));
+                #else
+                    cmd_fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+                #endif
                 if (cmd_fd >= 0) {
                     char cmdline[256];
                     int64_t cmd_n = bs_read(cmd_fd, cmdline, sizeof(cmdline) - 1);

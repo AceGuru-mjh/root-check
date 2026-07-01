@@ -18,9 +18,13 @@
 static int64_t get_ns() {
     int64_t ts[2];
     // 修复：无 output operand 时，input 从 %0 开始
+    #if defined(__aarch64__)
     asm volatile("mov x8, %0; mov x0, %1; mov x1, %2; svc #0"
                  : : "i"(__NR_clock_gettime), "i"(1), "r"(ts)
                  : "x0", "x1", "x8", "memory");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     return ts[0] * 1000000000LL + ts[1];
 }
 
@@ -28,8 +32,12 @@ static int64_t measure_syscall(int nr) {
     int64_t start = get_ns();
     int64_t ret;
     // 修复：nr 是变量，不能用 "i" constraint，改用 "r"
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; svc #0; mov %0, x0"
                  : "=r"(ret) : "r"((int64_t)nr) : "x0", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     int64_t end = get_ns();
     return end - start;
 }
@@ -82,20 +90,32 @@ bool detectSyscallResultInconsistency() {
     // 改用 register constraint "r"
     int flags_dir = O_RDONLY | O_DIRECTORY;
     int flags_ro = O_RDONLY;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %[nr]; mov x0, %[dir]; mov x1, %[path]; mov x2, %[flags]; svc #0; mov %[ret], x0"
                  : [ret] "=r"(ret_root_path)
                  : [nr] "i"(__NR_openat), [dir] "i"(AT_FDCWD), [path] "r"("/data/adb"), [flags] "r"((int64_t)flags_dir)
                  : "x0", "x1", "x2", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
 
+    #if defined(__aarch64__)
     asm volatile("mov x8, %[nr]; mov x0, %[dir]; mov x1, %[path]; mov x2, %[flags]; svc #0; mov %[ret], x0"
                  : [ret] "=r"(ret_random_path)
                  : [nr] "i"(__NR_openat), [dir] "i"(AT_FDCWD), [path] "r"("/data/adb/.apex_nonexistent_probe_12345"), [flags] "r"((int64_t)flags_ro)
                  : "x0", "x1", "x2", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
 
     // 关闭 fd
     if (ret_root_path >= 0) {
         int64_t d;
+        #if defined(__aarch64__)
         asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(ret_root_path) : "x0","x8");
+        #else
+            d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
     }
 
     // 如果 /data/adb 不可访问 (-ENOENT 或 -EACCES)，但应用是 root

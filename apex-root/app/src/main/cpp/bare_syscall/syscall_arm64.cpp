@@ -1,3 +1,9 @@
+// ─── arm64 (Aarch64) syscall implementations ─────────────
+// This file is only compiled when targeting arm64-v8a. The matching
+// arm32 and x86_64 variants live in syscall_arm32.cpp / syscall_x86_64.cpp.
+// AAPCS64: x8 = syscall nr, x0-x5 = args, return in x0.
+#if defined(__aarch64__)
+
 #include "syscall_bridge.h"
 #include <cstring>
 #include <cinttypes>
@@ -207,3 +213,5 @@ uint64_t bs_get_random() {
     asm volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2) : "memory");
     return buf;
 }
+
+#endif  // defined(__aarch64__)

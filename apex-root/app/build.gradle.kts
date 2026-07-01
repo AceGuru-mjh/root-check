@@ -47,9 +47,8 @@ android {
         versionName = "1.0.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        // 全架构由 splits.abi 控制，此处不再设置 ndk.abiFilters
+        // （二者不能同时存在，否则 Gradle 报 Conflicting configuration）
 
         externalNativeBuild {
             cmake {
@@ -57,6 +56,18 @@ android {
                 arguments += "-DANDROID_STL=c++_static"
                 arguments += "-DAPEX_USE_LIBOQS=OFF"
             }
+        }
+    }
+
+    // ─── ABI 分包：产出独立 APK（按架构）──────────────────
+    // arm64-v8a.apk / armeabi-v7a.apk / x86_64.apk
+    // 用户按设备架构选择对应 APK 安装
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
         }
     }
 

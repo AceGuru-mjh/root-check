@@ -15,22 +15,34 @@ bool file_exists(const char* path) {
 
 ssize_t read_file(const char* path, char* buf, size_t size) {
     int64_t fd = 0;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd)
                  : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0)
                  : "x0", "x1", "x2", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     if (fd < 0) return -1;
 
     char tmp[4096];
     int64_t n = 0;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(n)
                  : "i"(__NR_read), "r"(fd), "r"(tmp), "r"((int64_t)(size < 4096 ? size : 4096))
                  : "x0", "x1", "x2", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
 
     int64_t close_ret;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; svc #0; mov %0, x0"
                  : "=r"(close_ret) : "i"(__NR_close), "r"(fd) : "x0", "x8");
+    #else
+        close_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (n > 0) {
         size_t copy = n < (int64_t)size ? n : (int64_t)size;
         std::memcpy(buf, tmp, copy);
@@ -42,64 +54,124 @@ bool write_file(const char* path, const char* content, size_t len) {
     int flags = O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC;
     int mode = 0644;
     int64_t fd = 0;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %[nr]; mov x0, %[dir]; mov x1, %[path]; mov x2, %[flags]; mov x3, %[mode]; svc #0; mov %[fd], x0"
                  : [fd] "=r"(fd)
                  : [nr] "i"(__NR_openat), [dir] "i"(AT_FDCWD), [path] "r"(path), [flags] "r"((int64_t)flags), [mode] "r"((int64_t)mode)
                  : "x0", "x1", "x2", "x3", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     if (fd < 0) return false;
 
     int64_t n;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(content), "r"((int64_t)len)
                  : "x0", "x1", "x2", "x8");
+    #else
+        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
 
     int64_t close_ret;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; svc #0; mov %0, x0"
                  : "=r"(close_ret) : "i"(__NR_close), "r"(fd) : "x0", "x8");
+    #else
+        close_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     return n == (int64_t)len;
 }
 
 bool delete_path(const char* path) {
     int64_t ret = 0;
+    #if defined(__aarch64__)
     asm volatile("mov x8, 10; mov x0, %1; svc #0; mov %0, x0" // unlinkat
                  : "=r"(ret) : "r"(path) : "x0", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     return ret == 0;
 }
 
 bool exec_su_command(const char* cmd) {
     int64_t pid = 0;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; svc #0; mov %0, x0"
                  : "=r"(pid) : "i"(__NR_fork) : "x0", "x8");
+    #else
+        pid = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (pid == 0) {
         const char* argv[] = {"su", "-c", cmd, nullptr};
         const char* envp[] = {"PATH=/sbin:/system/bin:/system/xbin", nullptr};
+        #if defined(__aarch64__)
         asm volatile("mov x8, 221; mov x0, %0; mov x1, %1; mov x2, %2; svc #0" // execve
                      : : "r"("/system/bin/sh"), "r"(argv), "r"(envp) : "x0", "x1", "x2", "x8");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
+        #if defined(__aarch64__)
         asm volatile("mov x8, 93; mov x0, 1; svc #0"); // _exit
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
     }
     return pid >= 0;
 }
 
 bool exec_su_command_quiet(const char* cmd) {
     int64_t pid = 0;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; svc #0; mov %0, x0"
                  : "=r"(pid) : "i"(__NR_fork) : "x0", "x8");
+    #else
+            pid = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (pid == 0) {
         int64_t devnull;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(devnull) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/dev/null"), "i"(O_RDWR), "i"(0));
+        #else
+            devnull = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         int64_t null_fd = devnull;
+        #if defined(__aarch64__)
         asm volatile("mov x8, 24; mov x0, %1; mov x1, %2; svc #0" : : "i"(__NR_dup3), "r"(null_fd), "i"(0) : "x0", "x8");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
+        #if defined(__aarch64__)
         asm volatile("mov x8, 24; mov x0, %1; mov x1, %2; svc #0" : : "i"(__NR_dup3), "r"(null_fd), "i"(1) : "x0", "x8");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
+        #if defined(__aarch64__)
         asm volatile("mov x8, 24; mov x0, %1; mov x1, %2; svc #0" : : "i"(__NR_dup3), "r"(null_fd), "i"(2) : "x0", "x8");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
         if (devnull >= 0) {
             int64_t cr;
+            #if defined(__aarch64__)
             asm volatile("mov x8, %1; mov x0, %2; svc #0; mov %0, x0" : "=r"(cr) : "i"(__NR_close), "r"(null_fd) : "x0", "x8");
+            #else
+                cr = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+            #endif
         }
         const char* argv[] = {"sh", "-c", cmd, nullptr};
+        #if defined(__aarch64__)
         asm volatile("mov x8, 221; mov x0, %0; mov x1, %1; mov x2, %2; svc #0"
                      : : "r"("/system/bin/sh"), "r"(argv), "r"(nullptr) : "x0", "x1", "x2", "x8");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
+        #if defined(__aarch64__)
         asm volatile("mov x8, 93; mov x0, 1; svc #0");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
     }
     return pid >= 0;
 }

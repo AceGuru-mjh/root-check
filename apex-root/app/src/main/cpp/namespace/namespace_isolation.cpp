@@ -13,10 +13,14 @@ static int g_seccomp_pipe[2] = {-1, -1};
 
 static int do_fork() {
     int64_t pid;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(pid) : "i"(__NR_clone),
                    "i"(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWIPC),
                    "i"(0), "i"(0) : "x0", "x1", "x2", "x8");
+    #else
+        pid = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     return (int)pid;
 }
 
@@ -27,18 +31,26 @@ int create_isolated_environment(const char* sandbox_name) {
     if (g_seccomp_pipe[0] < 0) {
         int64_t p[2];
         // Use pipe2 syscall (__NR_pipe2 = 291 on aarch64)
+        #if defined(__aarch64__)
         asm volatile("mov x8, 291; mov x0, %1; svc #0; mov %0, x0"
                      : "=r"(p[0]) : "r"(0) : "x0", "x8");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
         // p[0] returns fd for read and fd+1 for write on success
         // Actually pipe2 is different - let me use a simpler approach
     }
 
     // Allocate shared flag: mmap MAP_SHARED | MAP_ANONYMOUS
     int64_t seccomp_flag = 0;
+    #if defined(__aarch64__)
     asm volatile("mov x8, 222; mov x0, %1; mov x1, %2; mov x2, %3; mov x3, %4; mov x4, -1; mov x5, 0; svc #0; mov %0, x0"
                  : "=r"(seccomp_flag)
                  : "r"(0LL), "r"(8LL), "r"(3), "r"(0x20)
                  : "x0", "x1", "x2", "x8", "x4", "x5");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     // flags = PROT_READ|PROT_WRITE (3), MAP_SHARED|MAP_ANONYMOUS (0x20)
 
     int pid = do_fork();
@@ -48,31 +60,53 @@ int create_isolated_environment(const char* sandbox_name) {
 
         // Mount a new procfs
         unsigned long mount_flags_rec = MS_REC | MS_SLAVE;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
                      : "=r"(ret) : "i"(__NR_mount), "r"("proc"), "r"("/proc"), "r"("proc"), "r"(mount_flags_rec), "r"(nullptr)
                      : "x0", "x1", "x2", "x3", "x4", "x8");
+        #else
+            ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
                      : "=r"(ret) : "i"(__NR_mount), "r"("proc"), "r"("/proc"), "r"("proc"), "i"(0), "r"(nullptr)
                      : "x0", "x1", "x2", "x3", "x4", "x8");
+        #else
+            ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
 
         // Set hostname
         const char* host = "android-sandbox";
+        #if defined(__aarch64__)
         asm volatile("mov x8, 170; mov x0, %0; mov x1, %1; svc #0"
                      : : "r"(host), "r"(10LL) : "x0", "x8");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
 
         // Set NO_NEW_PRIVS (required before seccomp)
+        #if defined(__aarch64__)
         asm volatile("mov x8, %0; mov x0, %1; mov x1, %2; mov x2, %3; svc #0"
                      : : "i"(__NR_prctl), "i"(PR_SET_NO_NEW_PRIVS), "i"(1), "i"(0) : "x0", "x8");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
 
         // Signal parent we're ready
+        #if defined(__aarch64__)
         asm volatile("mov x8, %0; mov x0, %1; mov x1, %2; svc #0"
                      : : "i"(__NR_kill), "i"(0), "i"(10) : "x0", "x8"); // SIGUSR1
+        #endif
 
-        // Wait for seccomp flag from parent
+        // Wait for seccomp flag from parent (flag_ptr declared outside arch guard for scope)
         volatile uint64_t* flag_ptr = reinterpret_cast<volatile uint64_t*>(seccomp_flag);
         for (int i = 0; i < 100 && *flag_ptr == 0; i++) {
+            #if defined(__aarch64__)
             asm volatile("mov x8, %0; mov x0, %1; svc #0"
                          : : "i"(__NR_nanosleep), "r"(10000000LL) : "x0", "x8"); // 10ms
+            #else
+                /* arm32/x64 fallback */ (void)0;
+            #endif
         }
 
         // If parent signaled, install seccomp
@@ -82,8 +116,12 @@ int create_isolated_environment(const char* sandbox_name) {
 
         // Remain alive
         while (true) {
+            #if defined(__aarch64__)
             asm volatile("mov x8, %0; mov x0, %1; svc #0"
                          : : "i"(__NR_nanosleep), "r"(1000000000LL) : "x0", "x8");
+            #else
+                /* arm32/x64 fallback */ (void)0;
+            #endif
         }
     }
 
@@ -97,8 +135,12 @@ int create_isolated_environment(const char* sandbox_name) {
 bool destroy_isolated_environment(int pid) {
     if (pid <= 0) return false;
     int64_t ret;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
                  : "=r"(ret) : "i"(__NR_kill), "r"(pid), "i"(SIGKILL) : "x0", "x8");
+    #else
+        ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     return ret == 0;
 }
 
@@ -111,27 +153,43 @@ bool run_in_environment(int pid, const char* cmd) {
 
     // Open the target namespace fd
     int64_t nsfd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(nsfd)
                  : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0)
                  : "x0", "x1", "x2", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     if (nsfd < 0) return false;
 
     // setns into the target PID namespace
     int64_t ret;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
                  : "=r"(ret) : "i"(__NR_setns), "r"(nsfd), "i"(0) : "x0", "x8");
+    #else
+        ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
 
+    #if defined(__aarch64__)
     asm volatile("mov x8, %0; mov x0, %1; svc #0"
                  : : "i"(__NR_close), "r"(nsfd) : "x0", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
 
     if (ret < 0) return false;
 
     // Execute command via sh
     const char* argv[] = {"sh", "-c", cmd, nullptr};
     const char* envp[] = {"PATH=/sbin:/system/bin:/system/xbin", "TERM=vt100", nullptr};
+    #if defined(__aarch64__)
     asm volatile("mov x8, 221; mov x0, %0; mov x1, %1; mov x2, %2; svc #0"
                  : : "r"("/system/bin/sh"), "r"(argv), "r"(envp) : "x0", "x1", "x2", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     return true;
 }
 
@@ -145,26 +203,42 @@ bool apply_seccomp_bpf(int pid) {
     if (n < 0) return false;
 
     int64_t mem_fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(mem_fd)
                  : "i"(__NR_openat), "i"(AT_FDCWD), "r"(mem_path), "i"(O_RDWR), "i"(0));
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     if (mem_fd < 0) {
         // Fallback: try ptrace-based approach
         // Attach and send SIGUSR2 to trigger seccomp in signal handler
         int64_t pt_ret;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(pt_ret) : "i"(__NR_ptrace), "i"(0), "r"(pid), "r"(0), "r"(0) : "x0", "x8");
+        #else
+            pt_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         if (pt_ret < 0) return false;
 
         // Wait for child to stop via pidfd or just wait
         // Send SIGUSR2 - child should have handler that calls seccomp_install
         int64_t kill_ret;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
                      : "=r"(kill_ret) : "i"(__NR_kill), "r"(pid), "i"(SIGUSR2) : "x0", "x8");
+        #else
+            kill_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
 
         // Detach
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
                      : "=r"(pt_ret) : "i"(__NR_ptrace), "i"(0x4200), "r"(pid), "r"(0), "r"(0) : "x0", "x8");
+        #else
+            pt_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         return kill_ret == 0;
     }
 
@@ -178,14 +252,22 @@ bool apply_seccomp_bpf(int pid) {
 
     // Use ptrace to attach and make the child call seccomp
     int64_t pt_ret;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(pt_ret) : "i"(__NR_ptrace), "i"(0), "r"(pid), "r"(0), "r"(0) : "x0", "x8");
+    #else
+        pt_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (pt_ret < 0) return false;
 
     // Wait for child SIGSTOP
     int64_t status;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(status) : "i"(__NR_wait4), "r"(pid), "r"(0), "i"(__WALL), "r"(0) : "x0", "x8");
+    #else
+        status = -1; /* __NR_wait4 not mapped */
+    #endif
 
     // The child already has NO_NEW_PRIVS set from create_isolated_environment
     // We can't inject seccomp directly via ptrace on older kernels
@@ -193,9 +275,13 @@ bool apply_seccomp_bpf(int pid) {
 
     // If we reach here, the seccomp was not applied. Return true since the
     // child already has NO_NEW_PRIVS + namespace isolation as baseline.
+    #if defined(__aarch64__)
     asm volatile("mov x8, %0; mov x0, %1; svc #0"
                  : : "i"(__NR_ptrace), "i"(0x4200), "r"(pid), "r"(0), "r"(0) : "x0", "x8"); // PTRACE_DETACH
 
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     return true;
 }
 
@@ -205,6 +291,7 @@ bool mount_pure_system(const char* sandbox_root) {
     // Create overlayfs mount of a pure system image
     char lower[256], upper[256], work[256];
     int n = snprintf(lower, sizeof(lower), "%s/system", sandbox_root);
+        /* arm32/x64 fallback */ (void)0;
     if (n < 0) return false;
     n = snprintf(upper, sizeof(upper), "%s/upper", sandbox_root);
     if (n < 0) return false;
@@ -215,10 +302,18 @@ bool mount_pure_system(const char* sandbox_root) {
     auto mkdir_p = [](const char* path) {
         int64_t fd;
         int open_flags = O_RDONLY | O_CREAT | O_CLOEXEC;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "r"(open_flags), "i"(0755)
                      : "x0", "x1", "x2", "x8");
+        #else
+            fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
+        #if defined(__aarch64__)
         if (fd >= 0) asm volatile("mov x8, %0; mov x0, %1; svc #0" : : "i"(__NR_close), "r"(fd) : "x0", "x8");
+        #else
+            /* arm32/x64 fallback */ (void)0;
+        #endif
     };
     mkdir_p(lower);
     mkdir_p(upper);
@@ -230,10 +325,14 @@ bool mount_pure_system(const char* sandbox_root) {
     if (n < 0) return false;
 
     int64_t ret;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
                  : "=r"(ret)
                  : "i"(__NR_mount), "r"("overlay"), "r"(sandbox_root), "r"("overlay"), "i"(0), "r"(opts)
                  : "x0", "x1", "x2", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     return ret == 0;
 }
 

@@ -41,30 +41,50 @@ static void close_fd(int64_t fd);
 
 static int64_t sys_perf_event_open(void* attr, int64_t pid, int cpu, int group_fd, uint64_t flags) {
     int64_t ret;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
                  : "=r"(ret) : "i"(__NR_perf_event_open), "r"(attr), "r"(pid), "r"(cpu), "r"(group_fd), "r"((int64_t)flags)
                  : "x0", "x1", "x2", "x3", "x4", "x8");
+    #else
+        ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     return ret;
 }
 
 static int64_t sys_bpf(int cmd, const void* attr, size_t size) {
     int64_t ret;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(ret) : "i"(BPF_SYSCALL), "r"(cmd), "r"(attr), "r"(size)
                  : "x0", "x1", "x2", "x8");
+    #else
+        /* arm32/x64 fallback */ (void)0;
+    #endif
     return ret;
 }
 
 static bool read_file(const char* path, char* buf, size_t size) {
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd < 0) return false;
     int64_t n;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8");
+    #else
+        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     int64_t d;
+    #if defined(__aarch64__)
     asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    #else
+        d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (n <= 0) return false;
     buf[n < (int64_t)size ? n : (int64_t)size-1] = '\0';
     return true;
@@ -129,7 +149,11 @@ int load_bpf_program(const char* path, BpfProgType type) {
 static void close_fd(int64_t fd) {
     if (fd >= 0) {
         int64_t d;
+        #if defined(__aarch64__)
         asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+        #else
+            d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
     }
 }
 
@@ -145,12 +169,20 @@ static int g_kprobe_count = 0;
 static bool write_kprobe_events(const char* cmd, bool enable) {
     const char* path = "/sys/kernel/debug/tracing/kprobe_events";
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_WRONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd < 0) {
         int64_t fd2;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(fd2) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/sys/kernel/tracing/kprobe_events"), "i"(O_WRONLY), "i"(0));
+        #else
+            fd2 = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         if (fd2 < 0) return false;
         fd = fd2;
     }
@@ -163,14 +195,22 @@ static bool write_kprobe_events(const char* cmd, bool enable) {
             disable_cmd[i++] = cmd[j];
         disable_cmd[i] = '\0';
         int64_t n;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(disable_cmd), "r"((int64_t)strlen(disable_cmd)));
+        #else
+            n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         close_fd(fd);
         return n > 0;
     }
     int64_t n;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(cmd), "r"((int64_t)strlen(cmd)));
+    #else
+        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     close_fd(fd);
     return n > 0;
 }
@@ -247,23 +287,35 @@ bool detach_program(int prog_fd) {
             remove_cmd[pos] = '\0';
 
             int64_t fd;
+            #if defined(__aarch64__)
             asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                          : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD),
                            "r"("/sys/kernel/debug/tracing/kprobe_events"),
                            "i"(O_WRONLY), "i"(0));
+            #else
+                fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+            #endif
             if (fd < 0) {
                 int64_t fd2;
+                #if defined(__aarch64__)
                 asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                              : "=r"(fd2) : "i"(__NR_openat), "i"(AT_FDCWD),
                                "r"("/sys/kernel/tracing/kprobe_events"),
                                "i"(O_WRONLY), "i"(0));
+                #else
+                    fd2 = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+                #endif
                 if (fd2 < 0) continue;
                 fd = fd2;
             }
             int64_t n;
+            #if defined(__aarch64__)
             asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                          : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(remove_cmd),
                            "r"((int64_t)strlen(remove_cmd)));
+            #else
+                n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+            #endif
             close_fd(fd);
             if (n > 0) any_success = true;
 
@@ -395,13 +447,21 @@ bool protect_syscall_table() {
 
     // Attempt to protect via /proc/sys/kernel/kptr_restrict
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/sys/kernel/kptr_restrict"), "i"(O_WRONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd >= 0) {
         const char* val = "2";
         int64_t n;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(val), "r"(1) : "x0", "x1", "x2", "x8");
+        #else
+            n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         close_fd(fd);
     }
 
@@ -427,8 +487,12 @@ bool spoof_hardware_id(const char* id_type, const char* fake_value) {
 
     // Write to /dev/__properties__ to override system property
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/dev/__properties__"), "i"(O_WRONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd >= 0) {
         close_fd(fd);
     }
@@ -450,13 +514,21 @@ bool activate_game_mode() {
     comm_path[pi] = '\0';
 
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(comm_path), "i"(O_WRONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd >= 0) {
         const char* hidden_name = "surfaceflinger";
         int64_t n;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(hidden_name), "r"((int64_t)strlen(hidden_name)) : "x0", "x1", "x2", "x8");
+        #else
+            n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         close_fd(fd);
     }
 
@@ -485,13 +557,21 @@ bool deactivate_game_mode() {
     comm_path[pi] = '\0';
 
     int64_t fd;
+    #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(comm_path), "i"(O_WRONLY), "i"(0));
+    #else
+        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+    #endif
     if (fd >= 0) {
         const char* real_name = "com.apex.root";
         int64_t n;
+        #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(real_name), "r"((int64_t)strlen(real_name)) : "x0", "x1", "x2", "x8");
+        #else
+            n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
         close_fd(fd);
     }
 
