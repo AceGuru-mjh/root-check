@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <unistd.h>
+#include <sched.h>
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -10,6 +11,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <signal.h>
+#include <errno.h>
 #include <android/log.h>
 
 #define LOG_TAG "APEX-LEGACY"

@@ -30,7 +30,7 @@ static void destroy_fw() {
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_apex_root_data_jni_NativeBridge_enableHideMode(
+Java_com_apex_root_data_jni_NativeBridge_enableHideModeNative(
     JNIEnv *env, jobject thiz, jint apex_uid) {
     ensure_fw((uint32_t)apex_uid);
     std::lock_guard<std::mutex> lock(g_fw_mutex);
@@ -41,7 +41,7 @@ Java_com_apex_root_data_jni_NativeBridge_enableHideMode(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_apex_root_data_jni_NativeBridge_disableHideMode(
+Java_com_apex_root_data_jni_NativeBridge_disableHideModeNative(
     JNIEnv *env, jobject thiz) {
     std::lock_guard<std::mutex> lock(g_fw_mutex);
     if (g_fw) {
@@ -51,7 +51,7 @@ Java_com_apex_root_data_jni_NativeBridge_disableHideMode(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_isHideModeActive(
+Java_com_apex_root_data_jni_NativeBridge_isHideModeActiveNative(
     JNIEnv *env, jobject thiz) {
     std::lock_guard<std::mutex> lock(g_fw_mutex);
     if (!g_fw) return false;
@@ -59,7 +59,7 @@ Java_com_apex_root_data_jni_NativeBridge_isHideModeActive(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_apex_root_data_jni_NativeBridge_enableGameMode(
+Java_com_apex_root_data_jni_NativeBridge_enableGameModeNative(
     JNIEnv *env, jobject thiz, jint apex_uid) {
     ensure_fw((uint32_t)apex_uid);
     std::lock_guard<std::mutex> lock(g_fw_mutex);
@@ -70,7 +70,7 @@ Java_com_apex_root_data_jni_NativeBridge_enableGameMode(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_apex_root_data_jni_NativeBridge_getCurrentMode(
+Java_com_apex_root_data_jni_NativeBridge_getCurrentModeNative(
     JNIEnv *env, jobject thiz) {
     std::lock_guard<std::mutex> lock(g_fw_mutex);
     if (!g_fw) return 0;
@@ -78,12 +78,10 @@ Java_com_apex_root_data_jni_NativeBridge_getCurrentMode(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_getLastError(
+Java_com_apex_root_data_jni_NativeBridge_getLastErrorNative(
     JNIEnv *env, jobject thiz) {
     std::lock_guard<std::mutex> lock(g_fw_mutex);
     if (!g_fw) return env->NewStringUTF("not initialized");
     return env->NewStringUTF(g_fw->last_error().c_str());
-}
-
 }
 

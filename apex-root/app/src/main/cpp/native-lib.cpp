@@ -54,7 +54,7 @@ extern "C" {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_runQuickScan(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_runQuickScanNative(JNIEnv* env, jobject) {
     std::string result = "=== APEX-Root Scan Result ===\n\n";
 
     bool l1 = detectSuspiciousProperties();
@@ -105,7 +105,7 @@ Java_com_apex_root_data_jni_NativeBridge_runQuickScan(JNIEnv* env, jobject) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_isDeviceRooted(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_isDeviceRootedNative(JNIEnv*, jobject) {
     return detectSuspiciousProperties() || detectArtInjection() ||
            detectSuspiciousMemory() || detectSuspiciousMounts() ||
            detectMagiskDaemon() || detectKernelSU() || detectAPatch() ||
@@ -119,7 +119,7 @@ Java_com_apex_root_data_jni_NativeBridge_isDeviceRooted(JNIEnv*, jobject) {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL
-Java_com_apex_root_island_NativeIsland_createIsolatedEnv(JNIEnv* env, jobject, jstring name) {
+Java_com_apex_root_island_NativeIsland_createIsolatedEnvNative(JNIEnv* env, jobject, jstring name) {
     const char* cname = env->GetStringUTFChars(name, nullptr);
     int pid = apex::island::create_isolated_environment(cname);
     env->ReleaseStringUTFChars(name, cname);
@@ -127,7 +127,7 @@ Java_com_apex_root_island_NativeIsland_createIsolatedEnv(JNIEnv* env, jobject, j
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_island_NativeIsland_destroyIsolatedEnv(JNIEnv*, jobject, jint pid) {
+Java_com_apex_root_island_NativeIsland_destroyIsolatedEnvNative(JNIEnv*, jobject, jint pid) {
     return apex::island::destroy_isolated_environment(pid);
 }
 
@@ -136,30 +136,30 @@ Java_com_apex_root_island_NativeIsland_destroyIsolatedEnv(JNIEnv*, jobject, jint
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL
-Java_com_apex_root_cure_NativeCure_detectRootType(JNIEnv*, jobject) {
+Java_com_apex_root_cure_NativeCure_detectRootTypeNative(JNIEnv*, jobject) {
     return static_cast<jint>(apex::cure::detect_root_solution());
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_cure_NativeCure_lightCleanup(JNIEnv*, jobject) {
+Java_com_apex_root_cure_NativeCure_lightCleanupNative(JNIEnv*, jobject) {
     auto result = apex::cure::light_cleanup();
     return result.success;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_cure_NativeCure_standardFix(JNIEnv*, jobject, jint root_type) {
+Java_com_apex_root_cure_NativeCure_standardFixNative(JNIEnv*, jobject, jint root_type) {
     auto result = apex::cure::standard_fix(static_cast<apex::cure::RootType>(root_type));
     return result.success;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_cure_NativeCure_deepRecovery(JNIEnv*, jobject) {
+Java_com_apex_root_cure_NativeCure_deepRecoveryNative(JNIEnv*, jobject) {
     auto result = apex::cure::deep_recovery();
     return result.success;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_cure_NativeCure_factoryReset(JNIEnv*, jobject) {
+Java_com_apex_root_cure_NativeCure_factoryResetNative(JNIEnv*, jobject) {
     auto result = apex::cure::factory_reset();
     return result.success;
 }
@@ -169,19 +169,19 @@ Java_com_apex_root_cure_NativeCure_factoryReset(JNIEnv*, jobject) {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_guard_NativeGuard_startGuardian(JNIEnv*, jobject) {
+Java_com_apex_root_guard_NativeGuard_startGuardianNative(JNIEnv*, jobject) {
     return apex::guard::start_guardian();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_guard_NativeGuard_checkIntegrity(JNIEnv*, jobject) {
+Java_com_apex_root_guard_NativeGuard_checkIntegrityNative(JNIEnv*, jobject) {
     bool sys_ok = apex::guard::check_system_integrity();
     bool mod_ok = apex::guard::check_kernel_module_integrity();
     return sys_ok && mod_ok;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_guard_NativeGuard_preventTamper(JNIEnv*, jobject) {
+Java_com_apex_root_guard_NativeGuard_preventTamperNative(JNIEnv*, jobject) {
     return apex::guard::prevent_system_tamper();
 }
 
@@ -190,17 +190,17 @@ Java_com_apex_root_guard_NativeGuard_preventTamper(JNIEnv*, jobject) {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_game_NativeGameMode_enterGameMode(JNIEnv*, jobject) {
+Java_com_apex_root_game_NativeGameMode_enterGameModeNative(JNIEnv*, jobject) {
     return apex::game::enter_game_mode();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_game_NativeGameMode_exitGameMode(JNIEnv*, jobject) {
+Java_com_apex_root_game_NativeGameMode_exitGameModeNative(JNIEnv*, jobject) {
     return apex::game::exit_game_mode();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_game_NativeGameMode_isInGameMode(JNIEnv*, jobject) {
+Java_com_apex_root_game_NativeGameMode_isInGameModeNative(JNIEnv*, jobject) {
     return apex::game::is_in_game_mode();
 }
 
@@ -209,12 +209,12 @@ Java_com_apex_root_game_NativeGameMode_isInGameMode(JNIEnv*, jobject) {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_hid_NativeHwid_spoofAll(JNIEnv*, jobject) {
+Java_com_apex_root_hid_NativeHwid_spoofAllNative(JNIEnv*, jobject) {
     return apex::hid::spoof_all_hwids();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_hid_NativeHwid_restoreReal(JNIEnv*, jobject) {
+Java_com_apex_root_hid_NativeHwid_restoreRealNative(JNIEnv*, jobject) {
     return apex::hid::restore_real_hwids();
 }
 
@@ -223,7 +223,7 @@ Java_com_apex_root_hid_NativeHwid_restoreReal(JNIEnv*, jobject) {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL
-Java_com_apex_root_data_jni_NativeBridge_getRiskScore(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_getRiskScoreNative(JNIEnv*, jobject) {
     int score = 0;
     if (detectSuspiciousProperties()) score += 10;
     if (detectArtInjection()) score += 12;
@@ -251,12 +251,12 @@ Java_com_apex_root_data_jni_NativeBridge_getRiskScore(JNIEnv*, jobject) {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_isPostQuantumAvailable(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_isPostQuantumAvailableNative(JNIEnv*, jobject) {
     return apex::crypto::OqsSignature::getInstance().isAvailable();
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_getSignedReport(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_getSignedReportNative(JNIEnv* env, jobject) {
     auto& oqs = apex::crypto::OqsSignature::getInstance();
     if (!oqs.isAvailable()) {
         return env->NewStringUTF("ERROR: Post-quantum crypto not available (liboqs not linked)");
@@ -301,7 +301,7 @@ Java_com_apex_root_data_jni_NativeBridge_getSignedReport(JNIEnv* env, jobject) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_getPostQuantumInfo(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_getPostQuantumInfoNative(JNIEnv* env, jobject) {
     auto& oqs = apex::crypto::OqsSignature::getInstance();
     std::string info;
     info += "liboqs Available: " + std::string(oqs.isAvailable() ? "YES" : "NO") + "\n";
@@ -317,7 +317,7 @@ Java_com_apex_root_data_jni_NativeBridge_getPostQuantumInfo(JNIEnv* env, jobject
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_virtualXposedFullScan(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_virtualXposedFullScanNative(JNIEnv* env, jobject) {
     char report[4096];
     report[0] = '\0';
     virtualXposedFullScan(report, sizeof(report));
@@ -325,7 +325,7 @@ Java_com_apex_root_data_jni_NativeBridge_virtualXposedFullScan(JNIEnv* env, jobj
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_dangerousAppsFullScan(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_dangerousAppsFullScanNative(JNIEnv* env, jobject) {
     char report[4096];
     report[0] = '\0';
     dangerousAppsFullScan(report, sizeof(report));
@@ -333,7 +333,7 @@ Java_com_apex_root_data_jni_NativeBridge_dangerousAppsFullScan(JNIEnv* env, jobj
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_magiskExtensionsFullScan(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_magiskExtensionsFullScanNative(JNIEnv* env, jobject) {
     char report[4096];
     report[0] = '\0';
     magiskExtensionsFullScan(report, sizeof(report));
@@ -341,92 +341,92 @@ Java_com_apex_root_data_jni_NativeBridge_magiskExtensionsFullScan(JNIEnv* env, j
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectVirtualXposed(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectVirtualXposedNative(JNIEnv*, jobject) {
     return detectVirtualXposed();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectTaiChi(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectTaiChiNative(JNIEnv*, jobject) {
     return detectTaiChi();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectDualSpaceApps(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectDualSpaceAppsNative(JNIEnv*, jobject) {
     return detectDualSpaceApps();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectGameGuardian(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectGameGuardianNative(JNIEnv*, jobject) {
     return detectGameGuardian();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectCheatEngine(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectCheatEngineNative(JNIEnv*, jobject) {
     return detectCheatEngine();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectLuckyPatcher(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectLuckyPatcherNative(JNIEnv*, jobject) {
     return detectLuckyPatcher();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectMemoryEditors(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectMemoryEditorsNative(JNIEnv*, jobject) {
     return detectMemoryEditors();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectCrackingTools(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectCrackingToolsNative(JNIEnv*, jobject) {
     return detectCrackingTools();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectMagiskDenyList(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectMagiskDenyListNative(JNIEnv*, jobject) {
     return detectMagiskDenyList();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectZygiskModules(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectZygiskModulesNative(JNIEnv*, jobject) {
     return detectZygiskModules();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectLSPosedManager(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectLSPosedManagerNative(JNIEnv*, jobject) {
     return detectLSPosedManager();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectRiruModules(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectRiruModulesNative(JNIEnv*, jobject) {
     return detectRiruModules();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectModernForks(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectModernForksNative(JNIEnv*, jobject) {
     return detectModernForks();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectHideMyApplist(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectHideMyApplistNative(JNIEnv*, jobject) {
     return detectHideMyApplist();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectStorageIsolation(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectStorageIsolationNative(JNIEnv*, jobject) {
     return detectStorageIsolation();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectMagiskHideLegacy(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectMagiskHideLegacyNative(JNIEnv*, jobject) {
     return detectMagiskHideLegacy();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectMagiskDenyListCfg(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectMagiskDenyListCfgNative(JNIEnv*, jobject) {
     return detectMagiskDenyList();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectSyscallResultInconsistency(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectSyscallResultInconsistencyNative(JNIEnv*, jobject) {
     return detectSyscallResultInconsistency();
 }
 
@@ -435,12 +435,12 @@ Java_com_apex_root_data_jni_NativeBridge_detectSyscallResultInconsistency(JNIEnv
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL
-Java_com_apex_root_data_jni_NativeBridge_fullMemoryFingerprint(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_fullMemoryFingerprintNative(JNIEnv*, jobject) {
     return fullMemoryFingerprintScan();
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_deepMemoryScanReport(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_deepMemoryScanReportNative(JNIEnv* env, jobject) {
     char report[4096];
     report[0] = '\0';
     deepMemoryFingerprintScan(report, sizeof(report));
@@ -448,7 +448,7 @@ Java_com_apex_root_data_jni_NativeBridge_deepMemoryScanReport(JNIEnv* env, jobje
 }
 
 JNIEXPORT jint JNICALL
-Java_com_apex_root_data_jni_NativeBridge_countRWXPages(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_countRWXPagesNative(JNIEnv*, jobject) {
     return countRWXPages();
 }
 
@@ -457,17 +457,17 @@ Java_com_apex_root_data_jni_NativeBridge_countRWXPages(JNIEnv*, jobject) {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectSELinuxContextJump(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectSELinuxContextJumpNative(JNIEnv*, jobject) {
     return detectSELinuxContextJump();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectSELinuxPolicyMod(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectSELinuxPolicyModNative(JNIEnv*, jobject) {
     return detectSELinuxPolicyModification();
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_selinuxFullScan(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_selinuxFullScanNative(JNIEnv* env, jobject) {
     char report[2048];
     report[0] = '\0';
     runSELinuxFullScan(report, sizeof(report));
@@ -479,12 +479,12 @@ Java_com_apex_root_data_jni_NativeBridge_selinuxFullScan(JNIEnv* env, jobject) {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectShamiko(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectShamikoNative(JNIEnv*, jobject) {
     return detectShamiko();
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_shamikoFullScan(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_shamikoFullScanNative(JNIEnv* env, jobject) {
     char report[2048];
     report[0] = '\0';
     shamikoFullScan(report, sizeof(report));
@@ -492,12 +492,12 @@ Java_com_apex_root_data_jni_NativeBridge_shamikoFullScan(JNIEnv* env, jobject) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectZygiskNext(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectZygiskNextNative(JNIEnv*, jobject) {
     return detectZygiskNext();
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_zygiskNextFullScan(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_zygiskNextFullScanNative(JNIEnv* env, jobject) {
     char report[2048];
     report[0] = '\0';
     zygiskNextFullScan(report, sizeof(report));
@@ -505,12 +505,12 @@ Java_com_apex_root_data_jni_NativeBridge_zygiskNextFullScan(JNIEnv* env, jobject
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectProcessHiding(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectProcessHidingNative(JNIEnv*, jobject) {
     return detectProcessHiding();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectMountNamespaceHiding(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectMountNamespaceHidingNative(JNIEnv*, jobject) {
     return detectMountNamespaceHiding();
 }
 
@@ -522,7 +522,7 @@ Java_com_apex_root_data_jni_NativeBridge_detectMountNamespaceHiding(JNIEnv*, job
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_artEnhancedScan(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_artEnhancedScanNative(JNIEnv* env, jobject) {
     char report[2048];
     report[0] = '\0';
     detectArtEnhanced(report, sizeof(report));
@@ -534,22 +534,22 @@ Java_com_apex_root_data_jni_NativeBridge_artEnhancedScan(JNIEnv* env, jobject) {
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectFirmwareTampering(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectFirmwareTamperingNative(JNIEnv*, jobject) {
     return detectFirmwareTampering();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectAVBStatus(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectAVBStatusNative(JNIEnv*, jobject) {
     return detectAVBStatus();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectCustomRecovery(JNIEnv*, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_detectCustomRecoveryNative(JNIEnv*, jobject) {
     return detectRecoveryPartition();
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_firmwareFullScan(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_firmwareFullScanNative(JNIEnv* env, jobject) {
     char report[2048];
     report[0] = '\0';
     firmwareFullScan(report, sizeof(report));
@@ -561,7 +561,7 @@ Java_com_apex_root_data_jni_NativeBridge_firmwareFullScan(JNIEnv* env, jobject) 
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jstring JNICALL
-Java_com_apex_root_data_jni_NativeBridge_getDeviceIdentifier(JNIEnv* env, jobject) {
+Java_com_apex_root_data_jni_NativeBridge_getDeviceIdentifierNative(JNIEnv* env, jobject) {
     char buf[256];
     // Build device ID from system properties
     auto read_prop = [](const char* prop) -> std::string {
@@ -598,7 +598,7 @@ Java_com_apex_root_data_jni_NativeBridge_getDeviceIdentifier(JNIEnv* env, jobjec
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_com_apex_root_data_jni_NativeBridge_sha3_512(JNIEnv* env, jobject, jbyteArray data) {
+Java_com_apex_root_data_jni_NativeBridge_sha3_512Native(JNIEnv* env, jobject, jbyteArray data) {
     jsize len = env->GetArrayLength(data);
     jbyte* bytes = env->GetByteArrayElements(data, nullptr);
     auto hash = apex::crypto::sha3_512(

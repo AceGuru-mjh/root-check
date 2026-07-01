@@ -16,8 +16,7 @@
 
 static int64_t check_access(const char* path) {
     int64_t ret;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_access), "r"(path), "i"(F_OK) : "x0", "x1", "x8");
+    ret = apex_check_access(path);
     return ret;
 }
 

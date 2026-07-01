@@ -237,4 +237,31 @@
 #define __NR_syscalls 500
 #endif
 
+// ─────────────────────────────────────────────────────────────
+// arm64 上 syscall 48 是 faccessat（arm64 ABI 没有 access 系统调用）。
+// faccessat 需要 4 个参数：(dirfd, path, mode, flags)，
+// 而旧代码按 access 的 2 参数调用，导致 x0 被当作 dirfd（大指针）→ -EBADF，
+// 所有基于 check_access 的文件检测恒为 false（检测失效）。
+// 此处提供正确实现的 faccessat 调用，供各检测层统一使用。
+// ─────────────────────────────────────────────────────────────
+static inline int64_t apex_check_access(const char* path) {
+    int64_t ret;
+    asm volatile(
+        "mov x8, %1\n"
+        "mov x0, %2\n"
+        "mov x1, %3\n"
+        "mov x2, %4\n"
+        "mov x3, %5\n"
+        "svc #0\n"
+        "mov %0, x0\n"
+        : "=r"(ret)
+        : "i"(48 /* __NR_faccessat */),
+          "i"(AT_FDCWD),
+          "r"(path),
+          "i"(F_OK),
+          "i"(0)
+        : "x0", "x1", "x2", "x3", "x8", "memory");
+    return ret;
+}
+
 #endif

@@ -44,18 +44,14 @@ bool detectXposedFramework() {
     if (check_maps_for("bytehook")) return true;
     // Check Xposed app installation
     int64_t ret;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_access), "r"("/data/data/de.robv.android.xposed.installer"), "i"(F_OK) : "x0", "x1", "x8");
+    ret = apex_check_access("/data/data/de.robv.android.xposed.installer");
     if (ret == 0) return true;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_access), "r"("/data/data/com.solohsu.xposed.edxp"), "i"(F_OK) : "x0", "x1", "x8");
+    ret = apex_check_access("/data/data/com.solohsu.xposed.edxp");
     if (ret == 0) return true;
     // 扩充：LSPosed Manager / LSPatch
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_access), "r"("/data/data/org.lsposed.manager"), "i"(F_OK) : "x0", "x1", "x8");
+    ret = apex_check_access("/data/data/org.lsposed.manager");
     if (ret == 0) return true;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_access), "r"("/data/data/org.lsposed.lspatch"), "i"(F_OK) : "x0", "x1", "x8");
+    ret = apex_check_access("/data/data/org.lsposed.lspatch");
     if (ret == 0) return true;
     return false;
 }
@@ -66,11 +62,9 @@ bool detectLSPosed() {
     if (check_maps_for("liblspd")) return true;
     // Check LSPosed app data
     int64_t ret;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_access), "r"("/data/data/com.lsposed.lsposed"), "i"(F_OK) : "x0", "x1", "x8");
+    ret = apex_check_access("/data/data/com.lsposed.lsposed");
     if (ret == 0) return true;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_access), "r"("/data/adb/lspd"), "i"(F_OK) : "x0", "x1", "x8");
+    ret = apex_check_access("/data/adb/lspd");
     return ret == 0;
 }
 
@@ -105,8 +99,7 @@ bool detectFrida() {
     };
     for (auto p = frida_paths; *p; ++p) {
         int64_t ret;
-        asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                     : "=r"(ret) : "i"(__NR_access), "r"(*p), "i"(F_OK) : "x0", "x1", "x8");
+        ret = apex_check_access(*p);
         if (ret == 0) return true;
     }
     return false;

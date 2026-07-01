@@ -1,9 +1,13 @@
 package com.apex.root.ui.compose.screens
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,10 +30,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.apex.root.ui.compose.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private enum class RootStatus { UNKNOWN, AVAILABLE, UNAVAILABLE }
 
@@ -44,16 +50,29 @@ fun GlassPermissionGuideScreen(onFinished: () -> Unit) {
 
     var rootStatus by remember { mutableStateOf(RootStatus.UNKNOWN) }
     var rootDetail by remember { mutableStateOf("正在检测 ROOT 状态...") }
-    var notifGranted by remember {
-        mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-            } else true
-        )
+
+    // 通知权限实时状态
+    fun isNotifGranted(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+    } else true
+
+    var notifGranted by remember { mutableStateOf(isNotifGranted()) }
+
+    // 运行时权限请求 Launcher —— 直接在应用内弹出系统授权对话框
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notifGranted = granted || isNotifGranted()
     }
 
+    // 启动时自动请求一次通知权限（Android 13+），并并行检测 Root
     LaunchedEffect(Unit) {
+        // 自动请求通知权限（仅 Android 13+ 且未授权时）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notifGranted) {
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        // 并行检测 Root 状态（带 3 秒超时，避免 su 弹窗导致 ANR）
         scope.launch {
             val (ok, detail) = withContext(Dispatchers.IO) { checkRootStatus() }
             rootStatus = if (ok) RootStatus.AVAILABLE else RootStatus.UNAVAILABLE
@@ -136,23 +155,25 @@ fun GlassPermissionGuideScreen(onFinished: () -> Unit) {
 
             Spacer(Modifier.height(14.dp))
 
-            // 通知权限卡片
+            // 通知权限卡片 —— 直接在应用内请求系统授权
             PermissionRow(
                 icon = Icons.Filled.Notifications,
                 iconTint = if (notifGranted) AccentMint else AccentGold,
                 title = "通知权限",
-                detail = if (notifGranted) "已授权" else "未授权（用于推送扫描结果）",
-                actionLabel = if (notifGranted) null else "去授权",
+                detail = if (notifGranted) "已授权" else "未授权（用于推送扫描结果与告警）",
+                actionLabel = when {
+                    notifGranted -> null
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> "去授权"
+                    else -> "去设置"
+                },
                 onAction = {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notifGranted) {
+                        // 直接弹出系统运行时权限对话框
+                        notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        // 低版本或已被永久拒绝：跳转应用通知设置页
                         val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                             putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        runCatching { context.startActivity(intent) }
-                    } else {
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", context.packageName, null)
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
                         runCatching { context.startActivity(intent) }
@@ -216,15 +237,24 @@ private fun PermissionRow(
     }
 }
 
-private fun checkRootStatus(): Pair<Boolean, String> = runCatching {
-    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-    val text = process.inputStream.bufferedReader().readText()
-    val exit = process.waitFor()
-    if (exit == 0 && text.contains("uid=0")) {
-        true to "已获取（uid=0）"
-    } else {
-        false to "未授权（exit=$exit）"
-    }
-}.getOrElse { e ->
-    false to "未安装 root 框架（${e.message ?: e.javaClass.simpleName}）"
-}
+/**
+ * 检测 Root 状态。带 3 秒超时，避免 su 弹窗阻塞导致 ANR/卡死。
+ * - 设备未安装 su：exec 抛 IOException → 返回"未安装"
+ * - su 已安装但需用户授权：waitFor 阻塞 → 超时后返回"超时"
+ * - su 已授权：返回 uid=0
+ */
+private suspend fun checkRootStatus(): Pair<Boolean, String> =
+    withTimeoutOrNull(3000L) {
+        runCatching {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            val text = process.inputStream.bufferedReader().readText()
+            val exit = process.waitFor()
+            if (exit == 0 && text.contains("uid=0")) {
+                true to "已获取（uid=0）"
+            } else {
+                false to "未授权（exit=$exit）"
+            }
+        }.getOrElse { e ->
+            false to "未安装 root 框架（${e.message ?: e.javaClass.simpleName}）"
+        }
+    } ?: (false to "检测超时（su 未响应，可能需用户授权）")

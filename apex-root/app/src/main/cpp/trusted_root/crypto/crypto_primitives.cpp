@@ -113,10 +113,12 @@ static std::array<uint8_t, 64> hmac_sha3_512(
         k_opad[i] ^= 0x5c;
     }
 
-    uint8_t inner_input[144 + 65536];
-    std::memcpy(inner_input, k_ipad, 144);
-    std::memcpy(inner_input + 144, data, data_len);
-    auto inner_hash = sha3_512(inner_input, 144 + data_len);
+    // 修复：原固定 64KB 栈缓冲区在 data_len > 65536 时会栈溢出（SIGSEGV）。
+    // 改为堆分配，支持任意长度输入。
+    std::vector<uint8_t> inner_input(144 + data_len);
+    std::memcpy(inner_input.data(), k_ipad, 144);
+    if (data_len > 0) std::memcpy(inner_input.data() + 144, data, data_len);
+    auto inner_hash = sha3_512(inner_input.data(), 144 + data_len);
 
     uint8_t outer_input[144 + 64];
     std::memcpy(outer_input, k_opad, 144);
@@ -285,10 +287,11 @@ std::vector<uint8_t> aes256_gcm_encrypt(const uint8_t* plain, size_t len,
     // Key derivation for auth key: HMAC-SHA3-512(key, "APEX-AUTH")
     uint8_t auth_label[] = "APEX-AUTH-GCM";
     auto auth_key = hmac_sha3_512(key, 32, auth_label, 12);
-    uint8_t auth_input[12 + 65536];
-    std::memcpy(auth_input, nonce, 12);
-    std::memcpy(auth_input + 12, ct.data(), len);
-    auto tag = hmac_sha3_512(auth_key.data(), 64, auth_input, 12 + len);
+    // 修复：原固定 64KB 栈缓冲区在 len > 65536 时会栈溢出。改为堆分配。
+    std::vector<uint8_t> auth_input(12 + len);
+    std::memcpy(auth_input.data(), nonce, 12);
+    if (len > 0) std::memcpy(auth_input.data() + 12, ct.data(), len);
+    auto tag = hmac_sha3_512(auth_key.data(), 64, auth_input.data(), 12 + len);
 
     // Output: nonce(12) || ct || tag(32)
     result.resize(12 + len + 32);
@@ -317,10 +320,11 @@ std::vector<uint8_t> aes256_gcm_decrypt(const uint8_t* cipher, size_t len,
     // Verify tag
     uint8_t auth_label[] = "APEX-AUTH-GCM";
     auto auth_key = hmac_sha3_512(key, 32, auth_label, 12);
-    uint8_t auth_input[12 + 65536];
-    std::memcpy(auth_input, nonce, 12);
-    if (ct_len > 0) std::memcpy(auth_input + 12, cipher + 12, ct_len);
-    auto expected_tag = hmac_sha3_512(auth_key.data(), 64, auth_input, 12 + ct_len);
+    // 修复：原固定 64KB 栈缓冲区在 ct_len > 65536 时会栈溢出。改为堆分配。
+    std::vector<uint8_t> auth_input(12 + ct_len);
+    std::memcpy(auth_input.data(), nonce, 12);
+    if (ct_len > 0) std::memcpy(auth_input.data() + 12, cipher + 12, ct_len);
+    auto expected_tag = hmac_sha3_512(auth_key.data(), 64, auth_input.data(), 12 + ct_len);
 
     uint8_t stored_tag[32];
     std::memcpy(stored_tag, cipher + 12 + ct_len, 32);

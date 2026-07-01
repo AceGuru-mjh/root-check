@@ -22,12 +22,20 @@ android {
     ndkVersion = "28.2.13676358"
 
     // 签名配置 — AppDev / OpenSource
+    // keystore 已在 .gitignore 中（不入库），此处做存在性判断：
+    // - 存在 apex-release.jks：debug/release 均使用该签名（便于与已安装版本共存）
+    // - 不存在：debug 使用默认 debug 签名，release 产出 unsigned APK
+    //   这样开箱即用，无需手动生成 keystore 即可构建 debug。
+    val ksFile = rootProject.file("apex-release.jks")
+    val hasKeystore = ksFile.exists()
     signingConfigs {
-        create("release") {
-            storeFile = file("../apex-release.jks")
-            storePassword = "meng411722"
-            keyAlias = "root"
-            keyPassword = "meng411722"
+        if (hasKeystore) {
+            create("release") {
+                storeFile = ksFile
+                storePassword = "meng411722"
+                keyAlias = "root"
+                keyPassword = "meng411722"
+            }
         }
     }
 
@@ -54,11 +62,16 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            // 无 keystore 时使用默认 debug 签名，确保开箱可构建
         }
         release {
             isMinifyEnabled = true
-            signingConfig = signingConfigs.getByName("release")
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

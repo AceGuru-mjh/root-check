@@ -72,8 +72,7 @@ static bool read_file(const char* path, char* buf, size_t size) {
 
 static int64_t check_access(const char* path) {
     int64_t ret;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_access), "r"(path), "i"(F_OK) : "x0", "x1", "x8");
+    ret = apex_check_access(path);
     return ret;
 }
 
@@ -322,8 +321,7 @@ bool hide_file(const char* path) {
 
     // First check if the path exists
     int64_t access_ret;
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(access_ret) : "i"(__NR_access), "r"(path), "i"(F_OK) : "x0", "x1", "x8");
+    access_ret = apex_check_access(path);
     if (access_ret != 0) return true; // Already doesn't exist
 
     // Try bind-mount over the path with a minimal mount
