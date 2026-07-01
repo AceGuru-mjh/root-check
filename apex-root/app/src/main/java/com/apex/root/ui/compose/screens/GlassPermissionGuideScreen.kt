@@ -1,90 +1,230 @@
 package com.apex.root.ui.compose.screens
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apex.root.ui.compose.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private enum class RootStatus { UNKNOWN, AVAILABLE, UNAVAILABLE }
 
 @Composable
 fun GlassPermissionGuideScreen(onFinished: () -> Unit) {
-    var currentStep by remember { mutableIntStateOf(1) }
-    val totalSteps = 2
     val isDark = LocalIsDarkTheme.current
     val bg = if (isDark) DeepBackground else Color(0xFFF1F5F9)
     val hColor = if (isDark) TextPrimary else Color(0xFF0F172A)
+    val subColor = if (isDark) TextSecondary else Color(0xFF475569)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var rootStatus by remember { mutableStateOf(RootStatus.UNKNOWN) }
+    var rootDetail by remember { mutableStateOf("正在检测 ROOT 状态...") }
+    var notifGranted by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else true
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        scope.launch {
+            val (ok, detail) = withContext(Dispatchers.IO) { checkRootStatus() }
+            rootStatus = if (ok) RootStatus.AVAILABLE else RootStatus.UNAVAILABLE
+            rootDetail = detail
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(bg), contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier
                 .padding(24.dp)
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .pristineGlass(cornerRadius = 32.dp)
-                .padding(32.dp)
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("STEP $currentStep / $totalSteps", color = Color(0xFF0D9488), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            Spacer(Modifier.height(16.dp))
-
-            if (currentStep == 1) {
-                Text("授予无障碍服务权限", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = hColor)
-                Spacer(Modifier.height(12.dp))
-                Text("软件需要监听无障碍事件，以自动化阻断后台高耗能恶意轮询动作。",
-                    color = if (isDark) TextSecondary else Color(0xFF475569), fontSize = 14.sp)
-            } else {
-                Text("获取 ROOT 权限高级诊断", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = hColor)
-                Spacer(Modifier.height(12.dp))
-                Text("深度模式下需要系统超级管理员权级，以深度清空并重置电池校准状态。",
-                    color = if (isDark) TextSecondary else Color(0xFF475569), fontSize = 14.sp)
+            // Logo
+            Box(
+                modifier = Modifier
+                    .size(96.dp)
+                    .background(
+                        if (isDark) AccentPurple else Color(0xFF7C5CFC),
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Security,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(56.dp)
+                )
             }
+
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "APEX Root",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                color = hColor,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "16 层全量 Root 检测与防御系统",
+                color = subColor,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "通过原生引擎（JNI + eBPF + 内核探针）实现硬件级真实性校验，" +
+                    "检测 Magisk / KernelSU / APatch / Shamiko / ZygiskNext 等 root 框架，" +
+                    "并提供自保护、沙箱隔离与 HWID 伪装能力。",
+                color = subColor,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(28.dp))
+
+            // ROOT 状态卡片
+            PermissionRow(
+                icon = if (rootStatus == RootStatus.AVAILABLE) Icons.Filled.CheckCircle
+                       else Icons.Filled.Cancel,
+                iconTint = if (rootStatus == RootStatus.AVAILABLE) AccentMint
+                           else if (rootStatus == RootStatus.UNAVAILABLE) ErrorRed
+                           else AccentGold,
+                title = "ROOT 权限",
+                detail = rootDetail,
+                actionLabel = if (rootStatus == RootStatus.UNAVAILABLE) "获取 Magisk" else null,
+                onAction = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/topjohnwu/Magisk")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    runCatching { context.startActivity(intent) }
+                }
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            // 通知权限卡片
+            PermissionRow(
+                icon = Icons.Filled.Notifications,
+                iconTint = if (notifGranted) AccentMint else AccentGold,
+                title = "通知权限",
+                detail = if (notifGranted) "已授权" else "未授权（用于推送扫描结果）",
+                actionLabel = if (notifGranted) null else "去授权",
+                onAction = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runCatching { context.startActivity(intent) }
+                    } else {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runCatching { context.startActivity(intent) }
+                    }
+                }
+            )
 
             Spacer(Modifier.height(32.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                repeat(totalSteps) { idx ->
-                    val active = idx + 1 == currentStep
-                    Box(
-                        modifier = Modifier
-                            .width(if (active) 24.dp else 8.dp)
-                            .height(8.dp)
-                            .background(
-                                if (active) Color(0xFF0D9488) else if (isDark) TextTertiary else Color(0xFFCBD5E1),
-                                CircleShape
-                            )
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(40.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "暂不授权",
-                    modifier = Modifier.clickable {
-                        if (currentStep < totalSteps) currentStep++ else onFinished()
-                    },
-                    color = if (isDark) TextTertiary else Color(0xFF94A3B8)
+            Button(
+                onClick = onFinished,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDark) AccentPurple else Color(0xFF7C5CFC)
                 )
-                Button(
-                    onClick = {
-                        if (currentStep < totalSteps) currentStep++ else onFinished()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (isDark) AccentPurple else Color(0xFF0F172A))
-                ) {
-                    Text("去授权", color = Color.White)
-                }
+            ) {
+                Text("进入应用", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
+}
+
+@Composable
+private fun PermissionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconTint: Color,
+    title: String,
+    detail: String,
+    actionLabel: String?,
+    onAction: () -> Unit
+) {
+    val isDark = LocalIsDarkTheme.current
+    val hColor = if (isDark) TextPrimary else Color(0xFF0F172A)
+    val subColor = if (isDark) TextSecondary else Color(0xFF475569)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (isDark) DeepSurfaceVariant else Color(0xFFE2E8F0),
+                RoundedCornerShape(16.dp)
+            )
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(28.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = hColor, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Text(detail, color = subColor, fontSize = 12.sp)
+        }
+        if (actionLabel != null) {
+            Text(
+                actionLabel,
+                color = AccentPurple,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { onAction() }
+            )
+        }
+    }
+}
+
+private fun checkRootStatus(): Pair<Boolean, String> = runCatching {
+    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+    val text = process.inputStream.bufferedReader().readText()
+    val exit = process.waitFor()
+    if (exit == 0 && text.contains("uid=0")) {
+        true to "已获取（uid=0）"
+    } else {
+        false to "未授权（exit=$exit）"
+    }
+}.getOrElse { e ->
+    false to "未安装 root 框架（${e.message ?: e.javaClass.simpleName}）"
 }

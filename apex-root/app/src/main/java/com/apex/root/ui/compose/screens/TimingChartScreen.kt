@@ -35,10 +35,7 @@ data class TimingSeries(
 @Composable
 fun TimingChartScreen(
     onBack: () -> Unit = {},
-    series: List<TimingSeries> = listOf(
-        TimingSeries("基线(Baseline)", (1..50).map { 100L + (Random.nextLong() * 20).mod(20) }, AccentMint),
-        TimingSeries("当前(Current)", (1..50).map { 100L + (Random.nextLong() * 80).mod(80) + (if (it > 30) 50L else 0L) }, ErrorRed)
-    )
+    series: List<TimingSeries> = emptyList()
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 

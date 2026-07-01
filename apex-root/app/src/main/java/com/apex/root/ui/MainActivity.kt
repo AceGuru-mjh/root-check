@@ -1,11 +1,9 @@
 package com.apex.root.ui
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -14,25 +12,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
-import com.apex.root.core.TrustedDaemonService
 import com.apex.root.ui.compose.AppNavigation
 
 class MainActivity : ComponentActivity() {
 
-    companion object {
-        private const val TAG = "MainActivity"
-    }
-
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            startDaemonService()
-        } else {
-            Log.w(TAG, "POST_NOTIFICATIONS permission denied, daemon service notification may not show")
-            startDaemonService()
-        }
-    }
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,33 +32,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!TrustedDaemonService.isRunning) {
-            maybeStartDaemonService()
-        }
+        requestNecessaryPermissions()
     }
 
-    private fun maybeStartDaemonService() {
-        // Android 13+ 需要 POST_NOTIFICATIONS 权限
+    private fun requestNecessaryPermissions() {
+        val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            when (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)) {
-                PackageManager.PERMISSION_GRANTED -> startDaemonService()
-                else -> notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                perms.add(Manifest.permission.POST_NOTIFICATIONS)
             }
-        } else {
-            startDaemonService()
         }
-    }
-
-    private fun startDaemonService() {
-        try {
-            val intent = Intent(this, TrustedDaemonService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start daemon service", e)
+        if (perms.isNotEmpty()) {
+            permissionLauncher.launch(perms.toTypedArray())
         }
     }
 }

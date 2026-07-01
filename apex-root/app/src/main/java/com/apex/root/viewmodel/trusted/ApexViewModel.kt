@@ -37,6 +37,7 @@ data class ApexUiState(
     val isScanning: Boolean = false,
     val isLoading: Boolean = false,
     val isFirstLaunch: Boolean = true,
+    val nativeAvailable: Boolean = true,
     val logs: List<LogEntry> = emptyList(),
     val gameMode: GameModeState = GameModeState(false),
     val guardState: GuardState = GuardState(false, false, 0),
@@ -70,8 +71,29 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
         SelfProtection.init(application)
         val isFirst = prefs.getBoolean("is_first_launch", true)
         _uiState.update { it.copy(isFirstLaunch = isFirst) }
-        refreshDashboard()
-        loadMockLogs()
+        checkNativeAvailability()
+    }
+
+    private fun checkNativeAvailability() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val available = runCatching {
+                com.apex.root.core.NativeLibraryLoader.ensureLoaded()
+                com.apex.root.core.NativeLibraryLoader.isAvailable
+            }.getOrDefault(false)
+            _uiState.update { it.copy(nativeAvailable = available) }
+        }
+    }
+
+    private fun addLog(type: LogType, message: String) {
+        val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+            .format(java.util.Date())
+        _uiState.update { state ->
+            state.copy(logs = state.logs + LogEntry(type, time, message))
+        }
+    }
+
+    fun clearLogs() {
+        _uiState.update { it.copy(logs = emptyList()) }
     }
 
     fun completePermissionGuide() {
@@ -81,9 +103,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshDashboard() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            delay(2500)
-            _uiState.update { it.copy(isLoading = false, riskScore = (85..99).random()) }
+            _uiState.update { it.copy(isLoading = false, riskScore = 0) }
         }
     }
 
@@ -99,37 +119,21 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun loadMockLogs() {
-        _uiState.update { state ->
-            state.copy(
-                logs = listOf(
-                    LogEntry(LogType.INFO, "10:42:01", "VSync 底层校准脉冲信号正常 (周期: 16.6ms)"),
-                    LogEntry(LogType.WARN, "10:43:15", "检测到无障碍权限正在被第三方应用轮询监听"),
-                    LogEntry(LogType.ERROR, "10:45:22", "Root 守护进程异常退出，错误代码: SIGSEGV (0x11)")
-                )
-            )
-        }
-    }
-
     fun runScan() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isScanning = true) }
+            addLog(LogType.INFO, "开始快速扫描...")
             try {
+                addLog(LogType.INFO, "加载原生检测引擎")
                 val result = repository.runQuickScan()
+                addLog(LogType.INFO, "扫描完成，风险分: ${result.riskScore}")
                 _uiState.update {
-                    it.copy(
-                        scanResult = result.details,
-                        riskScore = result.riskScore,
-                        isScanning = false
-                    )
+                    it.copy(scanResult = result.details, riskScore = result.riskScore, isScanning = false)
                 }
             } catch (e: Throwable) {
-                // 修复：catch Throwable 而非 Exception，捕获 UnsatisfiedLinkError 等 Error
+                addLog(LogType.ERROR, "扫描失败: ${e.message ?: e.javaClass.simpleName}")
                 _uiState.update {
-                    it.copy(
-                        isScanning = false,
-                        scanResult = "扫描失败: ${e.message ?: e.javaClass.simpleName}"
-                    )
+                    it.copy(isScanning = false, scanResult = "扫描失败: ${e.message ?: e.javaClass.simpleName}\n\n可能原因：\n1. 原生库未加载（非 ARM64 设备）\n2. 设备未 root\n3. SELinux 限制")
                 }
             }
         }
@@ -138,14 +142,20 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     fun runDeepScan() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isScanning = true) }
+            addLog(LogType.INFO, "开始深度扫描（16 层全量检测）...")
             try {
+                addLog(LogType.INFO, "执行深度检测报告生成")
                 val report = repository.runDeepDetection()
+                addLog(LogType.INFO, "采集内存指纹")
                 val memMask = runCatching { repository.getMemoryFingerprintMask() }.getOrDefault(0)
                 val rwxCount = runCatching { NativeBridge.countRWXPages() }.getOrDefault(-1)
+                addLog(LogType.INFO, "检测 Shamiko / ZygiskNext")
                 val shamiko = runCatching { repository.hasShamiko() }.getOrDefault(false)
                 val zygiskNext = runCatching { repository.hasZygiskNext() }.getOrDefault(false)
+                addLog(LogType.INFO, "检测 SELinux 状态")
                 val selinuxJump = runCatching { NativeBridge.detectSELinuxContextJump() }.getOrDefault(false)
                 val selinuxMod = runCatching { NativeBridge.detectSELinuxPolicyMod() }.getOrDefault(false)
+                addLog(LogType.INFO, "执行自保护检查")
                 val selfCheck = runCatching { SelfProtection.fullSelfCheck(getApplication()) }.getOrDefault(emptyMap())
                 val hookIssues = (selfCheck["hooks"] as? List<String>) ?: emptyList()
                 val injectIssues = (selfCheck["injections"] as? List<String>) ?: emptyList()
@@ -165,14 +175,11 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                         selfCheckIssues = hookIssues + injectIssues + dexIssues
                     )
                 }
+                addLog(LogType.INFO, "深度扫描完成，风险分: ${_uiState.value.riskScore}")
             } catch (e: Throwable) {
-                // 修复：catch Throwable 捕获 UnsatisfiedLinkError / NoClassDefFoundError
+                addLog(LogType.ERROR, "深度扫描失败: ${e.message ?: e.javaClass.simpleName}")
                 _uiState.update {
-                    it.copy(
-                        isScanning = false,
-                        scanResult = "深度扫描失败: ${e.message ?: e.javaClass.simpleName}\n" +
-                                "可能原因：原生库未加载或权限不足"
-                    )
+                    it.copy(isScanning = false, scanResult = "深度扫描失败: ${e.message ?: e.javaClass.simpleName}\n可能原因：原生库未加载或权限不足")
                 }
             }
         }

@@ -34,13 +34,7 @@ data class HistoryEntry(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
-    entries: List<HistoryEntry> = remember {
-        listOf(
-            HistoryEntry(System.currentTimeMillis() - 3600000, 72, true, "深度", 8),
-            HistoryEntry(System.currentTimeMillis() - 86400000, 15, false, "标准", 4),
-            HistoryEntry(System.currentTimeMillis() - 172800000, 88, true, "深度", 12)
-        )
-    },
+    entries: List<HistoryEntry> = emptyList(),
     onBack: () -> Unit = {},
     onClearHistory: () -> Unit = {}
 ) {
