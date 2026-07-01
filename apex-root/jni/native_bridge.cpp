@@ -85,12 +85,5 @@ Java_com_apex_root_data_jni_NativeBridge_getLastError(
     return env->NewStringUTF(g_fw->last_error().c_str());
 }
 
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
-    LOGD("APEX JNI loaded");
-    return JNI_VERSION_1_6;
 }
 
-JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
-    LOGD("APEX JNI unloading, cleaning up");
-    destroy_fw();
-}

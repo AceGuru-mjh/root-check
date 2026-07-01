@@ -369,8 +369,6 @@ fun CollapsibleGlassTopBar(
 // 7.  Log viewer
 // ═══════════════════════════════════════════════════════════════════
 
-enum class LogType { INFO, WARN, ERROR }
-data class LogEntry(val type: LogType, val time: String, val message: String)
 
 @Composable
 fun GlassLogViewer(logs: List<LogEntry>) {
