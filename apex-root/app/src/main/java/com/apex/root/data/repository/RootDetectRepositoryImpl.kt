@@ -11,7 +11,7 @@ import com.apex.root.domain.model.ScanResult
 import com.apex.root.game.NativeGameMode
 import com.apex.root.cure.NativeCure
 
-class RootDetectRepositoryImpl {
+class RootDetectRepositoryImpl : com.apex.root.domain.repository.IRootDetectRepository {
 
     fun runQuickScan(force: Boolean = false): ScanResult {
         // Cache check for quick scan

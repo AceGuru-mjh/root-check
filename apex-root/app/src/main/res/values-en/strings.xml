@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">APEX Root</string>
+
+    <!-- Module titles -->
+    <string name="scan_title">APEX-Detect Engine</string>
+    <string name="cure_title">APEX-Cure System</string>
+    <string name="island_title">APEX-Island Sandbox</string>
+    <string name="guard_title">APEX-Guard Protection</string>
+    <string name="game_title">Game Mode</string>
+
+    <!-- Scan actions -->
+    <string name="quick_scan">Quick Scan</string>
+    <string name="deep_scan">Deep Scan</string>
+    <string name="scanning">Scanning…</string>
+    <string name="scan_complete">Scan complete</string>
+    <string name="scan_failed">Scan failed</string>
+    <string name="start_scan">Start Scan</string>
+
+    <!-- Cure actions -->
+    <string name="light_cleanup">Light Cleanup</string>
+    <string name="standard_fix">Standard Fix</string>
+    <string name="deep_recovery">Deep Recovery</string>
+    <string name="factory_reset">Factory Reset</string>
+    <string name="confirm_cure">Confirm</string>
+    <string name="cure_warning">This action is irreversible. Please backup important data.</string>
+
+    <!-- Guard -->
+    <string name="start_guard">Start Guard</string>
+    <string name="check_integrity">Check Integrity</string>
+    <string name="guard_running">Protected</string>
+    <string name="guard_stopped">Stopped</string>
+
+    <!-- Sandbox -->
+    <string name="create_sandbox">Create Sandbox</string>
+    <string name="destroy_sandbox">Destroy Sandbox</string>
+
+    <!-- HWID -->
+    <string name="spoof_hwid">Spoof HWID</string>
+    <string name="restore_hwid">Restore HWID</string>
+
+    <!-- Risk levels -->
+    <string name="risk_safe">Safe</string>
+    <string name="risk_low">Low Risk</string>
+    <string name="risk_medium">Medium Risk</string>
+    <string name="risk_high">High Risk</string>
+    <string name="risk_critical">Critical</string>
+
+    <!-- Common -->
+    <string name="back">Back</string>
+    <string name="confirm">Confirm</string>
+    <string name="cancel">Cancel</string>
+    <string name="clear">Clear</string>
+    <string name="search">Search</string>
+    <string name="loading">Loading…</string>
+    <string name="no_data">No data</string>
+    <string name="retry">Retry</string>
+    <string name="export_report">Export Report</string>
+    <string name="fix_recommendations">Fix Recommendations</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_report">Report</string>
+    <string name="nav_alert">Alert</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Terminal -->
+    <string name="terminal_waiting">$ Waiting for scan output…</string>
+    <string name="terminal_no_match">$ No matching results</string>
+    <string name="terminal_running">RUNNING</string>
+    <string name="terminal_idle">IDLE</string>
+
+    <!-- Permission guide -->
+    <string name="perm_notifications">Notifications</string>
+    <string name="perm_notifications_desc">Receive security alerts</string>
+    <string name="perm_root">Root Access</string>
+    <string name="perm_root_desc">Hide/Cure/HWID spoof requires Root</string>
+    <string name="perm_root_not_detected">Root not detected (limited features)</string>
+    <string name="perm_root_detected">Root access detected</string>
+    <string name="enter_app">Enter App</string>
+
+    <!-- Hide mode -->
+    <string name="hide_mode_detect">Detection Mode</string>
+    <string name="hide_mode_hide">Hide Mode</string>
+    <string name="hide_mode_game">Game Mode</string>
+    <string name="emergency_stop">Emergency Stop</string>
+    <string name="native_not_available">Native library not loaded</string>
+
+    <!-- About -->
+    <string name="about_version">Version</string>
+    <string name="about_device_info">Device Info</string>
+    <string name="about_features">Features</string>
+    <string name="about_scoring">Scoring Algorithm</string>
+    <string name="about_privacy">Privacy</string>
+    <string name="about_license">Open Source Licenses</string>
+    <string name="about_disclaimer">Disclaimer</string>
+
+    <!-- Errors -->
+    <string name="err_native_not_loaded">Native library not loaded, some features unavailable</string>
+    <string name="err_root_required">This feature requires Root access</string>
+    <string name="err_network">Network connection failed</string>
+    <string name="err_unknown">Unknown error</string>
+
+    <!-- Developer -->
+    <string name="developer">Developer</string>
+    <string name="developer_name">MJH</string>
+</resources>

@@ -52,16 +52,19 @@ data class ApexTextColors(
     val tertiary: Color
 )
 
+// 修复：提升颜色对比度（WCAG AA 标准）
+// Dark: secondary 从 9A9AB0 提亮到 B0B0C8, tertiary 从 5C5C78 提亮到 8088A0
 private val DarkTextColors = ApexTextColors(
     primary = Color(0xFFECECF5),
-    secondary = Color(0xFF9A9AB0),
-    tertiary = Color(0xFF5C5C78)
+    secondary = Color(0xFFB0B0C8),
+    tertiary = Color(0xFF8088A0)
 )
 
+// 修复：Light 模式 secondary 从 6B6B80 加深到 4A4A5C, tertiary 从 9D9DB0 加深到 6B6B80
 private val LightTextColors = ApexTextColors(
     primary = Color(0xFF1A1A2E),
-    secondary = Color(0xFF6B6B80),
-    tertiary = Color(0xFF9D9DB0)
+    secondary = Color(0xFF4A4A5C),
+    tertiary = Color(0xFF6B6B80)
 )
 
 val LocalApexTextColors = staticCompositionLocalOf { DarkTextColors }

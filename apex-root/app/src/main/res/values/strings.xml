@@ -1,25 +1,107 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">APEX Root</string>
+
+    <!-- 模块标题 -->
     <string name="scan_title">APEX-Detect 检测引擎</string>
     <string name="cure_title">APEX-Cure 修复系统</string>
     <string name="island_title">APEX-Island 隔离沙箱</string>
     <string name="guard_title">APEX-Guard 主动防护</string>
     <string name="game_title">游戏模式</string>
 
+    <!-- 扫描操作 -->
     <string name="quick_scan">快速检测</string>
     <string name="deep_scan">深度检测</string>
-    <string name="scanning">扫描中...</string>
-    <string name="fix_recommendations">修复建议</string>
-    <string name="export_report">导出报告</string>
+    <string name="scanning">扫描中…</string>
+    <string name="scan_complete">扫描完成</string>
+    <string name="scan_failed">扫描失败</string>
+    <string name="start_scan">开始检测</string>
+
+    <!-- 治愈操作 -->
+    <string name="light_cleanup">轻度处理</string>
+    <string name="standard_fix">标准修复</string>
+    <string name="deep_recovery">深度恢复</string>
+    <string name="factory_reset">完全重置</string>
+    <string name="confirm_cure">确认执行</string>
+    <string name="cure_warning">此操作不可撤销，请确保已备份重要数据。</string>
+
+    <!-- 守护 -->
     <string name="start_guard">启动守护</string>
     <string name="check_integrity">校验系统</string>
+    <string name="guard_running">防护中</string>
+    <string name="guard_stopped">未启动</string>
+
+    <!-- 沙箱 -->
     <string name="create_sandbox">创建沙箱</string>
     <string name="destroy_sandbox">销毁沙箱</string>
-    <string name="spoof_hwid">伪装HWID</string>
-    <string name="restore_hwid">恢复真实HWID</string>
+
+    <!-- HWID -->
+    <string name="spoof_hwid">伪装 HWID</string>
+    <string name="restore_hwid">恢复真实 HWID</string>
+
+    <!-- 风险等级 -->
     <string name="risk_safe">安全</string>
-    <string name="risk_warning">轻度</string>
-    <string name="risk_danger">风险</string>
-    <string name="risk_critical">高危</string>
+    <string name="risk_low">轻度风险</string>
+    <string name="risk_medium">中等风险</string>
+    <string name="risk_high">高风险</string>
+    <string name="risk_critical">极高危险</string>
+
+    <!-- 通用 -->
+    <string name="back">返回</string>
+    <string name="confirm">确认</string>
+    <string name="cancel">取消</string>
+    <string name="clear">清空</string>
+    <string name="search">搜索</string>
+    <string name="loading">加载中…</string>
+    <string name="no_data">暂无数据</string>
+    <string name="retry">重试</string>
+    <string name="export_report">导出报告</string>
+    <string name="fix_recommendations">修复建议</string>
+
+    <!-- 导航 -->
+    <string name="nav_dashboard">仪表盘</string>
+    <string name="nav_report">报告</string>
+    <string name="nav_alert">警报</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- 终端日志 -->
+    <string name="terminal_waiting">$ 等待扫描输出…</string>
+    <string name="terminal_no_match">$ 无匹配结果</string>
+    <string name="terminal_running">RUNNING</string>
+    <string name="terminal_idle">IDLE</string>
+
+    <!-- 权限引导 -->
+    <string name="perm_notifications">通知权限</string>
+    <string name="perm_notifications_desc">接收安全告警通知</string>
+    <string name="perm_root">Root 权限</string>
+    <string name="perm_root_desc">隐藏/治愈/HWID 伪装需要 Root 权限</string>
+    <string name="perm_root_not_detected">未检测到 Root（部分功能受限）</string>
+    <string name="perm_root_detected">已检测到 Root 权限</string>
+    <string name="enter_app">进入应用</string>
+
+    <!-- 隐藏模式 -->
+    <string name="hide_mode_detect">Detection · 检测模式</string>
+    <string name="hide_mode_hide">Hide · 隐藏模式</string>
+    <string name="hide_mode_game">Game · 游戏模式</string>
+    <string name="emergency_stop">紧急停止</string>
+    <string name="native_not_available">原生库未加载</string>
+
+    <!-- 关于 -->
+    <string name="about_version">应用版本</string>
+    <string name="about_device_info">设备信息</string>
+    <string name="about_features">核心功能</string>
+    <string name="about_scoring">评分算法</string>
+    <string name="about_privacy">隐私声明</string>
+    <string name="about_license">开源许可</string>
+    <string name="about_disclaimer">免责声明</string>
+
+    <!-- 错误 -->
+    <string name="err_native_not_loaded">原生库未加载，部分功能不可用</string>
+    <string name="err_root_required">此功能需要 Root 权限</string>
+    <string name="err_network">网络连接失败</string>
+    <string name="err_unknown">未知错误</string>
+
+    <!-- 开发者 -->
+    <string name="developer">开发者</string>
+    <string name="developer_name">MJH</string>
 </resources>
