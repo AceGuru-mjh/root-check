@@ -1,6 +1,8 @@
 package com.apex.root.ui.compose.screens
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -12,11 +14,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apex.root.data.FixRecommendation
@@ -24,6 +28,8 @@ import com.apex.root.domain.model.CureLevel
 import com.apex.root.ui.compose.*
 import com.apex.root.viewmodel.trusted.ApexUiState
 import com.apex.root.viewmodel.trusted.ApexViewModel
+import com.apex.root.viewmodel.trusted.LogEntry
+import com.apex.root.viewmodel.trusted.LogType
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +56,8 @@ fun DashboardScreen(
     onNavigateToConfig: (() -> Unit)? = null,
     onNavigateToHideMode: (() -> Unit)? = null,
     onNavigateToAbout: (() -> Unit)? = null,
+    onNavigateToFrida: (() -> Unit)? = null,
+    onNavigateToLSPosed: (() -> Unit)? = null,
     apexViewModel: ApexViewModel? = null
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -69,8 +77,7 @@ fun DashboardScreen(
         }
     }
 
-    val scanLogs = remember { derivedStateOf { uiState.logs.map { it.message } } }
-    // 修复：scoreLabel 提到顶层，使 GlassShareReportPreview 也能访问
+    // scoreLabel 提到顶层，使 GlassShareReportPreview 也能访问
     val scoreLabel = when {
         uiState.riskScore > 60 -> "高风险"
         uiState.riskScore > 30 -> "有风险"
@@ -109,42 +116,39 @@ fun DashboardScreen(
 
                 GlassGaugeScoreCard(score = uiState.riskScore, label = scoreLabel)
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
 
-                GlassUpdateBanner(
-                    version = "3.1.0",
-                    onUpdate = { /* launch update */ },
-                    onClose = { /* dismiss */ }
-                )
-
-                Spacer(Modifier.height(16.dp))
-
-                if (uiState.isScanning) {
-                    LiquidRadarScanner(scanningLogs = scanLogs.value)
-                    Spacer(Modifier.height(16.dp))
+                // 运行中状态指示 + 迷你终端日志
+                if (uiState.isScanning || uiState.logs.isNotEmpty()) {
+                    MiniTerminalCard(
+                        isScanning = uiState.isScanning,
+                        logs = uiState.logs,
+                        onNavigateToLogs = onNavigateToLogs
+                    )
+                    Spacer(Modifier.height(12.dp))
                 }
 
                 QuickActionsRow(onScan, onDeepScan, uiState.isScanning)
 
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(16.dp))
 
-                if (uiState.scanResult != "点击扫描开始检测") {
+                if (uiState.scanResult != "点击扫描开始检测" && !uiState.isScanning) {
                     ScanResultSection(result = uiState.scanResult)
 
                     if (uiState.memFingerprintMask != 0 || uiState.selinuxCompromised) {
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(12.dp))
                         DeepFindingsSection(uiState = uiState)
                     }
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(12.dp))
 
                     if (uiState.showRecommendations && uiState.recommendations.isNotEmpty()) {
                         RecommendationsSection(uiState.recommendations, onDismissRecommendations)
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(12.dp))
                     }
 
                     ActionButtonsRow(onShowRecommendations, onExportReport)
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(12.dp))
 
                     Button(
                         onClick = { showExportPreview = true },
@@ -349,6 +353,8 @@ fun DashboardScreen(
                     ToolChip("详细配置", Icons.Default.Tune, AccentGold, onNavigateToConfig)
                     ToolChip("隐藏模式", Icons.Default.VisibilityOff, AccentPurple, onNavigateToHideMode)
                     ToolChip("关于", Icons.Default.Info, AccentMint, onNavigateToAbout)
+                    ToolChip("Frida", Icons.Default.BugReport, ErrorRed, onNavigateToFrida)
+                    ToolChip("模块", Icons.Default.Extension, AccentGold, onNavigateToLSPosed)
                 }
 
                 Spacer(Modifier.height(32.dp))
@@ -598,5 +604,110 @@ private fun RowScope.ToolChip(label: String, icon: ImageVector, color: Color, on
         Icon(icon, null, Modifier.size(14.dp), tint = color)
         Spacer(Modifier.width(4.dp))
         Text(label, fontSize = 10.sp, color = color)
+    }
+}
+
+/**
+ * 迷你终端日志卡片 — 内嵌在 Dashboard 中
+ * - 黑色背景 + monospace
+ * - 显示最近 5 条日志
+ * - 运行中时显示脉冲指示
+ * - 点击跳转完整日志页
+ */
+@Composable
+private fun MiniTerminalCard(
+    isScanning: Boolean,
+    logs: List<com.apex.root.viewmodel.trusted.LogEntry>,
+    onNavigateToLogs: (() -> Unit)?
+) {
+    val recentLogs = logs.takeLast(5)
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(animation = tween(800), repeatMode = RepeatMode.Reverse),
+        label = "pulse_alpha"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(TermuxBg)
+            .clickable { onNavigateToLogs?.invoke() }
+    ) {
+        // 标题栏
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // 运行中脉冲点
+                Box(
+                    Modifier
+                        .size(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(
+                            if (isScanning) AccentMint.copy(alpha = pulseAlpha) else TextTertiary.copy(alpha = 0.4f)
+                        )
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (isScanning) "RUNNING" else "LOGS",
+                    color = if (isScanning) AccentMint else TextTertiary,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                "${logs.size} 条",
+                color = Color(0xFF64748B),
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+
+        // 日志内容
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+            if (recentLogs.isEmpty()) {
+                Text(
+                    "$ 等待扫描...",
+                    color = TermuxGreen.copy(alpha = if (isScanning) pulseAlpha else 0.4f),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            } else {
+                recentLogs.forEach { log ->
+                    val color = when (log.type) {
+                        com.apex.root.viewmodel.trusted.LogType.ERROR -> Color(0xFFEF4444)
+                        com.apex.root.viewmodel.trusted.LogType.WARN -> Color(0xFFF59E0B)
+                        com.apex.root.viewmodel.trusted.LogType.INFO -> Color(0xFFE2E8F0)
+                    }
+                    val tag = when (log.type) {
+                        com.apex.root.viewmodel.trusted.LogType.ERROR -> "E"
+                        com.apex.root.viewmodel.trusted.LogType.WARN -> "W"
+                        com.apex.root.viewmodel.trusted.LogType.INFO -> "I"
+                    }
+                    Text(
+                        "${log.time} [$tag] ${log.message}",
+                        color = color,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            // 闪烁光标
+            Text(
+                "$ _",
+                color = TermuxGreen.copy(alpha = pulseAlpha),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        Spacer(Modifier.height(4.dp))
     }
 }

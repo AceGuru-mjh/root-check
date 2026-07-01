@@ -37,11 +37,13 @@ import com.apex.root.ui.compose.screens.BaselineComparisonScreen
 import com.apex.root.ui.compose.screens.ConfigScreen
 import com.apex.root.ui.compose.screens.DashboardScreen
 import com.apex.root.ui.compose.screens.FeatureTestScreen
+import com.apex.root.ui.compose.screens.FridaConsoleScreen
 import com.apex.root.ui.compose.screens.GlassLogViewerScreen
 import com.apex.root.ui.compose.screens.GlassPermissionGuideScreen
 import com.apex.root.ui.compose.screens.HideModeScreen
 import com.apex.root.ui.compose.screens.HistoryScreen
 import com.apex.root.ui.compose.screens.KernelInfoScreen
+import com.apex.root.ui.compose.screens.LSPosedManagerScreen
 import com.apex.root.ui.compose.screens.ReportScreen
 import com.apex.root.ui.compose.screens.SettingsScreen
 import com.apex.root.ui.compose.screens.SplashScreen
@@ -203,6 +205,8 @@ private fun MainApp(
                         onNavigateToConfig = { navController.navigate("config") },
                         onNavigateToHideMode = { navController.navigate("hide_mode") },
                         onNavigateToAbout = { navController.navigate("about") },
+                        onNavigateToFrida = { navController.navigate("frida_console") },
+                        onNavigateToLSPosed = { navController.navigate("lsposed_manager") },
                         apexViewModel = apexViewModel
                     )
                 }
@@ -334,6 +338,24 @@ private fun MainApp(
                     exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
                 ) {
                     AboutScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = "frida_console",
+                    enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(tween(300)) },
+                    exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
+                ) {
+                    FridaConsoleScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = "lsposed_manager",
+                    enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(tween(300)) },
+                    exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
+                ) {
+                    LSPosedManagerScreen(
                         onBack = { navController.popBackStack() }
                     )
                 }
