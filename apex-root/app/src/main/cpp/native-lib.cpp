@@ -274,7 +274,7 @@ Java_com_apex_root_data_jni_NativeBridge_getSignedReport(JNIEnv* env, jobject) {
 
     // Build report string
     std::string report = "=== APEX-Root Signed Detection Report ===\n";
-    report += "Version: 1.0.1\n";
+    report += "Version: 1.0.2\n";
     report += "Timestamp: " + std::to_string(bs_clock_ns()) + "\n\n";
 
     for (int i = 0; i < 12; i++) {

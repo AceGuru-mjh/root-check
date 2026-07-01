@@ -366,7 +366,7 @@ fun DashboardScreen(
                 ) {
                     Box(Modifier.size(3.dp).background(TextTertiary, CircleShape))
                     Spacer(Modifier.width(10.dp))
-                    Text("v1.0.1  ·  APEX-Root 全能安全平台",
+                    Text("v1.0.2  ·  APEX-Root 全能安全平台",
                         style = MaterialTheme.typography.bodySmall, color = TextTertiary)
                 }
 

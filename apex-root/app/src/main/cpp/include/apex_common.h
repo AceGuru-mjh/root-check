@@ -10,7 +10,7 @@ namespace apex {
 constexpr uint32_t VERSION_MAJOR = 3;
 constexpr uint32_t VERSION_MINOR = 1;
 constexpr uint32_t VERSION_PATCH = 0;
-constexpr const char* VERSION_STRING = "1.0.1";
+constexpr const char* VERSION_STRING = "1.0.2";
 constexpr const char* BUILD_NAME = "APEX-Root Omnipotent";
 
 // Protocol constants

@@ -5137,7 +5137,7 @@ private fun AboutGroup(
     GlassSettingsGroup(title = "关于") {
         GlassSettingsItem(
             label = "版本信息",
-            subtitle = "APEX-Root v1.0.1",
+            subtitle = "APEX-Root v1.0.2",
             icon = Icons.Default.Info,
             accentColor = AccentPurple
         )

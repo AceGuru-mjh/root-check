@@ -15,7 +15,7 @@ extern "C" {
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     (void)vm;
-    LOGI("APEX Root v1.0.1 native library loaded");
+    LOGI("APEX Root v1.0.2 native library loaded");
     return JNI_VERSION_1_6;
 }
 
