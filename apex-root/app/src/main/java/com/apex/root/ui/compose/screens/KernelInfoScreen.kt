@@ -2,7 +2,6 @@ package com.apex.root.ui.compose.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -13,11 +12,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apex.root.ui.compose.*
+import java.io.File
 
 data class KernelInfo(
     val kernelVersion: String,
@@ -33,21 +34,13 @@ data class KernelInfo(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KernelInfoScreen(
-    onBack: () -> Unit = {},
-    kernelInfo: KernelInfo = KernelInfo(
-        kernelVersion = "5.10.198-android13-8-g3b2c1a0",
-        architecture = "ARM64 v8",
-        syscallTableStatus = "正常 (未篡改)",
-        loadedModules = listOf("kernel/msm-5.10", "qcom_cmn", "wil6210"),
-        selinuxStatus = "Enforcing",
-        teeVersion = "TEE 3.1 (QSEE)",
-        kallsymsAccessible = true,
-        vbarAddress = "0xffffffc010080000",
-        securityPatch = "2024-09-01"
-    )
-) {
+fun KernelInfoScreen(onBack: () -> Unit = {}) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    // 从设备读取真实信息
+    val kernelInfo = remember {
+        readKernelInfoFromDevice()
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -100,9 +93,13 @@ fun KernelInfoScreen(
                             Text("加载的内核模块", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextPrimary)
                         }
                         Spacer(Modifier.height(10.dp))
-                        kernelInfo.loadedModules.forEach { module ->
-                            Text("  \u2022 $module", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextSecondary)
-                            Spacer(Modifier.height(2.dp))
+                        if (kernelInfo.loadedModules.isEmpty()) {
+                            Text("  \u2022 无（或不可读）", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextSecondary)
+                        } else {
+                            kernelInfo.loadedModules.forEach { module ->
+                                Text("  \u2022 $module", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextSecondary)
+                                Spacer(Modifier.height(2.dp))
+                            }
                         }
                     }
                 }
@@ -162,3 +159,88 @@ private fun InfoCard(
         }
     }
 }
+
+private fun readKernelInfoFromDevice(): KernelInfo = runCatching {
+    val kernelVersion = runCatching {
+        File("/proc/version").bufferedReader().readText().trim()
+    }.getOrDefault("/proc/version 不可读")
+
+    val props = readBuildProp()
+    val arch = props["ro.product.cpu.abi"]
+        ?: props["ro.arch"]
+        ?: runCatching { System.getProperty("os.arch") }.getOrDefault("未知")
+
+    val selinux = runCatching {
+        val p = Runtime.getRuntime().exec(arrayOf("getenforce"))
+        p.inputStream.bufferedReader().readText().trim()
+    }.getOrDefault("Unknown")
+
+    val securityPatch = props["ro.build.version.security_patch"]
+        ?: props["ro.build.version.security_update"]
+        ?: "未知"
+
+    val loadedModules = readLoadedModules()
+    val kallsymsAccessible = checkKallsymsAccessible()
+
+    KernelInfo(
+        kernelVersion = kernelVersion,
+        architecture = arch,
+        syscallTableStatus = "需 root 才能检测",
+        loadedModules = loadedModules,
+        selinuxStatus = selinux,
+        teeVersion = "需 root 才能读取",
+        kallsymsAccessible = kallsymsAccessible,
+        vbarAddress = "需 root 才能读取",
+        securityPatch = securityPatch
+    )
+}.getOrElse {
+    KernelInfo(
+        kernelVersion = "读取失败",
+        architecture = "未知",
+        syscallTableStatus = "未知",
+        loadedModules = emptyList(),
+        selinuxStatus = "未知",
+        teeVersion = "未知",
+        kallsymsAccessible = false,
+        vbarAddress = "未知",
+        securityPatch = "未知"
+    )
+}
+
+private fun readBuildProp(): Map<String, String> {
+    val props = mutableMapOf<String, String>()
+    listOf("/system/build.prop", "/vendor/build.prop", "/product/build.prop").forEach { path ->
+        runCatching {
+            File(path).bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isNotEmpty() && !trimmed.startsWith("#") && trimmed.contains("=")) {
+                        val idx = trimmed.indexOf('=')
+                        val k = trimmed.substring(0, idx).trim()
+                        val v = trimmed.substring(idx + 1).trim()
+                        if (k.isNotEmpty() && !props.containsKey(k)) props[k] = v
+                    }
+                }
+            }
+        }
+    }
+    return props
+}
+
+private fun readLoadedModules(): List<String> = runCatching {
+    File("/proc/modules").bufferedReader().useLines { lines ->
+        lines.mapNotNull { line ->
+            val name = line.substringBefore(' ').trim()
+            if (name.isNotEmpty()) name else null
+        }.take(20).toList()
+    }
+}.getOrDefault(emptyList())
+
+private fun checkKallsymsAccessible(): Boolean = runCatching {
+    val f = File("/proc/kallsyms")
+    if (!f.exists()) return false
+    val first = f.bufferedReader().readLine() ?: return false
+    // 非特权进程读取时，地址通常为 0；若能读到非零地址则视为可访问
+    val addr = first.substringBefore(' ').trim()
+    addr.isNotEmpty() && addr != "0" && addr.any { it != '0' }
+}.getOrDefault(false)

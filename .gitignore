@@ -20,3 +20,5 @@ local.properties
 *_OLD*
 *_old*app/build/
 .cxx/
+app/build/
+.cxx/

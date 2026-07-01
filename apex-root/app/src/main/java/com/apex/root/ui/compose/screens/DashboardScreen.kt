@@ -69,23 +69,13 @@ fun DashboardScreen(
         }
     }
 
-    val scanLogs = remember { mutableStateListOf<String>() }
+    val scanLogs = remember { derivedStateOf { uiState.logs.map { it.message } } }
     // 修复：scoreLabel 提到顶层，使 GlassShareReportPreview 也能访问
     val scoreLabel = when {
         uiState.riskScore > 60 -> "高风险"
         uiState.riskScore > 30 -> "有风险"
         uiState.riskScore > 10 -> "轻度风险"
         else -> "安全"
-    }
-    LaunchedEffect(uiState.isScanning) {
-        if (uiState.isScanning) {
-            scanLogs.clear()
-            val samples = listOf("initializing sensor stack...", "probing /proc/self/status...", "checking SELinux context...", "scanning memory regions...", "analyzing kernel modules...", "verifying system partition...", "checking zygisk environment...", "scanning package manager...")
-            samples.forEachIndexed { i, msg ->
-                delay(400 + i * 200L)
-                scanLogs.add(msg)
-            }
-        }
     }
     LaunchedEffect(Unit) { onRefresh() }
 
@@ -130,7 +120,7 @@ fun DashboardScreen(
                 Spacer(Modifier.height(16.dp))
 
                 if (uiState.isScanning) {
-                    LiquidRadarScanner(scanningLogs = scanLogs)
+                    LiquidRadarScanner(scanningLogs = scanLogs.value)
                     Spacer(Modifier.height(16.dp))
                 }
 
