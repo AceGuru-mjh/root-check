@@ -21,6 +21,16 @@ android {
     compileSdk = 34
     ndkVersion = "28.2.13676358"
 
+    // 自定义签名配置 — mengjinghao
+    signingConfigs {
+        create("mengjinghao") {
+            storeFile = file("../mengjinghao.jks")
+            storePassword = "mengjinghao"
+            keyAlias = "mengjinghao"
+            keyPassword = "mengjinghao"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.apex.root"
         minSdk = 29
@@ -43,8 +53,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("mengjinghao")
+        }
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("mengjinghao")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
