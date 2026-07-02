@@ -344,29 +344,36 @@ fun DashboardScreen(
                 }
 
                 Spacer(Modifier.height(20.dp))
-                SectionHeader(title = "工具入口")
+                SectionHeader(title = "安全工具")
                 Spacer(Modifier.height(12.dp))
 
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // 安全工具 — 3 列网格，统一间距
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ToolChip("检测历史", Icons.Default.History, AccentPurple, onNavigateToHistory)
                     ToolChip("内核信息", Icons.Default.Memory, AccentBlue, onNavigateToKernelInfo)
                     ToolChip("基线对比", Icons.Default.Compare, AccentGold, onNavigateToBaseline)
                 }
                 Spacer(Modifier.height(10.dp))
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ToolChip("特征测试", Icons.Default.Search, AccentMint, onNavigateToFeatureTest)
                     ToolChip("时序图表", Icons.Default.Timeline, ErrorRed, onNavigateToTimingChart)
                     ToolChip("白名单", Icons.Default.CheckCircle, AccentBlue, onNavigateToWhitelist)
                 }
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ToolChip("详细配置", Icons.Default.Tune, AccentGold, onNavigateToConfig)
+
+                Spacer(Modifier.height(18.dp))
+                SectionHeader(title = "系统工具")
+                Spacer(Modifier.height(12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ToolChip("隐藏模式", Icons.Default.VisibilityOff, AccentPurple, onNavigateToHideMode)
-                    ToolChip("关于", Icons.Default.Info, AccentMint, onNavigateToAbout)
+                    ToolChip("详细配置", Icons.Default.Tune, AccentGold, onNavigateToConfig)
+                    ToolChip("权限中心", Icons.Default.VerifiedUser, AccentMint, onNavigateToPermissions)
                 }
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ToolChip("权限中心", Icons.Default.VerifiedUser, AccentPurple, onNavigateToPermissions)
+                Spacer(Modifier.height(10.dp))
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     ToolChip("Frida", Icons.Default.BugReport, ErrorRed, onNavigateToFrida)
                     ToolChip("模块", Icons.Default.Extension, AccentGold, onNavigateToLSPosed)
+                    ToolChip("关于", Icons.Default.Info, AccentMint, onNavigateToAbout)
                 }
 
                 Spacer(Modifier.height(32.dp))
