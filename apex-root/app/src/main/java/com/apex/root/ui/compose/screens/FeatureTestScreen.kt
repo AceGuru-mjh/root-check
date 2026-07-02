@@ -21,6 +21,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apex.root.ui.compose.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,6 +32,7 @@ fun FeatureTestScreen(
     var testType by remember { mutableStateOf(0) }
     var result by remember { mutableStateOf("") }
     var isRunning by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     val testTypes = listOf("文件/路径检测", "内存字符串扫描", "属性值检测", "Socket 检测")
 
@@ -109,15 +111,21 @@ fun FeatureTestScreen(
 
                 Button(
                     onClick = {
-                        isRunning = true
-                        result = when (testType) {
-                            0 -> "检测路径: $inputText\n结果: ${if (inputText.contains("adb") || inputText.contains("magisk")) "可疑" else "正常"}"
-                            1 -> "内存扫描: \"$inputText\"\n结果: 扫描 32768 字节，未发现匹配"
-                            2 -> "属性检测: $inputText\n结果: 属性不存在"
-                            3 -> "Socket 扫描: 发现 12 个活动 socket\n结果: 无异常 socket"
-                            else -> "未知检测类型"
+                        // 修复：原同步执行导致 isRunning=true→false 瞬间完成，spinner 永不显示。
+                        // 改为协程异步执行 + 短延迟，让加载状态可见。
+                        scope.launch {
+                            isRunning = true
+                            result = ""
+                            kotlinx.coroutines.delay(600)
+                            result = when (testType) {
+                                0 -> "检测路径: $inputText\n结果: ${if (inputText.contains("adb") || inputText.contains("magisk")) "可疑" else "正常"}"
+                                1 -> "内存扫描: \"$inputText\"\n结果: 扫描 32768 字节，未发现匹配"
+                                2 -> "属性检测: $inputText\n结果: 属性不存在"
+                                3 -> "Socket 扫描: 发现 12 个活动 socket\n结果: 无异常 socket"
+                                else -> "未知检测类型"
+                            }
+                            isRunning = false
                         }
-                        isRunning = false
                     },
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     enabled = !isRunning && inputText.isNotBlank(),

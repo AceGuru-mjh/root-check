@@ -33,6 +33,7 @@ fun ReportScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val report = (uiState as? UiState.Report)?.report
+    val isScanning = uiState is UiState.Scanning || uiState is UiState.Connecting
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -49,7 +50,15 @@ fun ReportScreen(
         }
     ) { padding ->
         LiquidGlassContainer(fluidColorsDark = PageFluidColors.report, fluidColorsLight = PageFluidColors.reportLight) {
-            if (report == null) {
+            if (isScanning) {
+                Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(modifier = Modifier.size(36.dp), strokeWidth = 3.dp, color = AccentBlue)
+                        Spacer(Modifier.height(14.dp))
+                        Text("正在生成安全报告...", fontSize = 13.sp, color = TextSecondary)
+                    }
+                }
+            } else if (report == null) {
                 Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     GlassEmptyState(
                         title = "暂无报告数据",

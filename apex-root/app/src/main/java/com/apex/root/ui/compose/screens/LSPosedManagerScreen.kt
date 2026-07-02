@@ -50,28 +50,33 @@ fun LSPosedManagerScreen(onBack: () -> Unit) {
 
     fun runScan() {
         scope.launch(Dispatchers.IO) {
-            scanning = true
-            logText = ""
-            addLog("扫描 Xposed / LSPosed 模块...")
+            try {
+                scanning = true
+                logText = ""
+                addLog("扫描 Xposed / LSPosed 模块...")
 
-            addLog("检测 Xposed 框架")
-            xposedDetected = runCatching { NativeBridge.detectXposedFramework() }.getOrDefault(false)
-            addLog(if (xposedDetected) "Xposed 框架存在" else "无 Xposed")
+                addLog("检测 Xposed 框架")
+                xposedDetected = runCatching { NativeBridge.detectXposedFramework() }.getOrDefault(false)
+                addLog(if (xposedDetected) "Xposed 框架存在" else "无 Xposed")
 
-            addLog("检测 LSPosed Manager")
-            lspdDetected = runCatching { NativeBridge.detectLSPosedManager() }.getOrDefault(false)
-            addLog(if (lspdDetected) "LSPosed Manager 已安装" else "无 LSPosed Manager")
+                addLog("检测 LSPosed Manager")
+                lspdDetected = runCatching { NativeBridge.detectLSPosedManager() }.getOrDefault(false)
+                addLog(if (lspdDetected) "LSPosed Manager 已安装" else "无 LSPosed Manager")
 
-            addLog("检测 Riru 模块")
-            riruDetected = runCatching { NativeBridge.detectRiruModules() }.getOrDefault(false)
-            addLog(if (riruDetected) "Riru 模块存在" else "无 Riru")
+                addLog("检测 Riru 模块")
+                riruDetected = runCatching { NativeBridge.detectRiruModules() }.getOrDefault(false)
+                addLog(if (riruDetected) "Riru 模块存在" else "无 Riru")
 
-            addLog("检测 Zygisk 模块")
-            zygiskDetected = runCatching { NativeBridge.detectZygiskModules() }.getOrDefault(false)
-            addLog(if (zygiskDetected) "Zygisk 模块存在" else "无 Zygisk")
+                addLog("检测 Zygisk 模块")
+                zygiskDetected = runCatching { NativeBridge.detectZygiskModules() }.getOrDefault(false)
+                addLog(if (zygiskDetected) "Zygisk 模块存在" else "无 Zygisk")
 
-            addLog("扫描完成")
-            scanning = false
+                addLog("扫描完成")
+            } catch (e: Throwable) {
+                addLog("扫描异常: ${e.message ?: e.javaClass.simpleName}")
+            } finally {
+                scanning = false
+            }
         }
     }
 

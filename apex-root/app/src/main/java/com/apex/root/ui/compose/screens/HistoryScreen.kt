@@ -106,7 +106,7 @@ fun HistoryScreen(
                     Spacer(Modifier.height(8.dp))
                 }
 
-                items(entries) { entry ->
+                items(entries, key = { it.timestamp }) { entry ->
                     HistoryCard(entry)
                 }
 

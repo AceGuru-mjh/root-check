@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,9 +33,7 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FridaConsoleScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val isDark = LocalIsDarkTheme.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     var scanning by remember { mutableStateOf(false) }
@@ -54,36 +51,39 @@ fun FridaConsoleScreen(onBack: () -> Unit) {
 
     fun runScan() {
         scope.launch(Dispatchers.IO) {
-            scanning = true
-            logText = ""
-            addLog("开始 Frida 检测...")
+            try {
+                scanning = true
+                logText = ""
+                addLog("开始 Frida 检测...")
 
-            addLog("检查 /data/local/tmp/frida-server")
-            val serverExists = runCatching { NativeBridge.detectFrida() }.getOrDefault(false)
-            fridaDetected = serverExists
-            addLog(if (serverExists) "发现 Frida 痕迹" else "未检测到 Frida 二进制")
+                addLog("检查 /data/local/tmp/frida-server")
+                val serverExists = runCatching { NativeBridge.detectFrida() }.getOrDefault(false)
+                fridaDetected = serverExists
+                addLog(if (serverExists) "发现 Frida 痕迹" else "未检测到 Frida 二进制")
 
-            addLog("扫描 /proc/self/maps 中的 frida-agent")
-            // 内存 maps 检测复用 detectFrida（内部扫描 frida-agent / gum-js-loop 等内存特征）
-            fridaInMaps = runCatching { NativeBridge.detectFrida() }.getOrDefault(false)
-            addLog(if (fridaInMaps) "frida-agent 已注入进程" else "进程内存中无 frida-agent")
+                addLog("扫描 /proc/self/maps 中的 frida-agent")
+                fridaInMaps = runCatching { NativeBridge.detectFrida() }.getOrDefault(false)
+                addLog(if (fridaInMaps) "frida-agent 已注入进程" else "进程内存中无 frida-agent")
 
-            addLog("检查 Frida Gum 库")
-            // Gum 引擎检测复用 SELinux 上下文跳变检测作为间接指标（Frida 注入常伴随 selinux 上下文异常）
-            gumDetected = runCatching { NativeBridge.detectSELinuxContextJump() }.getOrDefault(false)
-            addLog(if (gumDetected) "检测到 Gum 引擎特征" else "无 Gum 引擎特征")
+                addLog("检查 Frida Gum 库")
+                gumDetected = runCatching { NativeBridge.detectSELinuxContextJump() }.getOrDefault(false)
+                addLog(if (gumDetected) "检测到 Gum 引擎特征" else "无 Gum 引擎特征")
 
-            addLog("扫描常用端口 (27042/27043)")
-            fridaPort = runCatching {
-                java.net.Socket().use { s ->
-                    s.connect(java.net.InetSocketAddress("127.0.0.1", 27042), 200)
-                    true
-                }
-            }.getOrDefault(false)
-            addLog(if (fridaPort) "Frida 默认端口 27042 开放" else "默认端口未开放")
+                addLog("扫描常用端口 (27042/27043)")
+                fridaPort = runCatching {
+                    java.net.Socket().use { s ->
+                        s.connect(java.net.InetSocketAddress("127.0.0.1", 27042), 200)
+                        true
+                    }
+                }.getOrDefault(false)
+                addLog(if (fridaPort) "Frida 默认端口 27042 开放" else "默认端口未开放")
 
-            addLog("Frida 检测完成")
-            scanning = false
+                addLog("Frida 检测完成")
+            } catch (e: Throwable) {
+                addLog("检测异常: ${e.message ?: e.javaClass.simpleName}")
+            } finally {
+                scanning = false
+            }
         }
     }
 
