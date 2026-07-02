@@ -1,27 +1,67 @@
-# Project-specific specs directory
-.mjh/specs/
+```
+# Build artifacts
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
 
-# Backup/old specs directory (to prevent resurrection)
-.trae/specs/
+# C/C++ specific
+*.i
+*.ii
+*.s
+*.ko
+*.mod.c
+*.mod.o
+*.order
+*.markers
+*.dep
+*.cmd
+*.flags
+*.d
+*.gcno
+*.gcda
+*.gcov
 
-# Android
-*.iml
-.gradle
-/local.properties
-/.idea
+# Debug and release builds
+Debug/
+Release/
+x64/
+x86/
+build/
+cmake-build-*/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+*~
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Coverage
+coverage/
+*.gcov
+*.lcov
+
+# Package managers
+node_modules/
+vendor/
+
+# OS generated files
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
-
-# Legacy files
-*_OLD*
-*_old*app/build/
-.cxx/
-app/build/
-.cxx/
-mengjinghao.jks
-apex-release.jks
-mengjinghao.jks
+Thumbs.db
+```

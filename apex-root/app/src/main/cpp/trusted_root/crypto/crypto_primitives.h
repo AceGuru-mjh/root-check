@@ -2,6 +2,7 @@
 #define APEX_CRYPTO_PRIMITIVES_H
 
 #include <cstdint>
+#include <cstddef>
 #include <vector>
 #include <array>
 #include <string>

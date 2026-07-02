@@ -3,6 +3,7 @@
 #include "bare_syscall/syscall_bridge.h"
 #include <cstring>
 #include <unistd.h>
+#include <time.h>
 
 // ─── BPF macros (file-scope, self-contained) ─────────────
 

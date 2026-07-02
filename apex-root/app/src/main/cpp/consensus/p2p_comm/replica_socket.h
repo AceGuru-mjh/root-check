@@ -3,6 +3,7 @@
 
 #include "consensus/replica_manager.h"
 #include <cstdint>
+#include <cstddef>
 #include <vector>
 
 namespace apex {

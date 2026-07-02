@@ -2,6 +2,7 @@
 #define APEX_ROOT_AI_ENGINE_H
 
 #include <cstdint>
+#include <cstddef>
 #include <vector>
 #include <string>
 #include <optional>

@@ -2,6 +2,7 @@
 #define APEX_ROOT_OQS_SIGNATURE_H
 
 #include <cstdint>
+#include <cstddef>
 #include <vector>
 #include <string>
 #include <array>

@@ -2,6 +2,7 @@
 #define APEX_ROOT_SIGNING_CENTER_H
 
 #include <cstdint>
+#include <cstddef>
 #include <vector>
 #include <array>
 #include <optional>

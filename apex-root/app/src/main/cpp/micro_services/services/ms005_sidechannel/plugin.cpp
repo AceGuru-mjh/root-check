@@ -13,8 +13,12 @@
 #define MMAP_MAP_ANONYMOUS 0x20
 #define MMAP_MAP_POPULATE  0x08000
 
+#ifndef O_RDONLY
 #define O_RDONLY  0
+#endif
+#ifndef O_CLOEXEC
 #define O_CLOEXEC 0x80000
+#endif
 
 // Binder
 #define BINDER_DRIVER "/dev/binder"

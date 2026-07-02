@@ -2,6 +2,7 @@
 #define APEX_ROOT_KEY_DERIVATION_H
 
 #include <cstdint>
+#include <cstddef>
 #include <vector>
 
 namespace apex {
