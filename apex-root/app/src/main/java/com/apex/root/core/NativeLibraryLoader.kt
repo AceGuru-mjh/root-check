@@ -74,4 +74,27 @@ object NativeLibraryLoader {
             Log.e(TAG, "Native call failed", e)
         }
     }
+
+    /**
+     * 重置加载状态，允许下次调用 [ensureLoaded] 时重新尝试加载。
+     *
+     * 使用场景：
+     *  - 用户在诊断页点击「重试加载 native 库」按钮
+     *  - 系统从严格 SELinux 临时拒绝中恢复后
+     *
+     * 注意：如果之前已成功加载（loaded=true），此方法不会卸载已加载的 .so
+     * （JVM 不支持卸载已加载的 native 库），仅重置失败标志。
+     */
+    fun reset() {
+        synchronized(this) {
+            if (loaded) {
+                Log.i(TAG, "Reset called but library already loaded — no-op")
+                return
+            }
+            if (loadFailed) {
+                loadFailed = false
+                Log.i(TAG, "Reset failed flag — next ensureLoaded() will retry")
+            }
+        }
+    }
 }

@@ -60,6 +60,7 @@ fun DashboardScreen(
     onNavigateToLSPosed: (() -> Unit)? = null,
     onNavigateToPermissions: (() -> Unit)? = null,
     onNavigateToLogs: (() -> Unit)? = null,
+    onNavigateToUpdate: (() -> Unit)? = null,
     apexViewModel: ApexViewModel? = null
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -382,6 +383,7 @@ fun DashboardScreen(
                     ToolChip("Frida", Icons.Default.BugReport, ErrorRed, onNavigateToFrida)
                     ToolChip("模块", Icons.Default.Extension, AccentGold, onNavigateToLSPosed)
                     ToolChip("关于", Icons.Default.Info, AccentMint, onNavigateToAbout)
+                    ToolChip("软件更新", Icons.Default.SystemUpdateAlt, AccentPurple, onNavigateToUpdate)
                 }
 
                 Spacer(Modifier.height(32.dp))

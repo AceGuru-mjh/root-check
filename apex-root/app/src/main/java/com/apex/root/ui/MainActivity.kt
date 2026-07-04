@@ -8,7 +8,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
+import com.apex.root.core.NativeLibraryLoader
 import com.apex.root.ui.compose.AppNavigation
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -48,6 +52,17 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to set content", e)
+        }
+
+        // 预热 native 库：在 IO 线程后台加载 libapex_root.so
+        // 避免首次扫描时在主线程触发 dlopen 导致卡顿
+        // 借鉴 topjohnwu/Magisk 的预加载策略
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                NativeLibraryLoader.ensureLoaded()
+            } catch (e: Throwable) {
+                Log.e(TAG, "Native library preload failed (non-fatal)", e)
+            }
         }
     }
 }

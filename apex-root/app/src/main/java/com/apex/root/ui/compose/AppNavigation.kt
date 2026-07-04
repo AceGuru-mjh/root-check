@@ -49,8 +49,10 @@ import com.apex.root.ui.compose.screens.ReportScreen
 import com.apex.root.ui.compose.screens.SettingsScreen
 import com.apex.root.ui.compose.screens.SplashScreen
 import com.apex.root.ui.compose.screens.TimingChartScreen
+import com.apex.root.ui.compose.screens.UpdateScreen
 import com.apex.root.ui.compose.screens.WhitelistScreen
 import com.apex.root.viewmodel.SettingsViewModel
+import com.apex.root.viewmodel.UpdateViewModel
 import com.apex.root.viewmodel.trusted.ApexViewModel
 import com.apex.root.viewmodel.trusted.ScanViewModel
 
@@ -67,13 +69,11 @@ private val mainRoutes = listOf("dashboard", "report", "alert", "settings")
 fun AppNavigation(
     apexViewModel: ApexViewModel = viewModel(),
     scanViewModel: ScanViewModel = viewModel(),
-    settingsViewModel: SettingsViewModel = viewModel()
+    settingsViewModel: SettingsViewModel = viewModel(),
+    updateViewModel: UpdateViewModel = viewModel()
 ) {
     var showSplash by remember { mutableStateOf(true) }
     val settings by settingsViewModel.settings.collectAsState()
-    // 修复：原实现直接读 apexViewModel.uiState.value.isFirstLaunch，
-    // 不会触发 Compose 重组。改为 collectAsState() 确保 isFirstLaunch
-    // 异步加载完成后 UI 能正确切换。
     val apexUiState by apexViewModel.uiState.collectAsState()
     val isDark = when (settings.themeMode) {
         ThemeMode.DARK -> true
@@ -91,7 +91,7 @@ fun AppNavigation(
                 }
             )
         } else {
-            MainApp(isDark, settingsViewModel, apexViewModel, scanViewModel)
+            MainApp(isDark, settingsViewModel, apexViewModel, scanViewModel, updateViewModel)
         }
     }
 }
@@ -101,7 +101,8 @@ private fun MainApp(
     isDark: Boolean,
     settingsViewModel: SettingsViewModel,
     apexViewModel: ApexViewModel,
-    scanViewModel: ScanViewModel
+    scanViewModel: ScanViewModel,
+    updateViewModel: UpdateViewModel
 ) {
     val navController = rememberNavController()
     val uiState by apexViewModel.uiState.collectAsState()
@@ -213,6 +214,7 @@ private fun MainApp(
                         onNavigateToFrida = { navController.navigate("frida_console") },
                         onNavigateToLSPosed = { navController.navigate("lsposed_manager") },
                         onNavigateToPermissions = { navController.navigate("permissions") },
+                        onNavigateToUpdate = { navController.navigate("update") },
                         apexViewModel = apexViewModel
                     )
                 }
@@ -252,6 +254,7 @@ private fun MainApp(
                         apexViewModel = apexViewModel,
                         onNavigateToLogs = { navController.navigate("log_viewer") },
                         onNavigateToPermissions = { navController.navigate("permissions") },
+                        onNavigateToUpdate = { navController.navigate("update") },
                         onBack = { navController.popBackStack() }
                     )
                 }
@@ -372,6 +375,16 @@ private fun MainApp(
                     exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
                 ) {
                     PermissionsScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = "update",
+                    enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(tween(300)) },
+                    exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
+                ) {
+                    UpdateScreen(
+                        viewModel = updateViewModel,
                         onBack = { navController.popBackStack() }
                     )
                 }

@@ -31,6 +31,7 @@ fun SettingsScreen(
     apexViewModel: ApexViewModel? = null,
     onNavigateToLogs: (() -> Unit)? = null,
     onNavigateToPermissions: (() -> Unit)? = null,
+    onNavigateToUpdate: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -127,7 +128,7 @@ fun SettingsScreen(
             NotificationsDetailGroup(settings, viewModel)
             Spacer(Modifier.height(24.dp))
 
-            UpdatesGroup(settings, viewModel)
+            UpdatesGroup(settings, viewModel, onNavigateToUpdate)
             Spacer(Modifier.height(24.dp))
 
             PrivacyGroup(settings, viewModel)
@@ -1065,8 +1066,18 @@ private fun NotificationsDetailGroup(settings: AppSettings, vm: SettingsViewMode
 }
 
 @Composable
-private fun UpdatesGroup(settings: AppSettings, vm: SettingsViewModel) {
+private fun UpdatesGroup(settings: AppSettings, vm: SettingsViewModel, onNavigateToUpdate: (() -> Unit)? = null) {
     GlassSettingsGroup(title = "更新") {
+        // 新增：立即检查更新按钮 — 跳转到专门的 UpdateScreen
+        if (onNavigateToUpdate != null) {
+            GlassSettingsItem(
+                label = "检查更新",
+                subtitle = "手动检查 GitHub Releases 是否有新版本",
+                icon = Icons.Default.SystemUpdateAlt,
+                accentColor = AccentPurple,
+                onClick = onNavigateToUpdate
+            )
+        }
         GlassSettingsItem(
             label = "自动检查更新",
             subtitle = if (settings.autoCheckUpdates) "已开启" else "已关闭",
