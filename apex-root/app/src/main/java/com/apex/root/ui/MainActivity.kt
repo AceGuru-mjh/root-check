@@ -1,18 +1,13 @@
 package com.apex.root.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
 import com.apex.root.ui.compose.AppNavigation
 
 class MainActivity : ComponentActivity() {
@@ -21,17 +16,25 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "ApexPerms"
     }
 
-    /**
-     * 权限请求 Launcher — 即使回调为空也必须注册（在 STARTED 之前）。
-     * 回调中记录授权结果，便于诊断。
+    /*
+     * 修复：移除了原先在 onCreate 中直接请求权限的 requestNecessaryPermissionsOnce()。
+     *
+     * 原实现的问题：
+     *   1. 在 Activity.onCreate 中立即调用 permissionLauncher.launch()，此时应用窗口
+     *      尚未完全显示，系统权限对话框可能被 Compose 内容覆盖或与首启动动画冲突。
+     *   2. 设置 requested_once=true 后，即使权限被拒绝也永不再请求 —— 返回用户
+     *      永远看不到权限弹窗。
+     *   3. 与 GlassPermissionGuideScreen 中的权限请求重复，可能导致 Android 权限
+     *      节流（连续请求同一权限时系统会不显示对话框）。
+     *
+     * 现在的流程：
+     *   - 首次启动 → SplashScreen → GlassPermissionGuideScreen
+     *     → 在引导页中通过 LaunchedEffect 可靠地弹出系统权限对话框
+     *     → 用户点击"进入应用"后 completePermissionGuide() 标记完成
+     *   - 返回用户 → 直接进入 MainApp
+     *
+     * 权限请求全部由 GlassPermissionGuideScreen 统一管理，确保首次进入必有弹窗。
      */
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        results.forEach { (perm, granted) ->
-            Log.i(TAG, "Permission result: $perm granted=$granted")
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,37 +48,6 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to set content", e)
-        }
-
-        // 首次安装时统一请求运行时权限（仅请求一次，避免每次 onResume 重复弹窗）
-        requestNecessaryPermissionsOnce()
-    }
-
-    /**
-     * 仅在首次启动时请求必要权限。
-     * - 通知权限（Android 13+）：用于推送扫描结果与安全告警
-     * 首次启动引导页（GlassPermissionGuideScreen）会再次以可视化方式引导用户授权，
-     * 此处仅作为返回用户（已完成引导）时的兜底请求。
-     */
-    private fun requestNecessaryPermissionsOnce() {
-        try {
-            val prefs = getSharedPreferences("apex_perms", MODE_PRIVATE)
-            if (prefs.getBoolean("requested_once", false)) return
-
-            val perms = mutableListOf<String>()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                    perms.add(Manifest.permission.POST_NOTIFICATIONS)
-                }
-            }
-            if (perms.isNotEmpty()) {
-                Log.i(TAG, "Requesting runtime permissions: $perms")
-                permissionLauncher.launch(perms.toTypedArray())
-            }
-            prefs.edit().putBoolean("requested_once", true).apply()
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to request permissions", e)
         }
     }
 }

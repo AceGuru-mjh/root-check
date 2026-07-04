@@ -158,8 +158,24 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 addLog(LogType.INFO, "加载原生检测引擎")
                 val result = repository.runQuickScan()
                 addLog(LogType.INFO, "扫描完成，风险分: ${result.riskScore}")
+                // 修复：扫描完成后自动生成修复建议，用户无需手动点击"修复建议"按钮
+                val layers = parseScanLayers(result.details)
+                val recs = if (layers.isNotEmpty()) {
+                    FixRecommendations.getRecommendationsForLayers(layers)
+                } else emptyList()
                 _uiState.update {
-                    it.copy(scanResult = result.details, riskScore = result.riskScore, isScanning = false)
+                    it.copy(
+                        scanResult = result.details,
+                        riskScore = result.riskScore,
+                        isScanning = false,
+                        recommendations = recs,
+                        showRecommendations = recs.isNotEmpty()
+                    )
+                }
+                if (recs.isNotEmpty()) {
+                    addLog(LogType.INFO, "检测到 ${recs.size} 个异常，已生成修复建议")
+                } else {
+                    addLog(LogType.INFO, "未检测到异常")
                 }
             } catch (e: Throwable) {
                 addLog(LogType.ERROR, "扫描失败: ${e.message ?: e.javaClass.simpleName}")
@@ -195,6 +211,12 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 // 限制 deepReport 大小，避免在 UI state 中持有大字符串导致 OOM
                 val truncatedReport = if (report.length > 64_000) report.take(64_000) + "\n...[truncated]" else report
 
+                // 修复：深度扫描完成后也自动生成修复建议
+                val layers = parseScanLayers(report)
+                val recs = if (layers.isNotEmpty()) {
+                    FixRecommendations.getRecommendationsForLayers(layers)
+                } else emptyList()
+
                 _uiState.update {
                     it.copy(
                         scanResult = report.take(500),
@@ -206,10 +228,15 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                         hasZygiskNext = zygiskNext,
                         selinuxCompromised = selinuxJump || selinuxMod,
                         deepReport = truncatedReport,
-                        selfCheckIssues = hookIssues + injectIssues + dexIssues
+                        selfCheckIssues = hookIssues + injectIssues + dexIssues,
+                        recommendations = recs,
+                        showRecommendations = recs.isNotEmpty()
                     )
                 }
                 addLog(LogType.INFO, "深度扫描完成，风险分: ${_uiState.value.riskScore}")
+                if (recs.isNotEmpty()) {
+                    addLog(LogType.INFO, "检测到 ${recs.size} 个异常，已生成修复建议")
+                }
             } catch (e: Throwable) {
                 addLog(LogType.ERROR, "深度扫描失败: ${e.message ?: e.javaClass.simpleName}")
                 _uiState.update {
@@ -323,9 +350,16 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 从扫描结果文本中解析出检测到异常的层级。
+     * 修复：原实现不区分"❌ 异常"和"✅ 正常"，导致即使层级正常也会显示修复建议。
+     * 现在仅匹配包含"❌"的行，确保只有检测到异常的层级才返回。
+     */
     private fun parseScanLayers(result: String): List<String> {
         val layers = mutableListOf<String>()
         result.lines().forEach { line ->
+            // 仅对检测到异常的行（包含 ❌）生成修复建议
+            if (!line.contains("❌")) return@forEach
             when {
                 line.contains("系统属性") -> layers.add("属性")
                 line.contains("ART") || line.contains("内存特征") -> layers.add("内存")

@@ -71,6 +71,10 @@ fun AppNavigation(
 ) {
     var showSplash by remember { mutableStateOf(true) }
     val settings by settingsViewModel.settings.collectAsState()
+    // 修复：原实现直接读 apexViewModel.uiState.value.isFirstLaunch，
+    // 不会触发 Compose 重组。改为 collectAsState() 确保 isFirstLaunch
+    // 异步加载完成后 UI 能正确切换。
+    val apexUiState by apexViewModel.uiState.collectAsState()
     val isDark = when (settings.themeMode) {
         ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
@@ -80,7 +84,7 @@ fun AppNavigation(
     ApexRootTheme(darkTheme = isDark) {
         if (showSplash) {
             SplashScreen(onSplashComplete = { showSplash = false })
-        } else if (apexViewModel.uiState.value.isFirstLaunch) {
+        } else if (apexUiState.isFirstLaunch) {
             GlassPermissionGuideScreen(
                 onFinished = {
                     apexViewModel.completePermissionGuide()

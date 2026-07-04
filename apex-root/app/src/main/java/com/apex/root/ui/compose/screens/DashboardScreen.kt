@@ -153,8 +153,14 @@ fun DashboardScreen(
 
                     Spacer(Modifier.height(12.dp))
 
+                    // 修复：检测后自动显示修复建议。如果检测到异常则显示建议列表，
+                    // 如果未检测到异常则显示"安全"提示卡片。
                     if (uiState.showRecommendations && uiState.recommendations.isNotEmpty()) {
                         RecommendationsSection(uiState.recommendations, onDismissRecommendations)
+                        Spacer(Modifier.height(12.dp))
+                    } else if (uiState.riskScore == 0) {
+                        // 风险分为 0 且无建议 → 设备安全
+                        SafeStateCard()
                         Spacer(Modifier.height(12.dp))
                     }
 
@@ -544,6 +550,42 @@ private fun DeepFindingsSection(uiState: ApexUiState) {
                 if (uiState.hasZygiskNext) GlassFindingItem("ZygiskNext", "检测到隐藏模块", ErrorRed)
                 if (uiState.rwxPageCount > 3) GlassFindingItem("RWX 内存页", "${uiState.rwxPageCount} 页", AccentGold)
                 if (uiState.selfCheckIssues.isNotEmpty()) GlassFindingItem("自保护问题", "${uiState.selfCheckIssues.size} 个", ErrorRed)
+            }
+        }
+    }
+}
+
+/**
+ * 安全状态卡片 — 扫描完成后未检测到异常时显示
+ */
+@Composable
+private fun SafeStateCard() {
+    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+        GlassCard(cornerRadius = 16.dp, accentLine = AccentMint) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = AccentMint,
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text(
+                        "设备安全",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = AccentMint
+                    )
+                    Text(
+                        "本次扫描未检测到 root 痕迹或安全威胁",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+                }
             }
         }
     }
