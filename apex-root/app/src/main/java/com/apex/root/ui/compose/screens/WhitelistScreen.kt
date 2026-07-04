@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -107,7 +108,11 @@ fun WhitelistScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.weight(1f).fillMaxWidth()
                     ) {
-                        items(items, key = { it }) { pkg ->
+                        // 修复：原 `key = { it }` 在白名单列表出现重复包名时会触发
+                        // IllegalArgumentException: Key X was already used → 闪退。
+                        // 防御性 distinct() 去重，再用 index 作为 key（即使去重后包名仍重复也不会崩）。
+                        val distinctItems = items.distinct()
+                        itemsIndexed(distinctItems, key = { idx, _ -> idx }) { _, pkg ->
                             GlassCard(cornerRadius = 14.dp) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),

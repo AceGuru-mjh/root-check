@@ -155,9 +155,13 @@ object SelfProtection {
         return issues
     }
 
+    // 修复：标记 @Volatile — init() 在主线程调用，detectInjection() 在 IO 线程读取。
+    // 没有 @Volatile 的话，IO 线程可能永远看不到主线程的写入，导致 context 为 null
+    // （进而导致 detectInjection 误报 .so 文件为 "Foreign"）。
+    @Volatile
     private var context: Context? = null
 
-    fun init(ctx: Context) { context = ctx }
+    fun init(ctx: Context) { context = ctx.applicationContext }
 
     // ─── Multi-process verification ─────────────────────────
     fun spawnVerifierProcess(): Boolean {

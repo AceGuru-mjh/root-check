@@ -64,35 +64,50 @@ object PermissionManager {
      * - 设备无 su 二进制 → UNAVAILABLE
      * - su 存在但未授权 → DENIED
      * - su 已授权（uid=0）→ GRANTED
+     *
+     * 修复：原实现 process.waitFor() 是阻塞调用，不响应协程取消。当 withTimeoutOrNull
+     * 触发取消时，IO 线程仍然阻塞在 waitFor() 上，导致 Dispatchers.IO 线程被耗尽。
+     * 现使用 process.waitFor(timeout, TimeUnit.MILLISECONDS) + destroyForcibly() 兜底。
      */
     suspend fun checkRoot(): PermissionInfo = withContext(Dispatchers.IO) {
-        val result = withTimeoutOrNull(2500L) {
-            runCatching {
-                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-                val text = process.inputStream.bufferedReader().readText()
-                val errText = process.errorStream.bufferedReader().readText()
-                val exit = process.waitFor()
-                Triple(exit, text, errText)
-            }.getOrNull()
-        }
+        var process: Process? = null
+        try {
+            val result = withTimeoutOrNull(2500L) {
+                runCatching {
+                    process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+                    val p = process!!
+                    // 用带超时的 waitFor，避免无限阻塞
+                    val text = p.inputStream.bufferedReader().readText()
+                    val errText = p.errorStream.bufferedReader().readText()
+                    val exited = p.waitFor(2500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    val exit = if (exited) p.exitValue() else -1
+                    Triple(exit, text, errText)
+                }.getOrNull()
+            }
 
-        when {
-            result == null -> PermissionInfo(
-                PermType.ROOT, PermState.DENIED,
-                "检测超时（su 未响应，可能需用户在弹窗中授权）"
-            )
-            result.first == 0 && result.second.contains("uid=0") -> PermissionInfo(
-                PermType.ROOT, PermState.GRANTED,
-                "已获取（uid=0）"
-            )
-            result.second.isEmpty() && result.third.contains("not found") -> PermissionInfo(
-                PermType.ROOT, PermState.UNAVAILABLE,
-                "未安装 root 框架"
-            )
-            else -> PermissionInfo(
-                PermType.ROOT, PermState.DENIED,
-                "未授权（exit=${result.first}）"
-            )
+            when {
+                result == null -> PermissionInfo(
+                    PermType.ROOT, PermState.DENIED,
+                    "检测超时（su 未响应，可能需用户在弹窗中授权）"
+                )
+                result.first == 0 && result.second.contains("uid=0") -> PermissionInfo(
+                    PermType.ROOT, PermState.GRANTED,
+                    "已获取（uid=0）"
+                )
+                result.second.isEmpty() && result.third.contains("not found") -> PermissionInfo(
+                    PermType.ROOT, PermState.UNAVAILABLE,
+                    "未安装 root 框架"
+                )
+                else -> PermissionInfo(
+                    PermType.ROOT, PermState.DENIED,
+                    "未授权（exit=${result.first}）"
+                )
+            }
+        } finally {
+            // 兜底清理：如果 su 进程仍在运行（用户没响应弹窗），强制销毁避免泄漏
+            try {
+                process?.destroyForcibly()
+            } catch (_: Throwable) {}
         }
     }
 

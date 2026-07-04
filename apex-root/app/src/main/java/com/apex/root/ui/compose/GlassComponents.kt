@@ -52,11 +52,14 @@ fun GlassCard(
                 .liquidGlass(cornerRadius = cornerRadius)
         ) {
             if (accentLine != null) {
+                // 修复：原 modifier 顺序 width(3.dp).padding(start=8.dp) 使背景宽度被
+                // padding 吃掉（3 - 8 = 负值，clamp 到 0），accentLine 完全不可见。
+                // 正确顺序：padding 先，width/height 后，让背景绘制在 padding 之后的 3dp 区域。
                 Box(
                     modifier = Modifier
+                        .padding(start = 8.dp, top = 16.dp)
                         .width(3.dp)
                         .height(32.dp)
-                        .padding(start = 8.dp, top = 16.dp)
                         .background(
                             Brush.verticalGradient(listOf(accentLine, accentLine.copy(alpha = 0f))),
                             RoundedCornerShape(2.dp)

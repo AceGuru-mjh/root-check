@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -106,7 +107,10 @@ fun HistoryScreen(
                     Spacer(Modifier.height(8.dp))
                 }
 
-                items(entries, key = { it.timestamp }) { entry ->
+                // 修复：原 `key = { it.timestamp }` 在同一毫秒保存的两条记录会重复，
+                // 触发 IllegalArgumentException: Key X was already used → 闪退。
+                // 改用 (index, timestamp) 复合 key 保证唯一性。
+                itemsIndexed(entries, key = { idx, e -> idx to e.timestamp }) { _, entry ->
                     HistoryCard(entry)
                 }
 

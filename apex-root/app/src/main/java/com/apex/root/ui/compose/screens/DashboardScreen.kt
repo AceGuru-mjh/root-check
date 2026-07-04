@@ -72,7 +72,9 @@ fun DashboardScreen(
     var pendingCureLevel by remember { mutableStateOf<CureLevel?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(Unit) {
+    // 修复：原 key 是 Unit，apexViewModel 在初次组合时为 null 时永远不会再订阅。
+    // 改为以 apexViewModel 为 key，确保它变成非 null 时重新订阅 snackbar。
+    LaunchedEffect(apexViewModel) {
         apexViewModel?.snackbarChannel?.collect { event ->
             snackbarHostState.currentSnackbarData?.dismiss()
             snackbarHostState.showSnackbar(message = event.message, duration = SnackbarDuration.Short)

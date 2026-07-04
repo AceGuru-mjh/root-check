@@ -34,12 +34,14 @@ fun SettingsScreen(
     onBack: (() -> Unit)? = null
 ) {
     val settings by viewModel.settings.collectAsState()
+    val scope = rememberCoroutineScope()
     var showResetDialog by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-    LaunchedEffect(Unit) {
+    // 修复：原 key 是 Unit，apexViewModel 为 null 时永远不会再订阅 snackbar。
+    LaunchedEffect(apexViewModel) {
         apexViewModel?.snackbarChannel?.collect { event ->
             snackbarHostState.currentSnackbarData?.dismiss()
             snackbarHostState.showSnackbar(event.message)
@@ -55,8 +57,14 @@ fun SettingsScreen(
             onDismiss = { showResetDialog = false },
             onConfirm = {
                 viewModel.resetToDefaults()
-                showResetDialog = false
                 apexViewModel?.triggerReset()
+                // 修复：先 hide() 再 remove，避免直接移除 composable 导致
+                // 部分 OEM ROM 上 IllegalStateException: Sheet was already dismissed
+                scope.launch {
+                    sheetState.hide()
+                }.invokeOnCompletion {
+                    showResetDialog = false
+                }
             }
         )
     }

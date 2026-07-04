@@ -1,11 +1,15 @@
 package com.apex.root.viewmodel.trusted
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.apex.root.domain.trust.model.*
 import com.apex.root.ipc.DetectionProtocol
 import com.apex.root.ipc.client.SecureSocketClient
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
@@ -28,11 +32,18 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     private val _progress = MutableStateFlow(0f)
     val progress: StateFlow<Float> = _progress.asStateFlow()
 
+    /**
+     * 全局协程异常处理器 — 任何未捕获异常记录但不崩溃进程。
+     */
+    private val exceptionHandler = CoroutineExceptionHandler { _, e ->
+        Log.e("ScanViewModel", "Uncaught coroutine exception", e)
+    }
+
     // 修复：SecureSocketClient 需要 scope 参数（原构造仅传 socketName 会导致编译失败）
     private val client = SecureSocketClient("apex_root_sandbox", viewModelScope)
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             try {
                 client.messages.collect { data ->
                     handleMessage(data)
@@ -41,10 +52,11 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.value = UiState.Error("IPC 消息流异常: ${e.message ?: e.javaClass.simpleName}")
             }
         }
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             try {
                 client.connectionState.collect { connected ->
-                    if (!connected && _uiState.value !is UiState.Idle) {
+                    // 仅在之前处于 Scanning 时报错，避免覆盖更具体的错误信息
+                    if (!connected && _uiState.value is UiState.Scanning) {
                         _uiState.value = UiState.Error("IPC connection lost")
                     }
                 }
@@ -54,7 +66,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
 
     fun connect() {
         _uiState.value = UiState.Connecting
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val ok = try { client.connect() } catch (_: Throwable) { false }
             if (!ok) {
                 _uiState.value = UiState.Error("Failed to connect to sandbox")
@@ -65,7 +77,7 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startScan(level: DetectionLevel) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.value = UiState.Scanning
             _progress.value = 0f
 
@@ -78,7 +90,20 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             try {
-                client.send(encodeScanTask(task))
+                // 检查 send() 返回值 — false 表示 IPC 未连接或写入失败
+                val ok = client.send(encodeScanTask(task))
+                if (!ok) {
+                    _uiState.value = UiState.Error("发送扫描任务失败: IPC 未连接")
+                    return@launch
+                }
+                // 扫描超时保护 — 30s 内未收到 Report 则超时报错
+                // 避免用户因沙箱无响应而看到永久卡死的 Scanning 状态
+                launch {
+                    delay(30_000L)
+                    if (_uiState.value is UiState.Scanning) {
+                        _uiState.value = UiState.Error("扫描超时（30s 未收到响应）")
+                    }
+                }
             } catch (e: Throwable) {
                 _uiState.value = UiState.Error("发送扫描任务失败: ${e.message ?: e.javaClass.simpleName}")
             }
@@ -115,7 +140,8 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     private fun parseProgress(data: ByteArray) {
         if (data.size >= 2) {
             val pct = (data[1].toInt() and 0xFF) / 100f
-            _progress.value = pct
+            // 钳制到 [0, 1]，避免恶意/畸形数据导致进度 > 100%
+            _progress.value = pct.coerceIn(0f, 1f)
         }
     }
 

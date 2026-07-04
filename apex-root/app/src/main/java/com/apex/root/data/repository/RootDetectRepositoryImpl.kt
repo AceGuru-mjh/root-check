@@ -38,10 +38,14 @@ class RootDetectRepositoryImpl : com.apex.root.domain.repository.IRootDetectRepo
         val isRooted = NativeBridge.isDeviceRooted()
         val riskScore = NativeBridge.getRiskScore()
 
-        // Cache results
-        DetectionCache.putString(DetectionCache.KEY_QUICK_SCAN, details)
-        DetectionCache.putInt(DetectionCache.KEY_RISK_SCORE, riskScore)
-        DetectionCache.putBoolean(DetectionCache.KEY_IS_ROOTED, isRooted)
+        // 修复：native 库未加载时 details 为空字符串，原代码会缓存空结果，
+        // 之后 5 秒内重复扫描都返回缓存的空字符串，用户看到的是"风险分: 0"假象。
+        // 现在仅在 details 非空时缓存，避免错误结果被持久化。
+        if (details.isNotEmpty()) {
+            DetectionCache.putString(DetectionCache.KEY_QUICK_SCAN, details)
+            DetectionCache.putInt(DetectionCache.KEY_RISK_SCORE, riskScore)
+            DetectionCache.putBoolean(DetectionCache.KEY_IS_ROOTED, isRooted)
+        }
 
         val riskLevel = when {
             riskScore > 60 -> RiskLevel.CRITICAL

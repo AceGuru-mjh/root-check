@@ -28,12 +28,16 @@ import kotlin.math.sin
 
 @Composable
 fun SplashScreen(onSplashComplete: () -> Unit) {
-    var visible by remember { mutableStateOf(true) }
+    // 修复：使用 rememberSaveable 而非 remember，配置改变（如旋转）后 visible 状态保留；
+    // 同时 key 改为 visible，仅在 visible=true 时启动 delay 协程，避免旋转后再次延时 2400ms。
+    var visible by rememberSaveable { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) {
-        delay(2400)
-        visible = false
-        onSplashComplete()
+    LaunchedEffect(visible) {
+        if (visible) {
+            delay(2400)
+            visible = false
+            onSplashComplete()
+        }
     }
 
     if (!visible) return

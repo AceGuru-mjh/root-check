@@ -2,6 +2,7 @@ package com.apex.root.viewmodel.trusted
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.apex.root.core.security.SelfProtection
@@ -15,6 +16,7 @@ import com.apex.root.domain.guard.model.GuardState
 import com.apex.root.island.NativeIsland
 import com.apex.root.hid.NativeHwid
 import com.apex.root.util.ReportExporter
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -64,18 +66,44 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(ApexUiState())
     val uiState: StateFlow<ApexUiState> = _uiState.asStateFlow()
 
-    private val _snackbarChannel = MutableSharedFlow<SnackbarEvent>()
+    /**
+     * 全局协程异常处理器 — 任何未捕获的异常都会被记录，避免崩溃整个进程。
+     * 这对 native 层抛出的 Error (OutOfMemoryError / StackOverflowError) 尤其重要，
+     * 因为 NativeLibraryLoader.safeCall 只捕获 Exception 和 UnsatisfiedLinkError。
+     */
+    private val exceptionHandler = CoroutineExceptionHandler { _, e ->
+        Log.e("ApexViewModel", "Uncaught coroutine exception", e)
+        // 不要在异常处理器中再 launch 协程，避免递归崩溃
+    }
+
+    /**
+     * snackbar 通道：使用 extraBufferCapacity 保证 emit 不阻塞。
+     * 原先使用默认配置 (replay=0, extraBufferCapacity=0)，emit 会一直 suspend 直到有订阅者，
+     * 当 UI 没有收集时（如配置改变期间）调用 emit 会挂起协程，导致状态卡死。
+     */
+    private val _snackbarChannel = MutableSharedFlow<SnackbarEvent>(
+        replay = 0,
+        extraBufferCapacity = 8
+    )
     val snackbarChannel: SharedFlow<SnackbarEvent> = _snackbarChannel.asSharedFlow()
 
     init {
         SelfProtection.init(application)
-        val isFirst = prefs.getBoolean("is_first_launch", true)
-        _uiState.update { it.copy(isFirstLaunch = isFirst) }
+        // 异步读取 SharedPreferences，避免在主线程触发首次 XML 加载导致 ANR
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            val isFirst = try {
+                prefs.getBoolean("is_first_launch", true)
+            } catch (e: Throwable) {
+                Log.e("ApexViewModel", "Failed to read first launch flag", e)
+                true
+            }
+            _uiState.update { it.copy(isFirstLaunch = isFirst) }
+        }
         checkNativeAvailability()
     }
 
     private fun checkNativeAvailability() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
             val available = runCatching {
                 com.apex.root.core.NativeLibraryLoader.ensureLoaded()
                 com.apex.root.core.NativeLibraryLoader.isAvailable
@@ -105,25 +133,25 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshDashboard() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = false, riskScore = 0) }
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            _uiState.update { it.copy(isLoading = false) }
         }
     }
 
+    /**
+     * 使用 tryEmit 而非 emit — emit 是 suspend 函数，在没有订阅者或缓冲区满时会挂起。
+     * tryEmit 立即返回（缓冲区满时丢弃），不会卡住调用方。
+     */
     fun triggerReset() {
-        viewModelScope.launch {
-            _snackbarChannel.emit(SnackbarEvent("所有设置已恢复至出厂默认状态", SnackbarType.WARNING))
-        }
+        _snackbarChannel.tryEmit(SnackbarEvent("所有设置已恢复至出厂默认状态", SnackbarType.WARNING))
     }
 
     fun triggerExport() {
-        viewModelScope.launch {
-            _snackbarChannel.emit(SnackbarEvent("诊断日志已成功导出至系统外置存储", SnackbarType.SUCCESS))
-        }
+        _snackbarChannel.tryEmit(SnackbarEvent("诊断日志已成功导出至系统外置存储", SnackbarType.SUCCESS))
     }
 
     fun runScan() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
             _uiState.update { it.copy(isScanning = true) }
             addLog(LogType.INFO, "开始快速扫描...")
             try {
@@ -143,7 +171,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun runDeepScan() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
             _uiState.update { it.copy(isScanning = true) }
             addLog(LogType.INFO, "开始深度扫描（16 层全量检测）...")
             try {
@@ -164,6 +192,9 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 val injectIssues = (selfCheck["injections"] as? List<String>) ?: emptyList()
                 val dexIssues = (selfCheck["dexIssues"] as? List<String>) ?: emptyList()
 
+                // 限制 deepReport 大小，避免在 UI state 中持有大字符串导致 OOM
+                val truncatedReport = if (report.length > 64_000) report.take(64_000) + "\n...[truncated]" else report
+
                 _uiState.update {
                     it.copy(
                         scanResult = report.take(500),
@@ -174,7 +205,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                         hasShamiko = shamiko,
                         hasZygiskNext = zygiskNext,
                         selinuxCompromised = selinuxJump || selinuxMod,
-                        deepReport = report,
+                        deepReport = truncatedReport,
                         selfCheckIssues = hookIssues + injectIssues + dexIssues
                     )
                 }
@@ -189,7 +220,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleGameMode() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
             try {
                 repository.toggleGameMode()
                 _uiState.update {
@@ -202,7 +233,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun applyCure(level: CureLevel) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
             try {
                 val result = repository.applyCure(level)
                 _uiState.update {
@@ -215,7 +246,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun createSandbox(name: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
             try {
                 val pid = runCatching { NativeIsland.createIsolatedEnv(name) }.getOrDefault(-1)
                 _uiState.update {
@@ -228,7 +259,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun destroySandbox() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
             try {
                 val pid = _uiState.value.sandboxPid
                 if (pid > 0) runCatching { NativeIsland.destroyIsolatedEnv(pid) }
@@ -242,7 +273,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleHwidSpoof() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
             try {
                 if (_uiState.value.hwidSpoofed) {
                     val ok = runCatching { NativeHwid.restoreReal() }.getOrDefault(false)
@@ -258,9 +289,13 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshState() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val gameMode = repository.getGameModeState()
-            _uiState.update { it.copy(gameMode = gameMode) }
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            try {
+                val gameMode = repository.getGameModeState()
+                _uiState.update { it.copy(gameMode = gameMode) }
+            } catch (e: Throwable) {
+                Log.e("ApexViewModel", "refreshState failed", e)
+            }
         }
     }
 
@@ -277,7 +312,15 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun exportReport(context: Context) {
-        ReportExporter.shareReport(context, _uiState.value)
+        // 移到 IO 线程执行文件写入，避免主线程磁盘 I/O 触发 StrictMode 崩溃
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            try {
+                ReportExporter.shareReport(context, _uiState.value)
+            } catch (e: Throwable) {
+                Log.e("ApexViewModel", "exportReport failed", e)
+                _snackbarChannel.tryEmit(SnackbarEvent("报告导出失败: ${e.message ?: "未知错误"}", SnackbarType.ERROR))
+            }
+        }
     }
 
     private fun parseScanLayers(result: String): List<String> {

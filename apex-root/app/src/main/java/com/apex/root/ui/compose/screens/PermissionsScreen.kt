@@ -68,9 +68,17 @@ fun PermissionsScreen(onBack: () -> Unit) {
     fun load() {
         scope.launch {
             loading = true
-            val list = withContext(Dispatchers.IO) { PermissionManager.checkAll(context) }
-            permissions = list
-            loading = false
+            try {
+                val list = withContext(Dispatchers.IO) { PermissionManager.checkAll(context) }
+                permissions = list
+            } catch (e: Throwable) {
+                // 防御性 try-catch：任何异常（如 ClosedSendException 在 composition dispose 期间，
+                // 或 NPE 在 list mapping 中）都会传播到 scope 的 CoroutineExceptionHandler，
+                // 在 main scope 中会闪退整个 App。此处兜底避免闪退。
+                android.util.Log.e("PermissionsScreen", "load failed", e)
+            } finally {
+                loading = false
+            }
         }
     }
 

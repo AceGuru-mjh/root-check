@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -167,7 +168,10 @@ fun GlassLogViewerScreen(viewModel: ApexViewModel, onBack: () -> Unit) {
                     modifier = Modifier.fillMaxSize().padding(8.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    items(filteredLogs, key = { it.time + it.message.hashCode() }) { log ->
+                    // 修复：原 `key = { it.time + it.message.hashCode() }` 在同一秒内产生相同消息时会重复，
+                    // 触发 IllegalArgumentException: Key X was already used → 闪退。
+                    // 改用 index 作为 key（Composable 默认行为），相同 log 不再造成 key 冲突。
+                    itemsIndexed(filteredLogs, key = { index, _ -> index }) { _, log ->
                         val tagColor = when (log.type) {
                             LogType.ERROR -> Color(0xFFEF4444)
                             LogType.WARN -> Color(0xFFF59E0B)

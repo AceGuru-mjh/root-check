@@ -4,7 +4,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 // ─── 静态颜色（不随主题变化）──────────────────────────
@@ -67,7 +67,7 @@ private val LightTextColors = ApexTextColors(
     tertiary = Color(0xFF6B6B80)
 )
 
-val LocalApexTextColors = staticCompositionLocalOf { DarkTextColors }
+val LocalApexTextColors = compositionLocalOf { DarkTextColors }
 
 /**
  * 便捷属性 — 在 @Composable 中使用 TextPrimary / TextSecondary / TextTertiary
@@ -82,7 +82,7 @@ val TextSecondary: Color
 val TextTertiary: Color
     @Composable get() = LocalApexTextColors.current.tertiary
 
-val LocalIsDarkTheme = staticCompositionLocalOf { true }
+val LocalIsDarkTheme = compositionLocalOf { true }
 
 private val DarkColorScheme = darkColorScheme(
     primary = AccentPurple,
