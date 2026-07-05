@@ -39,6 +39,18 @@
 
 </div>
 
+## 📚 完整文档
+
+| 文档 | 说明 | 适用人群 |
+|------|------|----------|
+| [📖 环境搭建指南](./docs/BUILD_ENV.md) | 从零搭建编译环境（JDK/SDK/NDK/CMake）超详细步骤 | 新手入门 |
+| [🔨 构建指南](./docs/BUILD.md) | debug/release 构建、APK 签名、ABI 分包、模块打包 | 开发者 |
+| [🩺 故障排查](./docs/TROUBLESHOOTING.md) | 编译/运行/原生库/Root 检测/隐藏模式问题超详细排查 | 所有用户 |
+| [🏗️ 架构设计](./docs/ARCHITECTURE.md) | 16 层检测、3 模式隐藏、微服务、后量子签名架构 | 架构师 |
+| [💻 开发指南](./docs/DEVELOPMENT.md) | 代码规范、调试技巧、贡献流程、添加新检测层 | 贡献者 |
+
+---
+
 ## 中文文档
 
 ### 📖 项目简介
@@ -163,23 +175,28 @@
 
 #### 方式二：自行编译
 
+> 📖 **完整环境搭建与构建教程请阅读**：[docs/BUILD_ENV.md](./docs/BUILD_ENV.md) + [docs/BUILD.md](./docs/BUILD.md)
+>
+> 🩺 **遇到问题请阅读**：[docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)
+
 ```bash
 # 1. 克隆仓库
 git clone https://github.com/mengjinghao/root-check.git
 cd root-check/apex-root
 
-# 2. 配置 local.properties
+# 2. 配置 local.properties（指向你的 Android SDK 路径）
 echo "sdk.dir=/path/to/android-sdk" > local.properties
 
-# 3. 编译
+# 3. 编译 debug APK
 ./gradlew assembleDebug
 
-# 4. APK 输出
-ls app/build/outputs/apk/debug/app-debug.apk
+# 4. APK 输出（按架构分包）
+ls app/build/outputs/apk/debug/
+# app-arm64-v8a-debug.apk / app-armeabi-v7a-debug.apk / app-x86_64-debug.apk
 ```
 
-**编译环境要求**：
-- JDK 17
+**编译环境要求**（详见 [环境搭建指南](./docs/BUILD_ENV.md)）：
+- JDK 17（必须含 `jlink`，不能用 JRE）
 - Android SDK 34 + Build Tools 34.0.0
 - NDK 28.2.13676358
 - CMake 3.22.1
