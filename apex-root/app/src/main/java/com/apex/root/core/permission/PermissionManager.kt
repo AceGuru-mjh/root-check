@@ -70,7 +70,7 @@ object PermissionManager {
      * 现使用 process.waitFor(timeout, TimeUnit.MILLISECONDS) + destroyForcibly() 兜底。
      */
     suspend fun checkRoot(): PermissionInfo = withContext(Dispatchers.IO) {
-        var process: Process? = null
+        var process: java.lang.Process? = null
         try {
             val result = withTimeoutOrNull(2500L) {
                 runCatching {

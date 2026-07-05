@@ -23,6 +23,7 @@ import com.apex.root.data.*
 import com.apex.root.ui.compose.*
 import com.apex.root.viewmodel.SettingsViewModel
 import com.apex.root.viewmodel.trusted.ApexViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
