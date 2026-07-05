@@ -2,7 +2,7 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="temp/" />
-        <exclude domain="database" path="cache/" />
+        <exclude domain="database" path="cache" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="temp/" />
