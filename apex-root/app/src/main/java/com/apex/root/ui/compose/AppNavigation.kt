@@ -75,6 +75,15 @@ fun AppNavigation(
     var showSplash by remember { mutableStateOf(true) }
     val settings by settingsViewModel.settings.collectAsState()
     val apexUiState by apexViewModel.uiState.collectAsState()
+    // 跟踪 native 库预加载状态，用于驱动 splash 提前结束
+    var nativePreloadComplete by remember { mutableStateOf(false) }
+    // 启动一个协程监听 native 库加载完成
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.apex.root.core.NativeLibraryLoader.ensureLoaded()
+            nativePreloadComplete = true
+        }
+    }
     val isDark = when (settings.themeMode) {
         ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
@@ -83,7 +92,10 @@ fun AppNavigation(
 
     ApexRootTheme(darkTheme = isDark) {
         if (showSplash) {
-            SplashScreen(onSplashComplete = { showSplash = false })
+            SplashScreen(
+                onSplashComplete = { showSplash = false },
+                nativePreloadComplete = nativePreloadComplete
+            )
         } else if (apexUiState.isFirstLaunch) {
             GlassPermissionGuideScreen(
                 onFinished = {
@@ -348,7 +360,8 @@ private fun MainApp(
                     exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
                 ) {
                     AboutScreen(
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStack() },
+                        onNavigateToUpdate = { navController.navigate("update") }
                     )
                 }
                 composable(

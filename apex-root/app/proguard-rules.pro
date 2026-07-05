@@ -29,3 +29,14 @@
 # Keep Compose lifecycle / ViewModel
 -keep class com.apex.root.viewmodel.** { *; }
 -keep class com.apex.root.ApexRootApp { *; }
+
+# ─── WorkManager — keep Worker classes (instantiated by reflection) ───
+-keep class com.apex.root.work.** { *; }
+-keep class androidx.work.** { *; }
+-dontwarn androidx.work.**
+
+# ─── Kotlinx Serialization (used by some libs) ───
+-dontwarn kotlinx.serialization.**
+
+# ─── NotificationCompat (used by Notifier) ───
+-keep class com.apex.root.core.notification.** { *; }

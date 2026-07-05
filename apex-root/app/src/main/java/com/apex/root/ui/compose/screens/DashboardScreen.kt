@@ -114,11 +114,6 @@ fun DashboardScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                if (uiState.isLoading) {
-                    GlassSkeletonCard()
-                    Spacer(Modifier.height(12.dp))
-                }
-
                 // ── 顶部「运行中」状态条：高斯玻璃 + 版本号 + 引擎状态 ──
                 RunningStatusBar(
                     nativeAvailable = uiState.nativeAvailable,
@@ -129,6 +124,24 @@ fun DashboardScreen(
                 GlassGaugeScoreCard(score = uiState.riskScore, label = scoreLabel)
 
                 Spacer(Modifier.height(12.dp))
+
+                // 优化：扫描失败时显示重试卡片
+                if (uiState.scanResult.startsWith("扫描失败") && !uiState.isScanning) {
+                    ScanFailedRetryCard(
+                        message = uiState.scanResult,
+                        onRetry = { onScan() }
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                // 扫描进度卡片（新增：实时显示进度条 + 当前层）
+                if (uiState.isScanning) {
+                    ScanProgressCard(
+                        progress = uiState.scanProgress,
+                        currentLayer = uiState.currentLayer
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
 
                 // 运行中状态指示 + 迷你终端日志
                 if (uiState.isScanning || uiState.logs.isNotEmpty()) {
@@ -146,6 +159,15 @@ fun DashboardScreen(
 
                 if (uiState.scanResult != "点击扫描开始检测" && !uiState.isScanning) {
                     ScanResultSection(result = uiState.scanResult)
+
+                    // 新增：层通过数显示
+                    if (uiState.layersTotal > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        LayerStatsBar(
+                            passed = uiState.layersPassed,
+                            total = uiState.layersTotal
+                        )
+                    }
 
                     if (uiState.memFingerprintMask != 0 || uiState.selinuxCompromised) {
                         Spacer(Modifier.height(12.dp))
@@ -558,6 +580,47 @@ private fun DeepFindingsSection(uiState: ApexUiState) {
 }
 
 /**
+ * 扫描失败重试卡片 — 优化：扫描失败时显示明显的重试入口
+ */
+@Composable
+private fun ScanFailedRetryCard(message: String, onRetry: () -> Unit) {
+    Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+        GlassCard(cornerRadius = 16.dp, accentLine = ErrorRed) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = ErrorRed,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "扫描失败",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = ErrorRed
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(message, fontSize = 11.sp, color = TextSecondary)
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                ) {
+                    Icon(Icons.Default.Refresh, null, Modifier.size(16.dp), tint = Color.White)
+                    Spacer(Modifier.width(6.dp))
+                    Text("重试扫描", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+/**
  * 安全状态卡片 — 扫描完成后未检测到异常时显示
  */
 @Composable
@@ -589,6 +652,87 @@ private fun SafeStateCard() {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ScanProgressCard(progress: Float, currentLayer: String) {
+    GlassCard(cornerRadius = 16.dp, accentLine = AccentPurple) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = AccentPurple
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "正在扫描...",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    if (currentLayer.isNotEmpty()) {
+                        Text(
+                            currentLayer,
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
+                Text(
+                    "${(progress * 100).toInt()}%",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AccentPurple,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            @Suppress("DEPRECATION")
+            LinearProgressIndicator(
+                progress = progress,
+                modifier = Modifier.fillMaxWidth().height(6.dp),
+                color = AccentPurple,
+                trackColor = Color.White.copy(alpha = 0.1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LayerStatsBar(passed: Int, total: Int) {
+    val passedColor = if (passed == total) AccentMint else AccentGold
+    GlassCard(cornerRadius = 12.dp, accentLine = passedColor) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (passed == total) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = passedColor,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "层级检测",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary
+                )
+            }
+            Text(
+                "$passed / $total 通过",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = passedColor,
+                fontFamily = FontFamily.Monospace
+            )
         }
     }
 }

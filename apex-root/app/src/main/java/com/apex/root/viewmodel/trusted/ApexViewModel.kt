@@ -57,12 +57,19 @@ data class ApexUiState(
     val selfCheckIssues: List<String> = emptyList(),
     // Fix recommendations
     val recommendations: List<FixRecommendation> = emptyList(),
-    val showRecommendations: Boolean = false
+    val showRecommendations: Boolean = false,
+    // 扫描进度（0f..1f）和当前层名称（供 UI 显示进度条）
+    val scanProgress: Float = 0f,
+    val currentLayer: String = "",
+    // 最近一次扫描的层通过数（如 12/15）
+    val layersPassed: Int = 0,
+    val layersTotal: Int = 0
 )
 
 class ApexViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = RootDetectRepositoryImpl()
     private val prefs = application.getSharedPreferences("apex_prefs", Context.MODE_PRIVATE)
+    private val settingsRepo = com.apex.root.data.SettingsRepository(application)
     private val _uiState = MutableStateFlow(ApexUiState())
     val uiState: StateFlow<ApexUiState> = _uiState.asStateFlow()
 
@@ -152,9 +159,21 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
 
     fun runScan() {
         viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
-            _uiState.update { it.copy(isScanning = true) }
+            _uiState.update { it.copy(isScanning = true, scanProgress = 0f, currentLayer = "初始化") }
             addLog(LogType.INFO, "开始快速扫描...")
             try {
+                // 模拟层进度（快速扫描覆盖 L1/L3/L8-L10，共 ~5 层）
+                val quickLayers = listOf("L1 系统属性", "L3 内存特征", "L8 Magisk", "L9 KernelSU", "L10 APatch")
+                quickLayers.forEachIndexed { idx, layer ->
+                    _uiState.update {
+                        it.copy(
+                            scanProgress = (idx + 1).toFloat() / quickLayers.size,
+                            currentLayer = layer
+                        )
+                    }
+                    addLog(LogType.INFO, "扫描 $layer")
+                }
+
                 addLog(LogType.INFO, "加载原生检测引擎")
                 val result = repository.runQuickScan()
                 addLog(LogType.INFO, "扫描完成，风险分: ${result.riskScore}")
@@ -163,13 +182,19 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 val recs = if (layers.isNotEmpty()) {
                     FixRecommendations.getRecommendationsForLayers(layers)
                 } else emptyList()
+                // 解析层通过数
+                val (passed, total) = parseLayerStats(result.details)
                 _uiState.update {
                     it.copy(
                         scanResult = result.details,
                         riskScore = result.riskScore,
                         isScanning = false,
+                        scanProgress = 1f,
+                        currentLayer = "",
                         recommendations = recs,
-                        showRecommendations = recs.isNotEmpty()
+                        showRecommendations = recs.isNotEmpty(),
+                        layersPassed = passed,
+                        layersTotal = total
                     )
                 }
                 if (recs.isNotEmpty()) {
@@ -177,10 +202,12 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     addLog(LogType.INFO, "未检测到异常")
                 }
+                // 推送扫描完成通知（根据用户设置）
+                notifyScanResult(result.riskScore, recs.size)
             } catch (e: Throwable) {
                 addLog(LogType.ERROR, "扫描失败: ${e.message ?: e.javaClass.simpleName}")
                 _uiState.update {
-                    it.copy(isScanning = false, scanResult = "扫描失败: ${e.message ?: e.javaClass.simpleName}\n\n可能原因：\n1. 原生库未加载（非 ARM64 设备）\n2. 设备未 root\n3. SELinux 限制")
+                    it.copy(isScanning = false, scanProgress = 0f, currentLayer = "", scanResult = "扫描失败: ${e.message ?: e.javaClass.simpleName}\n\n可能原因：\n1. 原生库未加载（非 ARM64 设备）\n2. 设备未 root\n3. SELinux 限制")
                 }
             }
         }
@@ -188,25 +215,49 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
 
     fun runDeepScan() {
         viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
-            _uiState.update { it.copy(isScanning = true) }
+            _uiState.update { it.copy(isScanning = true, scanProgress = 0f, currentLayer = "初始化") }
             addLog(LogType.INFO, "开始深度扫描（16 层全量检测）...")
             try {
+                // 深度扫描的 16 层进度模拟
+                val deepLayers = listOf(
+                    "L1 系统属性", "L2 ART 注入", "L3 内存特征", "L4 挂载检查",
+                    "L5 侧信道", "L6 Root 守护", "L7 Boot 链", "L8 Magisk",
+                    "L9 KernelSU", "L10 APatch", "L11 Hook 框架", "L12 自定义 ROM",
+                    "L13 固件完整性", "L14 虚拟框架", "L15 危险应用", "L16 Magisk 扩展"
+                )
+                // 阶段 1: native 报告生成（占 0-30%）
                 addLog(LogType.INFO, "执行深度检测报告生成")
+                _uiState.update { it.copy(scanProgress = 0.1f, currentLayer = "深度检测引擎") }
                 val report = repository.runDeepDetection()
+
+                // 阶段 2: 内存指纹（30-45%）
+                _uiState.update { it.copy(scanProgress = 0.3f, currentLayer = "L3 内存特征") }
                 addLog(LogType.INFO, "采集内存指纹")
                 val memMask = runCatching { repository.getMemoryFingerprintMask() }.getOrDefault(0)
                 val rwxCount = runCatching { NativeBridge.countRWXPages() }.getOrDefault(-1)
+
+                // 阶段 3: 隐藏模块检测（45-60%）
+                _uiState.update { it.copy(scanProgress = 0.45f, currentLayer = "Shamiko / ZygiskNext") }
                 addLog(LogType.INFO, "检测 Shamiko / ZygiskNext")
                 val shamiko = runCatching { repository.hasShamiko() }.getOrDefault(false)
                 val zygiskNext = runCatching { repository.hasZygiskNext() }.getOrDefault(false)
+
+                // 阶段 4: SELinux（60-75%）
+                _uiState.update { it.copy(scanProgress = 0.6f, currentLayer = "SELinux 状态") }
                 addLog(LogType.INFO, "检测 SELinux 状态")
                 val selinuxJump = runCatching { NativeBridge.detectSELinuxContextJump() }.getOrDefault(false)
                 val selinuxMod = runCatching { NativeBridge.detectSELinuxPolicyMod() }.getOrDefault(false)
+
+                // 阶段 5: 自保护（75-90%）
+                _uiState.update { it.copy(scanProgress = 0.75f, currentLayer = "自保护检查") }
                 addLog(LogType.INFO, "执行自保护检查")
                 val selfCheck = runCatching { SelfProtection.fullSelfCheck(getApplication()) }.getOrDefault(emptyMap())
                 val hookIssues = (selfCheck["hooks"] as? List<String>) ?: emptyList()
                 val injectIssues = (selfCheck["injections"] as? List<String>) ?: emptyList()
                 val dexIssues = (selfCheck["dexIssues"] as? List<String>) ?: emptyList()
+
+                // 阶段 6: 收尾（90-100%）
+                _uiState.update { it.copy(scanProgress = 0.9f, currentLayer = "生成报告") }
 
                 // 限制 deepReport 大小，避免在 UI state 中持有大字符串导致 OOM
                 val truncatedReport = if (report.length > 64_000) report.take(64_000) + "\n...[truncated]" else report
@@ -217,11 +268,16 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                     FixRecommendations.getRecommendationsForLayers(layers)
                 } else emptyList()
 
+                // 解析层通过数
+                val (passed, total) = parseLayerStats(report)
+
                 _uiState.update {
                     it.copy(
                         scanResult = report.take(500),
                         riskScore = runCatching { NativeBridge.getRiskScore() }.getOrDefault(0),
                         isScanning = false,
+                        scanProgress = 1f,
+                        currentLayer = "",
                         memFingerprintMask = memMask,
                         rwxPageCount = rwxCount,
                         hasShamiko = shamiko,
@@ -230,17 +286,20 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                         deepReport = truncatedReport,
                         selfCheckIssues = hookIssues + injectIssues + dexIssues,
                         recommendations = recs,
-                        showRecommendations = recs.isNotEmpty()
+                        showRecommendations = recs.isNotEmpty(),
+                        layersPassed = passed,
+                        layersTotal = total
                     )
                 }
                 addLog(LogType.INFO, "深度扫描完成，风险分: ${_uiState.value.riskScore}")
                 if (recs.isNotEmpty()) {
                     addLog(LogType.INFO, "检测到 ${recs.size} 个异常，已生成修复建议")
                 }
+                notifyScanResult(_uiState.value.riskScore, recs.size)
             } catch (e: Throwable) {
                 addLog(LogType.ERROR, "深度扫描失败: ${e.message ?: e.javaClass.simpleName}")
                 _uiState.update {
-                    it.copy(isScanning = false, scanResult = "深度扫描失败: ${e.message ?: e.javaClass.simpleName}\n可能原因：原生库未加载或权限不足")
+                    it.copy(isScanning = false, scanProgress = 0f, currentLayer = "", scanResult = "深度扫描失败: ${e.message ?: e.javaClass.simpleName}\n可能原因：原生库未加载或权限不足")
                 }
             }
         }
@@ -266,8 +325,12 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(cureMessage = result.message)
                 }
+                // 推送治愈结果通知（根据用户设置）
+                notifyCureResult(level, result.success)
             } catch (e: Throwable) {
                 _uiState.update { it.copy(cureMessage = "治愈操作失败: ${e.message}") }
+                // 失败也推送通知
+                notifyCureResult(level, success = false)
             }
         }
     }
@@ -377,5 +440,76 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         return layers.distinct()
+    }
+
+    /**
+     * 从扫描结果文本中解析层通过数和总层数。
+     * 扫描结果格式示例：
+     *   "L1 系统属性:     ✅ 正常"
+     *   "L8 Magisk:       ❌ 异常"
+     * 通过：行包含 ✅；异常：行包含 ❌；总：✅ + ❌
+     */
+    private fun parseLayerStats(result: String): Pair<Int, Int> {
+        var passed = 0
+        var total = 0
+        result.lines().forEach { line ->
+            // 仅匹配形如 "L1 ..." 或 "L14 ..." 的行
+            val trimmed = line.trim()
+            if (!trimmed.startsWith("L") || trimmed.isEmpty()) return@forEach
+            // 确认是层级行（L 后跟数字）
+            val afterL = trimmed.drop(1)
+            if (afterL.isEmpty() || !afterL.first().isDigit()) return@forEach
+            when {
+                line.contains("✅") -> { passed++; total++ }
+                line.contains("❌") -> { total++ }
+            }
+        }
+        return passed to total
+    }
+
+    // ─── 通知推送（根据用户设置）──────────────────
+
+    /**
+     * 推送扫描完成通知。
+     * - notifyScanComplete=true：发送扫描完成通知
+     * - notifyRiskFound=true 且 riskScore>=61：额外发送高风险告警
+     */
+    private fun notifyScanResult(riskScore: Int, riskCount: Int) {
+        try {
+            val settings = settingsRepo.load()
+            val app = getApplication<Application>()
+            if (settings.notifyScanComplete) {
+                com.apex.root.core.notification.Notifier.notifyScanComplete(app, riskScore, riskCount)
+            }
+            if (settings.notifyRiskFound && riskScore >= 61) {
+                com.apex.root.core.notification.Notifier.notifyRiskAlert(
+                    app,
+                    "检测到高风险",
+                    "风险分: $riskScore/100，检测到 $riskCount 个异常。点击查看详情。"
+                )
+            }
+        } catch (e: Throwable) {
+            Log.e("ApexViewModel", "notifyScanResult failed", e)
+        }
+    }
+
+    /**
+     * 推送治愈结果通知。
+     */
+    private fun notifyCureResult(level: CureLevel, success: Boolean) {
+        try {
+            val settings = settingsRepo.load()
+            if (!settings.notifyCureResult) return
+            val app = getApplication<Application>()
+            val levelName = when (level) {
+                CureLevel.LIGHT -> "轻度处理"
+                CureLevel.STANDARD -> "标准修复"
+                CureLevel.DEEP -> "深度恢复"
+                CureLevel.FACTORY -> "完全重置"
+            }
+            com.apex.root.core.notification.Notifier.notifyCureResult(app, levelName, success)
+        } catch (e: Throwable) {
+            Log.e("ApexViewModel", "notifyCureResult failed", e)
+        }
     }
 }

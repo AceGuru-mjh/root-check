@@ -260,6 +260,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun updateAutoCheckUpdates(enabled: Boolean) {
         _settings.update { it.copy(autoCheckUpdates = enabled) }; persist()
+        // 调度或取消 WorkManager 周期性更新检查
+        try {
+            val app = getApplication<Application>()
+            if (enabled) {
+                com.apex.root.work.UpdateCheckWorker.schedule(app)
+            } else {
+                com.apex.root.work.UpdateCheckWorker.cancel(app)
+            }
+        } catch (e: Throwable) {
+            android.util.Log.e("SettingsViewModel", "Failed to update WorkManager schedule", e)
+        }
     }
 
     fun updateUpdateChannel(channel: UpdateChannel) {

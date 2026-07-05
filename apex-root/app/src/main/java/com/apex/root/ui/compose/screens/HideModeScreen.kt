@@ -55,9 +55,10 @@ fun HideModeScreen(
     var lastError by remember { mutableStateOf("") }
     var switching by remember { mutableStateOf(false) }
     var nativeAvailable by remember { mutableStateOf(true) }
-    var toastMessage by remember { mutableStateOf<String?>(null) }
+    // 优化：移除未使用的 toastMessage 状态（snackbarHostState 已处理显示）
+    var pendingGameMode by remember { mutableStateOf(false) }  // Game 模式确认对话框
 
-    // 初始化：读取当前模式（包 try-catch 防止 UnsatisfiedLinkError 闪退）
+    // 初始化 + 周期性状态轮询（每 5s 刷新一次，捕获外部切换）
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             try {
@@ -69,12 +70,27 @@ fun HideModeScreen(
                 lastError = e.message ?: e.javaClass.simpleName
             }
         }
+        // 周期性轮询状态（每 5s 一次，避免外部切换后 UI 过时）
+        while (true) {
+            kotlinx.coroutines.delay(5000)
+            withContext(Dispatchers.IO) {
+                try {
+                    val newMode = hideManager.currentMode()
+                    val newActive = hideManager.isActive()
+                    val newError = hideManager.lastError()
+                    if (newMode != currentMode || newActive != isActive || newError != lastError) {
+                        currentMode = newMode
+                        isActive = newActive
+                        lastError = newError
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
     fun showToast(msg: String) {
-        toastMessage = msg
         scope.launch {
             snackbarHostState.showSnackbar(msg)
         }
@@ -174,8 +190,62 @@ fun HideModeScreen(
                 selected = currentMode == HideModeManager.MODE_GAME,
                 enabled = !switching,
                 accentColor = Color(0xFFFF9800),
-                onClick = { switchMode(HideModeManager.MODE_GAME) }
+                onClick = {
+                    // 优化：Game 模式可能影响系统稳定性，弹确认对话框
+                    pendingGameMode = true
+                }
             )
+
+            // Game 模式确认对话框
+            if (pendingGameMode) {
+                AlertDialog(
+                    onDismissRequest = { pendingGameMode = false },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, null, tint = Color(0xFFFF9800), modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("启用游戏模式", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                "游戏模式将启用激进隐藏策略，可能产生以下影响：",
+                                fontSize = 13.sp,
+                                color = TextSecondary
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text("• 部分应用可能因检测不到必要服务而异常", fontSize = 12.sp, color = TextSecondary)
+                            Text("• 系统性能模式将被调整", fontSize = 12.sp, color = TextSecondary)
+                            Text("• HWID 可能被伪装（重启后恢复）", fontSize = 12.sp, color = TextSecondary)
+                            Text("• 某些反作弊可能仍能检测到异常", fontSize = 12.sp, color = TextSecondary)
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "确认继续？",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFFF9800)
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                pendingGameMode = false
+                                switchMode(HideModeManager.MODE_GAME)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                        ) {
+                            Text("确认启用")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingGameMode = false }) {
+                            Text("取消")
+                        }
+                    }
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

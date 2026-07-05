@@ -43,8 +43,8 @@ android {
         applicationId = "com.apex.root"
         minSdk = 29
         targetSdk = 34
-        versionCode = 103
-        versionName = "1.0.3"
+        versionCode = 104
+        versionName = "1.0.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 全架构由 splits.abi 控制，此处不再设置 ndk.abiFilters
@@ -80,6 +80,7 @@ android {
         }
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             if (hasKeystore) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -101,6 +102,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -153,9 +155,13 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.navigation:navigation-compose:2.7.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // WorkManager — 周期性更新检查
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     implementation("com.google.protobuf:protobuf-kotlin-lite:3.25.1")
 

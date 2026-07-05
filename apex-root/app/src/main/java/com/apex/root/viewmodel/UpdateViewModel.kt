@@ -112,6 +112,18 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                     is UpdateCheckResult.Error -> UpdateUiState.CheckFailed(result.message)
                     is UpdateCheckResult.Available -> {
                         lastAvailableRelease = result.release
+                        // 推送「更新可用」通知（根据用户设置）
+                        try {
+                            val settings = settingsRepo.load()
+                            if (settings.notifyUpdateAvailable) {
+                                com.apex.root.core.notification.Notifier.notifyUpdateAvailable(
+                                    getApplication(),
+                                    result.newVersion
+                                )
+                            }
+                        } catch (e: Throwable) {
+                            Log.e("UpdateViewModel", "Failed to push update notification", e)
+                        }
                         UpdateUiState.UpdateAvailable(
                             currentVersion = result.currentVersion,
                             newVersion = result.newVersion,

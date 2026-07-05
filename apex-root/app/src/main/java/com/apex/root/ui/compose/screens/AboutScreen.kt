@@ -41,7 +41,8 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToUpdate: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val isDark = LocalIsDarkTheme.current
@@ -152,6 +153,45 @@ fun AboutScreen(
                             InfoChip("v$versionName")
                             InfoChip("build #$versionCode")
                             InfoChip(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "?")
+                        }
+
+                        // 新增：检查更新按钮
+                        if (onNavigateToUpdate != null) {
+                            Spacer(Modifier.height(14.dp))
+                            Button(
+                                onClick = onNavigateToUpdate,
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                            ) {
+                                Icon(Icons.Default.SystemUpdateAlt, null, Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(8.dp))
+                                Text("检查更新", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
+                        // 新增：复制设备信息按钮（便于用户反馈 bug 时附上版本信息）
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                val deviceInfo = buildString {
+                                    appendLine("=== APEX-Root 设备信息 ===")
+                                    appendLine("应用版本: v$versionName (build #$versionCode)")
+                                    appendLine("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
+                                    appendLine("设备: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                                    appendLine("架构: ${android.os.Build.SUPPORTED_ABIS.joinToString(",")}")
+                                    appendLine("安装时间: $installTime")
+                                }
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                    as android.content.ClipboardManager
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("APEX-Root 设备信息", deviceInfo))
+                            },
+                            modifier = Modifier.fillMaxWidth().height(38.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("复制设备信息", fontSize = 12.sp)
                         }
                     }
                 }

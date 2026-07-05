@@ -28,16 +28,34 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
-fun SplashScreen(onSplashComplete: () -> Unit) {
+fun SplashScreen(
+    onSplashComplete: () -> Unit,
+    nativePreloadComplete: Boolean = true
+) {
     // 修复：使用 rememberSaveable 而非 remember，配置改变（如旋转）后 visible 状态保留；
-    // 同时 key 改为 visible，仅在 visible=true 时启动 delay 协程，避免旋转后再次延时 2400ms。
+    // 同时 key 改为 visible，仅在 visible=true 时启动 delay 协程，避免旋转后再次延时。
+    //
+    // 优化：原实现固定 delay(2400ms)。现改为：
+    //   - 最短展示 1200ms（保证品牌曝光）
+    //   - 最长 2400ms（兜底超时，避免 native 加载卡死导致永久 splash）
+    //   - native 预加载完成后立即结束（如果已超过 1200ms）
     var visible by rememberSaveable { mutableStateOf(true) }
 
-    LaunchedEffect(visible) {
+    LaunchedEffect(visible, nativePreloadComplete) {
         if (visible) {
-            delay(2400)
-            visible = false
-            onSplashComplete()
+            val minDelay = 1200L
+            val maxDelay = 2400L
+            // 等待最短时间
+            delay(minDelay)
+            // 如果 native 已加载完成，立即结束；否则继续等待到 maxDelay
+            if (nativePreloadComplete) {
+                visible = false
+                onSplashComplete()
+            } else {
+                delay(maxDelay - minDelay)
+                visible = false
+                onSplashComplete()
+            }
         }
     }
 
@@ -87,6 +105,14 @@ fun SplashScreen(onSplashComplete: () -> Unit) {
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 1.5.dp,
                 color = AccentPurple.copy(alpha = 0.5f)
+            )
+            Spacer(Modifier.height(12.dp))
+            // 优化：显示加载状态文本，让用户感知应用在工作
+            Text(
+                text = if (nativePreloadComplete) "就绪" else "正在加载检测引擎...",
+                color = TextTertiary,
+                fontSize = 10.sp,
+                letterSpacing = 1.sp
             )
         }
     }
