@@ -22,10 +22,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apex.root.core.NativeLibraryLoader
 import com.apex.root.data.updater.DownloadState
+import com.apex.root.data.updater.ModuleZipInfo
 import com.apex.root.ui.compose.*
+import com.apex.root.viewmodel.ModuleCheckState
 import com.apex.root.viewmodel.UpdateUiState
 import com.apex.root.viewmodel.UpdateViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -40,7 +46,15 @@ fun UpdateScreen(
     val isDark = LocalIsDarkTheme.current
     val uiState by viewModel.uiState.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
+    val moduleCheckState by viewModel.moduleCheckState.collectAsState()
+    val moduleDownloadState by viewModel.moduleDownloadState.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Native 库加载状态（本地 mutableState，因为 NativeLibraryLoader 不是 StateFlow）
+    var nativeLibLoaded by remember { mutableStateOf(NativeLibraryLoader.isAvailable) }
+    var nativeLibFailed by remember { mutableStateOf(NativeLibraryLoader.loadFailed) }
+    var nativeLibRetrying by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -158,6 +172,55 @@ fun UpdateScreen(
                         )
                     }
                 }
+
+                Spacer(Modifier.height(16.dp))
+
+                // ─── Magisk 模块下载区 ───
+                SectionHeader(title = "Magisk 模块")
+                Spacer(Modifier.height(8.dp))
+                ModuleDownloadCard(
+                    moduleCheckState = moduleCheckState,
+                    moduleDownloadState = moduleDownloadState,
+                    onCheck = { viewModel.checkForModuleZip() },
+                    onDownload = { viewModel.downloadModuleZip() },
+                    onCancel = { viewModel.cancelModuleDownload() },
+                    onInstall = { viewModel.installDownloadedModuleZip() },
+                    onOpenInBrowser = {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/mengjinghao/root-check/releases")).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                        }
+                    },
+                    isDark = isDark
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                // ─── Native 库诊断区 ───
+                SectionHeader(title = "原生引擎诊断")
+                Spacer(Modifier.height(8.dp))
+                NativeLibDiagnosticCard(
+                    loaded = nativeLibLoaded,
+                    failed = nativeLibFailed,
+                    retrying = nativeLibRetrying,
+                    onRetry = {
+                        if (!nativeLibRetrying) {
+                            nativeLibRetrying = true
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    NativeLibraryLoader.reset()
+                                    NativeLibraryLoader.ensureLoaded()
+                                }
+                                nativeLibLoaded = NativeLibraryLoader.isAvailable
+                                nativeLibFailed = NativeLibraryLoader.loadFailed
+                                nativeLibRetrying = false
+                            }
+                        }
+                    },
+                    isDark = isDark
+                )
 
                 Spacer(Modifier.height(16.dp))
 
@@ -538,4 +601,383 @@ private fun formatFileSize(bytes: Long): String {
     }
     return if (unitIndex == 0) "${bytes.toInt()} ${units[unitIndex]}"
     else String.format("%.1f %s", size, units[unitIndex])
+}
+
+// ─── Magisk 模块下载卡片 ──────────────────────────
+
+@Composable
+private fun ModuleDownloadCard(
+    moduleCheckState: ModuleCheckState,
+    moduleDownloadState: DownloadState,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onInstall: () -> Unit,
+    onOpenInBrowser: () -> Unit,
+    isDark: Boolean
+) {
+    GlassCard(cornerRadius = 16.dp, accentLine = AccentBlue) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Extension,
+                    contentDescription = null,
+                    tint = AccentBlue,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "APEX-Root Magisk 模块",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDark) TextPrimary else Color(0xFF1A1A2E)
+                    )
+                    Text(
+                        "守护进程模块，开机自动隐藏 root",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // 查询/下载状态区
+            when (moduleCheckState) {
+                is ModuleCheckState.Idle -> {
+                    Text(
+                        "点击下方按钮查询 GitHub Releases 中的模块 zip",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onCheck,
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Search, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("查询模块", fontSize = 13.sp)
+                    }
+                }
+                is ModuleCheckState.Checking -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = AccentBlue
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text("正在查询模块...", fontSize = 12.sp, color = TextSecondary)
+                    }
+                }
+                is ModuleCheckState.NotFound -> {
+                    Text(
+                        "未找到模块 zip",
+                        fontSize = 13.sp,
+                        color = AccentGold,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "当前 Release 中未上传 Magisk 模块 zip。请发布一个文件名包含 'module' 或 'magisk' 的 .zip 附件。",
+                        fontSize = 11.sp,
+                        color = TextTertiary
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onOpenInBrowser,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("在浏览器中查看 Releases", fontSize = 12.sp)
+                    }
+                }
+                is ModuleCheckState.Error -> {
+                    Text(
+                        "查询失败: ${moduleCheckState.message}",
+                        fontSize = 12.sp,
+                        color = ErrorRed
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onCheck,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("重试查询", fontSize = 12.sp)
+                    }
+                }
+                is ModuleCheckState.Available -> {
+                    val info: ModuleZipInfo = moduleCheckState.info
+                    Text(
+                        "找到模块: ${info.fileName}",
+                        fontSize = 13.sp,
+                        color = AccentMint,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "版本: ${info.releaseTag}  ·  大小: ${formatFileSize(info.sizeBytes)}",
+                        fontSize = 11.sp,
+                        color = TextTertiary,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    Spacer(Modifier.height(14.dp))
+
+                    // 下载状态区
+                    when (val dl = moduleDownloadState) {
+                        is DownloadState.Idle -> {
+                            Button(
+                                onClick = onDownload,
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
+                            ) {
+                                Icon(Icons.Default.Download, null, Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(8.dp))
+                                Text("下载模块 zip", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = onOpenInBrowser,
+                                modifier = Modifier.fillMaxWidth().height(38.dp),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("在浏览器中手动下载", fontSize = 11.sp)
+                            }
+                        }
+                        is DownloadState.Downloading -> {
+                            @Suppress("DEPRECATION")
+                            LinearProgressIndicator(
+                                progress = dl.progress / 100f,
+                                modifier = Modifier.fillMaxWidth().height(8.dp),
+                                color = AccentBlue,
+                                trackColor = if (isDark) DeepSurfaceVariant else Color(0xFFE2E8F0)
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "${dl.progress}%  ·  ${formatFileSize(dl.downloadedBytes)} / ${formatFileSize(dl.totalBytes)}",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                OutlinedButton(
+                                    onClick = onCancel,
+                                    modifier = Modifier.height(34.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                ) {
+                                    Text("取消", fontSize = 11.sp, color = ErrorRed)
+                                }
+                            }
+                        }
+                        is DownloadState.Completed -> {
+                            Button(
+                                onClick = onInstall,
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentMint)
+                            ) {
+                                Icon(Icons.Default.Extension, null, Modifier.size(18.dp), tint = Color.White)
+                                Spacer(Modifier.width(8.dp))
+                                Text("使用 Magisk Manager 刷入", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "模块已下载完成。点击上方按钮选择 Magisk Manager 刷入；\n" +
+                                    "若无 Magisk Manager，请在文件管理器中手动导入到 Magisk。",
+                                fontSize = 11.sp,
+                                color = TextTertiary
+                            )
+                        }
+                        is DownloadState.Failed -> {
+                            Text("下载失败: ${dl.message}", fontSize = 12.sp, color = ErrorRed)
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = onDownload,
+                                    modifier = Modifier.weight(1f).height(40.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
+                                ) {
+                                    Text("重试", color = Color.White, fontSize = 12.sp)
+                                }
+                                OutlinedButton(
+                                    onClick = onOpenInBrowser,
+                                    modifier = Modifier.weight(1f).height(40.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("浏览器下载", fontSize = 12.sp)
+                                }
+                            }
+                        }
+                        is DownloadState.Cancelled -> {
+                            Text("下载已取消", fontSize = 12.sp, color = TextTertiary)
+                            Spacer(Modifier.height(8.dp))
+                            Button(
+                                onClick = onDownload,
+                                modifier = Modifier.fillMaxWidth().height(40.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
+                            ) {
+                                Text("重新下载", color = Color.White, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "说明：模块 zip 命名约定包含 'module' / 'magisk' / 'apex-hide' / 'hide-daemon' 关键字。\n" +
+                    "下载完成后由 Magisk Manager 接管刷入流程，需已安装 Magisk。",
+                fontSize = 10.sp,
+                color = TextTertiary
+            )
+        }
+    }
+}
+
+// ─── Native 库诊断卡片 ──────────────────────────
+
+@Composable
+private fun NativeLibDiagnosticCard(
+    loaded: Boolean,
+    failed: Boolean,
+    retrying: Boolean,
+    onRetry: () -> Unit,
+    isDark: Boolean
+) {
+    val statusColor = when {
+        loaded -> AccentMint
+        failed -> ErrorRed
+        else -> AccentGold
+    }
+    val statusText = when {
+        loaded -> "已加载"
+        failed -> "加载失败"
+        else -> "未加载"
+    }
+    val statusIcon = when {
+        loaded -> Icons.Default.CheckCircle
+        failed -> Icons.Default.ErrorOutline
+        else -> Icons.Default.Pending
+    }
+
+    GlassCard(cornerRadius = 16.dp, accentLine = statusColor) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    statusIcon,
+                    contentDescription = null,
+                    tint = statusColor,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "libapex_root.so",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDark) TextPrimary else Color(0xFF1A1A2E)
+                    )
+                    Text(
+                        "原生检测引擎状态: $statusText",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            when {
+                loaded -> {
+                    Text(
+                        "✅ 原生库已成功加载，所有 16 层检测功能可用。",
+                        fontSize = 12.sp,
+                        color = AccentMint
+                    )
+                }
+                failed -> {
+                    Text(
+                        "❌ 原生库加载失败。可能原因：\n" +
+                            "  · 设备非 ARM64 架构（libapex_root.so 仅编译 arm64-v8a）\n" +
+                            "  · SELinux 临时拒绝\n" +
+                            "  · APK 安装不完整或被破坏\n\n" +
+                            "点击「重试加载」可尝试重新加载（无需重启应用）。",
+                        fontSize = 11.sp,
+                        color = ErrorRed
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = onRetry,
+                        enabled = !retrying,
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentPurple)
+                    ) {
+                        if (retrying) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("正在重试...", color = Color.White, fontSize = 13.sp)
+                        } else {
+                            Icon(Icons.Default.Refresh, null, Modifier.size(18.dp), tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Text("重试加载", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                else -> {
+                    Text(
+                        "⏳ 原生库尚未加载。首次扫描时会自动加载，或点击下方按钮立即加载。",
+                        fontSize = 11.sp,
+                        color = AccentGold
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onRetry,
+                        enabled = !retrying,
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        if (retrying) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("正在加载...", fontSize = 13.sp)
+                        } else {
+                            Icon(Icons.Default.Download, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("立即加载", fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "诊断信息：\n" +
+                    "  · 库名: ${NativeLibraryLoader.LIB_NAME}\n" +
+                    "  · 已加载: $loaded\n" +
+                    "  · 加载失败标志: $failed",
+                fontSize = 10.sp,
+                color = TextTertiary,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+    }
 }

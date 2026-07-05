@@ -123,8 +123,17 @@ class AppUpdater private constructor(private val context: Context) {
     private val _downloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
     val downloadState: StateFlow<DownloadState> = _downloadState.asStateFlow()
 
+    /**
+     * Magisk 模块 zip 下载状态（与 APK 下载独立，避免互相覆盖进度）。
+     */
+    private val _moduleDownloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
+    val moduleDownloadState: StateFlow<DownloadState> = _moduleDownloadState.asStateFlow()
+
     @Volatile
     private var cancelRequested = false
+
+    @Volatile
+    private var cancelModuleRequested = false
 
     /**
      * 获取当前应用的版本名（如 "1.0.3"）和版本号（如 103）。
@@ -301,6 +310,195 @@ class AppUpdater private constructor(private val context: Context) {
         _downloadState.value = DownloadState.Idle
     }
 
+    // ─── Magisk 模块 zip 下载 ──────────────────────
+
+    /**
+     * 查询最新 release 中的 Magisk 模块 zip asset。
+     * 模块 zip 的文件名约定包含 "module" 或 "magisk" 关键字（如 apex-root-module-v1.0.zip）。
+     *
+     * @return 模块 zip 的 (downloadUrl, fileName, sizeBytes)，找不到返回 null
+     */
+    suspend fun fetchLatestModuleZip(): ModuleZipInfo? = withContext(Dispatchers.IO) {
+        try {
+            // 优先从 latest stable release 查找；找不到再查所有 release
+            val releasesToCheck = mutableListOf<JSONObject>()
+            val (codeLatest, bodyLatest) = httpGet(API_LATEST_RELEASE)
+            if (codeLatest in 200..299) {
+                releasesToCheck.add(JSONObject(bodyLatest))
+            }
+            val (codeAll, bodyAll) = httpGet(API_ALL_RELEASES)
+            if (codeAll in 200..299) {
+                val arr = org.json.JSONArray(bodyAll)
+                for (i in 0 until arr.length()) {
+                    releasesToCheck.add(arr.getJSONObject(i))
+                }
+            }
+
+            for (releaseJson in releasesToCheck) {
+                val release = parseRelease(releaseJson) ?: continue
+                val assets = releaseJson.optJSONArray("assets") ?: continue
+                for (i in 0 until assets.length()) {
+                    val asset = assets.getJSONObject(i)
+                    val name = asset.optString("name", "")
+                    // 模块 zip 命名约定：包含 module / magisk 关键字，且后缀为 .zip
+                    val isModule = name.endsWith(".zip") && (
+                        name.contains("module", ignoreCase = true) ||
+                        name.contains("magisk", ignoreCase = true) ||
+                        name.contains("apex-hide", ignoreCase = true) ||
+                        name.contains("hide-daemon", ignoreCase = true)
+                    )
+                    if (isModule) {
+                        return@withContext ModuleZipInfo(
+                            downloadUrl = asset.optString("browser_download_url", ""),
+                            fileName = name,
+                            sizeBytes = asset.optLong("size", 0L),
+                            releaseTag = release.tagName,
+                            releaseUrl = release.htmlUrl
+                        )
+                    }
+                }
+            }
+            null
+        } catch (e: Throwable) {
+            Log.e(TAG, "fetchLatestModuleZip failed", e)
+            null
+        }
+    }
+
+    /**
+     * 下载 Magisk 模块 zip 文件。
+     * 下载到 context.cacheDir/apex_module_<timestamp>.zip，下载完成后通过 StateFlow 通知 UI。
+     * 安装时由调用方触发 Magisk Manager 的刷入流程（通过 ACTION_VIEW 让用户在 Magisk 中安装）。
+     *
+     * @param moduleZip 由 [fetchLatestModuleZip] 返回的模块信息
+     * @param wifiOnly 是否仅在 Wi-Fi 下下载
+     */
+    suspend fun downloadModuleZip(
+        moduleZip: ModuleZipInfo,
+        wifiOnly: Boolean = true
+    ): DownloadState = withContext(Dispatchers.IO) {
+        if (wifiOnly && !isWifiConnected()) {
+            _moduleDownloadState.value = DownloadState.Failed("当前非 Wi-Fi 网络，请连接 Wi-Fi 后重试")
+            return@withContext _moduleDownloadState.value
+        }
+
+        cancelModuleRequested = false
+        _moduleDownloadState.value = DownloadState.Downloading(0, 0L, moduleZip.sizeBytes)
+
+        var connection: HttpURLConnection? = null
+        var input: InputStream? = null
+        var output: FileOutputStream? = null
+
+        try {
+            val url = URL(moduleZip.downloadUrl)
+            connection = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = DOWNLOAD_CONNECT_TIMEOUT_MS
+                readTimeout = DOWNLOAD_READ_TIMEOUT_MS
+                requestMethod = "GET"
+                instanceFollowRedirects = true
+                setRequestProperty("Accept", "application/octet-stream")
+                setRequestProperty("User-Agent", "APEX-Root-Updater")
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                _moduleDownloadState.value = DownloadState.Failed("下载失败: HTTP $responseCode")
+                return@withContext _moduleDownloadState.value
+            }
+
+            val totalBytes = connection.contentLengthLong.let { len ->
+                if (len > 0) len else moduleZip.sizeBytes
+            }
+
+            val zipFile = File(context.cacheDir, "apex_module_${System.currentTimeMillis()}.zip")
+            // 清理旧模块 zip
+            context.cacheDir.listFiles { f -> f.name.matches("apex_module_.*\\.zip".toRegex()) }
+                ?.forEach { it.delete() }
+
+            input = connection.inputStream
+            output = FileOutputStream(zipFile)
+
+            val buffer = ByteArray(8192)
+            var downloadedBytes = 0L
+            var lastProgressUpdate = 0L
+            var bytesRead: Int
+
+            while (input.read(buffer).also { bytesRead = it } != -1) {
+                if (cancelModuleRequested) {
+                    _moduleDownloadState.value = DownloadState.Cancelled
+                    zipFile.delete()
+                    return@withContext _moduleDownloadState.value
+                }
+
+                output.write(buffer, 0, bytesRead)
+                downloadedBytes += bytesRead
+
+                val now = System.currentTimeMillis()
+                if (now - lastProgressUpdate > 500 || downloadedBytes == totalBytes) {
+                    val progress = if (totalBytes > 0) {
+                        (downloadedBytes * 100 / totalBytes).toInt().coerceIn(0, 100)
+                    } else 0
+                    _moduleDownloadState.value = DownloadState.Downloading(progress, downloadedBytes, totalBytes)
+                    lastProgressUpdate = now
+                }
+            }
+
+            output.flush()
+            _moduleDownloadState.value = DownloadState.Completed(zipFile)
+            Log.i(TAG, "Module zip downloaded to ${zipFile.absolutePath} (${zipFile.length()} bytes)")
+        } catch (e: Throwable) {
+            Log.e(TAG, "downloadModuleZip failed", e)
+            _moduleDownloadState.value = DownloadState.Failed("模块下载失败: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            try { input?.close() } catch (_: Throwable) {}
+            try { output?.close() } catch (_: Throwable) {}
+            connection?.disconnect()
+        }
+
+        _moduleDownloadState.value
+    }
+
+    /**
+     * 取消正在进行的模块下载。
+     */
+    fun cancelModuleDownload() {
+        cancelModuleRequested = true
+    }
+
+    /**
+     * 触发 Magisk Manager 安装模块 zip。
+     * 通过 FileProvider 共享 zip 给 Magisk Manager，由其刷入。
+     *
+     * 注意：用户需先安装 Magisk Manager。如果未安装，会抛 ActivityNotFoundException，
+     * 调用方应捕获并提供降级方案（如浏览器打开 release 页面）。
+     */
+    fun installModuleZip(zipFile: File): Boolean {
+        return try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                zipFile
+            )
+            // 优先尝试 Magisk Manager 的 install flash zip intent
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/zip")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(Intent.createChooser(intent, "使用 Magisk Manager 刷入模块").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+            true
+        } catch (e: Throwable) {
+            Log.e(TAG, "installModuleZip failed", e)
+            false
+        }
+    }
+
+    fun resetModuleDownloadState() {
+        _moduleDownloadState.value = DownloadState.Idle
+    }
+
     private fun isWifiConnected(): Boolean {
         return try {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
@@ -442,3 +640,14 @@ enum class UpdateChannelPreference(val value: Int, val label: String) {
         fun fromValue(v: Int) = entries.firstOrNull { it.value == v } ?: STABLE
     }
 }
+
+/**
+ * Magisk 模块 zip 信息。
+ */
+data class ModuleZipInfo(
+    val downloadUrl: String,
+    val fileName: String,
+    val sizeBytes: Long,
+    val releaseTag: String,
+    val releaseUrl: String
+)

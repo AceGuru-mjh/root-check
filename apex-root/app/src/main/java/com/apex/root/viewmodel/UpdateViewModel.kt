@@ -66,9 +66,20 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     val downloadState: StateFlow<DownloadState> = updater.downloadState
 
+    // Magisk 模块下载状态（独立于 APK 下载，避免进度互相覆盖）
+    val moduleDownloadState: StateFlow<DownloadState> = updater.moduleDownloadState
+
     /** 缓存最近一次检查到的 release，用于下载 */
     @Volatile
     private var lastAvailableRelease: com.apex.root.data.updater.GitHubRelease? = null
+
+    /** 缓存最近一次查询到的模块 zip 信息 */
+    @Volatile
+    private var lastModuleZipInfo: com.apex.root.data.updater.ModuleZipInfo? = null
+
+    /** 模块查询状态：null=未查询, false=查询中, true=已完成 */
+    private val _moduleCheckState = MutableStateFlow<ModuleCheckState>(ModuleCheckState.Idle)
+    val moduleCheckState: StateFlow<ModuleCheckState> = _moduleCheckState.asStateFlow()
 
     /** 当前应用版本名（如 "1.0.3"） */
     val currentVersion: String by lazy {
@@ -179,4 +190,93 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
             false
         }
     }
+
+    // ─── Magisk 模块下载 ──────────────────────────
+
+    /**
+     * 查询 GitHub Release 中的 Magisk 模块 zip。
+     * 查询结果通过 [moduleCheckState] 暴露给 UI。
+     */
+    fun checkForModuleZip() {
+        if (_moduleCheckState.value is ModuleCheckState.Checking) return
+
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            _moduleCheckState.value = ModuleCheckState.Checking
+            try {
+                val moduleInfo = updater.fetchLatestModuleZip()
+                if (moduleInfo == null) {
+                    _moduleCheckState.value = ModuleCheckState.NotFound
+                } else {
+                    lastModuleZipInfo = moduleInfo
+                    _moduleCheckState.value = ModuleCheckState.Available(moduleInfo)
+                }
+            } catch (e: Throwable) {
+                Log.e("UpdateViewModel", "checkForModuleZip failed", e)
+                _moduleCheckState.value = ModuleCheckState.Error(
+                    e.message ?: e.javaClass.simpleName
+                )
+            }
+        }
+    }
+
+    /**
+     * 下载已查询到的 Magisk 模块 zip。
+     * 调用前请确保 [moduleCheckState] 是 [ModuleCheckState.Available]。
+     */
+    fun downloadModuleZip() {
+        val moduleInfo = lastModuleZipInfo ?: run {
+            Log.w("UpdateViewModel", "downloadModuleZip called but no module info cached")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            try {
+                val settings = settingsRepo.load()
+                updater.downloadModuleZip(moduleInfo, wifiOnly = settings.wifiOnlyUpdate)
+            } catch (e: Throwable) {
+                Log.e("UpdateViewModel", "downloadModuleZip failed", e)
+            }
+        }
+    }
+
+    /**
+     * 取消正在进行的模块下载。
+     */
+    fun cancelModuleDownload() {
+        updater.cancelModuleDownload()
+    }
+
+    /**
+     * 安装已下载完成的模块 zip（触发 Magisk Manager 刷入流程）。
+     * @return true 表示安装意图已成功触发
+     */
+    fun installDownloadedModuleZip(): Boolean {
+        val state = moduleDownloadState.value
+        if (state !is DownloadState.Completed) return false
+        return updater.installModuleZip(state.file)
+    }
+
+    /**
+     * 重置模块下载状态。
+     */
+    fun resetModuleState() {
+        updater.resetModuleDownloadState()
+        _moduleCheckState.value = ModuleCheckState.Idle
+    }
+}
+
+/**
+ * 模块查询状态
+ */
+sealed class ModuleCheckState {
+    /** 空闲 */
+    data object Idle : ModuleCheckState()
+    /** 正在查询 */
+    data object Checking : ModuleCheckState()
+    /** 找到模块 zip */
+    data class Available(val info: com.apex.root.data.updater.ModuleZipInfo) : ModuleCheckState()
+    /** 未找到模块 zip */
+    data object NotFound : ModuleCheckState()
+    /** 查询失败 */
+    data class Error(val message: String) : ModuleCheckState()
 }
