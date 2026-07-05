@@ -23,10 +23,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apex.root.core.NativeLibraryLoader
+import com.apex.root.data.updater.AppUpdater
 import com.apex.root.data.updater.DownloadState
 import com.apex.root.data.updater.ModuleZipInfo
 import com.apex.root.ui.compose.*
+import com.apex.root.viewmodel.InstalledModulesState
 import com.apex.root.viewmodel.ModuleCheckState
+import com.apex.root.viewmodel.ModuleUpdateStatus
 import com.apex.root.viewmodel.UpdateUiState
 import com.apex.root.viewmodel.UpdateViewModel
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +51,7 @@ fun UpdateScreen(
     val downloadState by viewModel.downloadState.collectAsState()
     val moduleCheckState by viewModel.moduleCheckState.collectAsState()
     val moduleDownloadState by viewModel.moduleDownloadState.collectAsState()
+    val installedModulesState by viewModel.installedModulesState.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -55,6 +59,11 @@ fun UpdateScreen(
     var nativeLibLoaded by remember { mutableStateOf(NativeLibraryLoader.isAvailable) }
     var nativeLibFailed by remember { mutableStateOf(NativeLibraryLoader.loadFailed) }
     var nativeLibRetrying by remember { mutableStateOf(false) }
+
+    // 进入页面时自动检测已安装模块状态（一次性）
+    LaunchedEffect(Unit) {
+        viewModel.checkInstalledModules()
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -175,9 +184,20 @@ fun UpdateScreen(
 
                 Spacer(Modifier.height(16.dp))
 
-                // ─── Magisk 模块下载区 ───
+                // ─── Magisk 模块区 ───
                 SectionHeader(title = "Magisk 模块")
                 Spacer(Modifier.height(8.dp))
+
+                // 已安装模块状态卡片（新增）
+                InstalledModulesCard(
+                    installedModulesState = installedModulesState,
+                    moduleCheckState = moduleCheckState,
+                    onRefresh = { viewModel.checkInstalledModules() },
+                    isDark = isDark
+                )
+                Spacer(Modifier.height(10.dp))
+
+                // 模块下载卡片
                 ModuleDownloadCard(
                     moduleCheckState = moduleCheckState,
                     moduleDownloadState = moduleDownloadState,
@@ -601,6 +621,259 @@ private fun formatFileSize(bytes: Long): String {
     }
     return if (unitIndex == 0) "${bytes.toInt()} ${units[unitIndex]}"
     else String.format("%.1f %s", size, units[unitIndex])
+}
+
+// ─── 已安装模块状态卡片 ──────────────────────────
+
+@Composable
+private fun InstalledModulesCard(
+    installedModulesState: InstalledModulesState,
+    moduleCheckState: ModuleCheckState,
+    onRefresh: () -> Unit,
+    isDark: Boolean
+) {
+    GlassCard(cornerRadius = 16.dp, accentLine = AccentPurple) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Memory,
+                    contentDescription = null,
+                    tint = AccentPurple,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "已安装模块状态",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDark) TextPrimary else Color(0xFF1A1A2E)
+                    )
+                    Text(
+                        "从 /data/adb/modules/ 读取实际安装的模块",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+                }
+                IconButton(onClick = onRefresh, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "刷新",
+                        tint = TextTertiary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            when (installedModulesState) {
+                is InstalledModulesState.Idle -> {
+                    Text(
+                        "点击右上角刷新按钮检测已安装模块",
+                        fontSize = 12.sp,
+                        color = TextSecondary
+                    )
+                }
+                is InstalledModulesState.Checking -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = AccentPurple
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text("正在检测已安装模块...", fontSize = 12.sp, color = TextSecondary)
+                    }
+                }
+                is InstalledModulesState.NotInstalled -> {
+                    Text(
+                        "未检测到已安装的 APEX 模块",
+                        fontSize = 13.sp,
+                        color = AccentGold,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "请先获取 root 权限，然后通过下方「下载模块 zip」获取并刷入模块。\n" +
+                            "模块安装路径：/data/adb/modules/apex-root",
+                        fontSize = 11.sp,
+                        color = TextTertiary
+                    )
+                }
+                is InstalledModulesState.Error -> {
+                    Text(
+                        "检测失败: ${installedModulesState.message}",
+                        fontSize = 12.sp,
+                        color = ErrorRed
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "可能原因：设备未 root / su 授权失败 / Magisk 未安装",
+                        fontSize = 11.sp,
+                        color = TextTertiary
+                    )
+                }
+                is InstalledModulesState.Loaded -> {
+                    val modules = installedModulesState.modules
+                    Text(
+                        "已安装 ${modules.size} 个模块",
+                        fontSize = 13.sp,
+                        color = AccentMint,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(10.dp))
+
+                    // 列出每个模块的状态
+                    modules.forEach { module: AppUpdater.InstalledModuleInfo ->
+                        InstalledModuleRow(module = module, isDark = isDark)
+                        Spacer(Modifier.height(8.dp))
+                    }
+
+                    // 版本对比提示
+                    val remoteInfo = (moduleCheckState as? ModuleCheckState.Available)?.info
+                    if (remoteInfo != null) {
+                        val mainModule = modules.firstOrNull { it.id == "apex-root" }
+                        if (mainModule != null) {
+                            Spacer(Modifier.height(6.dp))
+                            VersionComparisonRow(
+                                installedVersion = mainModule.version,
+                                remoteVersion = remoteInfo.releaseTag,
+                                isDark = isDark
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstalledModuleRow(
+    module: AppUpdater.InstalledModuleInfo,
+    isDark: Boolean
+) {
+    val statusColor = when {
+        module.removeFlagged -> ErrorRed
+        module.disabled -> AccentGold
+        else -> AccentMint
+    }
+    val statusText = when {
+        module.removeFlagged -> "待删除"
+        module.disabled -> "已禁用"
+        else -> "运行中"
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (isDark) DeepSurfaceVariant else Color(0xFFF1F5F9),
+                RoundedCornerShape(10.dp)
+            )
+            .padding(12.dp)
+    ) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(statusColor, CircleShape)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    module.name.ifEmpty { module.id },
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) TextPrimary else Color(0xFF1A1A2E)
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    statusText,
+                    fontSize = 11.sp,
+                    color = statusColor,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "ID: ${module.id}  ·  版本: ${module.version}  ·  versionCode: ${module.versionCode}",
+                fontSize = 10.sp,
+                color = TextTertiary,
+                fontFamily = FontFamily.Monospace
+            )
+            if (module.author.isNotEmpty()) {
+                Text(
+                    "作者: ${module.author}",
+                    fontSize = 10.sp,
+                    color = TextTertiary
+                )
+            }
+            if (module.description.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    module.description.take(120) + if (module.description.length > 120) "..." else "",
+                    fontSize = 10.sp,
+                    color = TextSecondary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VersionComparisonRow(
+    installedVersion: String,
+    remoteVersion: String,
+    isDark: Boolean
+) {
+    val cmp = compareVersionStrings(remoteVersion, installedVersion)
+    val (color, text) = when {
+        cmp > 0 -> AccentGold to "远程版本更新（$installedVersion → $remoteVersion）"
+        cmp == 0 -> AccentMint to "已是最新版本（$installedVersion）"
+        else -> ErrorRed to "本地版本更新（本地 $installedVersion > 远程 $remoteVersion）"
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (cmp > 0) Icons.Default.SystemUpdateAlt
+                else if (cmp == 0) Icons.Default.CheckCircle
+                else Icons.Default.Warning,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(text, fontSize = 11.sp, color = color, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+/**
+ * 简单的版本号比较（本地实现，避免依赖 AppUpdater 私有方法）。
+ * 返回正数表示 v1 > v2，0 表示相等，负数表示 v1 < v2。
+ */
+private fun compareVersionStrings(v1: String, v2: String): Int {
+    val p1 = v1.removePrefix("v").removePrefix("V")
+        .takeWhile { it.isDigit() || it == '.' }
+        .split(".")
+        .mapNotNull { it.toIntOrNull() }
+    val p2 = v2.removePrefix("v").removePrefix("V")
+        .takeWhile { it.isDigit() || it == '.' }
+        .split(".")
+        .mapNotNull { it.toIntOrNull() }
+    for (i in 0 until maxOf(p1.size, p2.size)) {
+        val a = p1.getOrElse(i) { 0 }
+        val b = p2.getOrElse(i) { 0 }
+        if (a != b) return a - b
+    }
+    return 0
 }
 
 // ─── Magisk 模块下载卡片 ──────────────────────────

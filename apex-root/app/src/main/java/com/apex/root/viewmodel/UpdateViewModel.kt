@@ -81,6 +81,10 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     private val _moduleCheckState = MutableStateFlow<ModuleCheckState>(ModuleCheckState.Idle)
     val moduleCheckState: StateFlow<ModuleCheckState> = _moduleCheckState.asStateFlow()
 
+    /** 已安装模块状态（从 /data/adb/modules/<id>/module.prop 读取） */
+    private val _installedModulesState = MutableStateFlow<InstalledModulesState>(InstalledModulesState.Idle)
+    val installedModulesState: StateFlow<InstalledModulesState> = _installedModulesState.asStateFlow()
+
     /** 当前应用版本名（如 "1.0.3"） */
     val currentVersion: String by lazy {
         updater.getCurrentVersion().first
@@ -263,6 +267,50 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         updater.resetModuleDownloadState()
         _moduleCheckState.value = ModuleCheckState.Idle
     }
+
+    // ─── 已安装模块状态 ──────────────────────────
+
+    /**
+     * 检测已安装的模块状态（apex-root + apex-hide-daemon）。
+     * 通过 su 读取 /data/adb/modules/<id>/module.prop。
+     */
+    fun checkInstalledModules() {
+        if (_installedModulesState.value is InstalledModulesState.Checking) return
+
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            _installedModulesState.value = InstalledModulesState.Checking
+            try {
+                val modules = updater.getAllInstalledModules()
+                if (modules.isEmpty()) {
+                    _installedModulesState.value = InstalledModulesState.NotInstalled
+                } else {
+                    _installedModulesState.value = InstalledModulesState.Loaded(modules)
+                }
+            } catch (e: Throwable) {
+                Log.e("UpdateViewModel", "checkInstalledModules failed", e)
+                _installedModulesState.value = InstalledModulesState.Error(
+                    e.message ?: e.javaClass.simpleName
+                )
+            }
+        }
+    }
+
+    /**
+     * 计算模块更新状态：对比已安装版本与 GitHub 远程版本。
+     * @return 三态：UPDATE_AVAILABLE / UP_TO_DATE / UNKNOWN
+     */
+    fun getModuleUpdateStatus(): ModuleUpdateStatus {
+        val installed = (_installedModulesState.value as? InstalledModulesState.Loaded)
+            ?.modules?.firstOrNull { it.id == "apex-root" } ?: return ModuleUpdateStatus.UNKNOWN
+        val remote = (moduleCheckState.value as? ModuleCheckState.Available)?.info
+            ?: return ModuleUpdateStatus.UNKNOWN
+        val cmp = updater.compareModuleVersions(installed, remote)
+        return when {
+            cmp == null -> ModuleUpdateStatus.UNKNOWN
+            cmp > 0 -> ModuleUpdateStatus.UPDATE_AVAILABLE
+            else -> ModuleUpdateStatus.UP_TO_DATE
+        }
+    }
 }
 
 /**
@@ -279,4 +327,32 @@ sealed class ModuleCheckState {
     data object NotFound : ModuleCheckState()
     /** 查询失败 */
     data class Error(val message: String) : ModuleCheckState()
+}
+
+/**
+ * 已安装模块状态
+ */
+sealed class InstalledModulesState {
+    /** 空闲 */
+    data object Idle : InstalledModulesState()
+    /** 正在检测 */
+    data object Checking : InstalledModulesState()
+    /** 已加载模块列表 */
+    data class Loaded(val modules: List<com.apex.root.data.updater.AppUpdater.InstalledModuleInfo>) : InstalledModulesState()
+    /** 未安装任何模块 */
+    data object NotInstalled : InstalledModulesState()
+    /** 检测失败（如未 root） */
+    data class Error(val message: String) : InstalledModulesState()
+}
+
+/**
+ * 模块更新状态（对比已安装版本与远程版本）
+ */
+enum class ModuleUpdateStatus {
+    /** 有更新可用 */
+    UPDATE_AVAILABLE,
+    /** 已是最新版本 */
+    UP_TO_DATE,
+    /** 无法判断（未检测到已安装模块或未查询远程版本） */
+    UNKNOWN
 }

@@ -499,6 +499,134 @@ class AppUpdater private constructor(private val context: Context) {
         _moduleDownloadState.value = DownloadState.Idle
     }
 
+    // ─── 已安装模块状态检测 ──────────────────────
+
+    /**
+     * 已安装模块信息（从 /data/adb/modules/<id>/module.prop 读取）。
+     */
+    data class InstalledModuleInfo(
+        val id: String,
+        val name: String,
+        val version: String,
+        val versionCode: Long,
+        val author: String,
+        val description: String,
+        val moduleDir: String,
+        val disabled: Boolean,        // 是否被禁用（存在 disable 文件）
+        val removeFlagged: Boolean    // 是否标记为删除（存在 remove 文件）
+    )
+
+    /**
+     * 检测已安装的 APEX-Root 模块状态。
+     * 借鉴 Magisk Manager 的模块检测逻辑：读取 module.prop + 检查 disable/remove 标记。
+     *
+     * @param moduleId 模块 ID，默认 "apex-root"
+     * @return 已安装模块信息；未安装返回 null
+     */
+    suspend fun getInstalledModuleInfo(moduleId: String = "apex-root"): InstalledModuleInfo? =
+        withContext(Dispatchers.IO) {
+            val moduleDir = "/data/adb/modules/$moduleId"
+            val propFile = "$moduleDir/module.prop"
+
+            try {
+                // 尝试直接读取（root 设备上应用进程通常无权访问 /data/adb）
+                val content = readRootFile(propFile)
+                    ?: return@withContext null
+
+                val props = parseModuleProp(content)
+                val disabled = rootFileExists("$moduleDir/disable")
+                val removeFlagged = rootFileExists("$moduleDir/remove")
+
+                InstalledModuleInfo(
+                    id = props["id"] ?: moduleId,
+                    name = props["name"] ?: "",
+                    version = props["version"] ?: "unknown",
+                    versionCode = props["versionCode"]?.toLongOrNull() ?: 0L,
+                    author = props["author"] ?: "",
+                    description = props["description"] ?: "",
+                    moduleDir = moduleDir,
+                    disabled = disabled,
+                    removeFlagged = removeFlagged
+                )
+            } catch (e: Throwable) {
+                Log.e(TAG, "getInstalledModuleInfo failed for $moduleId", e)
+                null
+            }
+        }
+
+    /**
+     * 同时检测 apex-root 和 apex-hide-daemon 两个模块的安装状态。
+     */
+    suspend fun getAllInstalledModules(): List<InstalledModuleInfo> = withContext(Dispatchers.IO) {
+        val ids = listOf("apex-root", "apex-hide-daemon")
+        ids.mapNotNull { id ->
+            runCatching { getInstalledModuleInfo(id) }.getOrNull()
+        }
+    }
+
+    /**
+     * 比较已安装模块版本与 GitHub Release 中的模块版本。
+     * @return 正数表示远程更新，0 表示相同，负数表示本地更新（异常情况），null 表示无法比较
+     */
+    fun compareModuleVersions(installed: InstalledModuleInfo?, remote: ModuleZipInfo?): Int? {
+        if (installed == null || remote == null) return null
+        return try {
+            compareVersions(remote.releaseTag, installed.version)
+        } catch (e: Throwable) {
+            Log.e(TAG, "compareModuleVersions failed", e)
+            null
+        }
+    }
+
+    /**
+     * 通过 su 读取 root 权限文件内容。
+     * 非 root 设备会失败，返回 null。
+     */
+    private fun readRootFile(path: String): String? {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat '$path'"))
+            val text = process.inputStream.bufferedReader().readText()
+            val exited = process.waitFor(3000, java.util.concurrent.TimeUnit.MILLISECONDS)
+            if (exited && process.exitValue() == 0) text.trim().ifEmpty { null } else null
+        } catch (e: Throwable) {
+            null
+        } finally {
+            // process 由 GC 回收，不显式 destroy（避免影响 su 会话）
+        }
+    }
+
+    /**
+     * 通过 su 检查 root 权限文件是否存在。
+     */
+    private fun rootFileExists(path: String): Boolean {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "test -e '$path' && echo yes || echo no"))
+            val text = process.inputStream.bufferedReader().readText().trim()
+            val exited = process.waitFor(3000, java.util.concurrent.TimeUnit.MILLISECONDS)
+            exited && process.exitValue() == 0 && text == "yes"
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * 解析 module.prop 文件内容（key=value 格式，每行一个）。
+     */
+    private fun parseModuleProp(content: String): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        content.lines().forEach { line ->
+            val trimmed = line.trim()
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) return@forEach
+            val eqIdx = trimmed.indexOf('=')
+            if (eqIdx > 0) {
+                val key = trimmed.substring(0, eqIdx).trim()
+                val value = trimmed.substring(eqIdx + 1).trim()
+                result[key] = value
+            }
+        }
+        return result
+    }
+
     private fun isWifiConnected(): Boolean {
         return try {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
