@@ -33,6 +33,14 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     val progress: StateFlow<Float> = _progress.asStateFlow()
 
     /**
+     * 警报历史列表（累积所有收到的警报，不丢失）。
+     * 与 [uiState] 中的单个 Alert 状态互补：uiState 反映"当前活跃警报"，
+     * alerts 反映"历史所有警报"。UI 可同时展示当前警报 + 历史列表。
+     */
+    private val _alerts = MutableStateFlow<List<SecurityAlert>>(emptyList())
+    val alerts: StateFlow<List<SecurityAlert>> = _alerts.asStateFlow()
+
+    /**
      * 全局协程异常处理器 — 任何未捕获异常记录但不崩溃进程。
      */
     private val exceptionHandler = CoroutineExceptionHandler { _, e ->
@@ -131,6 +139,11 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     private fun parseAlert(data: ByteArray) {
         val alert = DetectionProtocol.decodeAlert(data)
         if (alert != null) {
+            // 累积到历史列表（最多保留 50 条，超出丢弃最旧）
+            _alerts.update { current ->
+                (current + alert).takeLast(50)
+            }
+            // 同时设置当前活跃警报
             _uiState.value = UiState.Alert(alert)
         } else {
             _uiState.value = UiState.Error("Alert parse failed: invalid protocol data")
@@ -148,6 +161,36 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissReport() {
         _uiState.value = UiState.Idle
         _progress.value = 0f
+    }
+
+    /**
+     * 清除当前活跃警报（UiState.Alert → Idle），但保留历史列表。
+     */
+    fun dismissAlert() {
+        if (_uiState.value is UiState.Alert) {
+            _uiState.value = UiState.Idle
+        }
+    }
+
+    /**
+     * 从历史列表中移除指定警报（按索引）。
+     */
+    fun dismissAlertFromHistory(index: Int) {
+        _alerts.update { current ->
+            current.toMutableList().apply {
+                if (index in indices) removeAt(index)
+            }.toList()
+        }
+    }
+
+    /**
+     * 清空所有警报历史。
+     */
+    fun clearAllAlerts() {
+        _alerts.value = emptyList()
+        if (_uiState.value is UiState.Alert) {
+            _uiState.value = UiState.Idle
+        }
     }
 
     override fun onCleared() {

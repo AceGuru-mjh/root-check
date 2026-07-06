@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,6 +35,7 @@ fun ReportScreen(
     val uiState by viewModel.uiState.collectAsState()
     val report = (uiState as? UiState.Report)?.report
     val isScanning = uiState is UiState.Scanning || uiState is UiState.Connecting
+    val context = LocalContext.current
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -43,6 +45,24 @@ fun ReportScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, "返回")
+                    }
+                },
+                actions = {
+                    // 新增：分享报告按钮
+                    if (report != null) {
+                        IconButton(onClick = {
+                            val reportText = formatReportAsText(report)
+                            val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_SUBJECT, "APEX-Root 安全报告")
+                                putExtra(android.content.Intent.EXTRA_TEXT, reportText)
+                            }
+                            runCatching {
+                                context.startActivity(android.content.Intent.createChooser(sendIntent, "分享报告"))
+                            }
+                        }) {
+                            Icon(Icons.Default.Share, "分享报告")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
@@ -106,6 +126,10 @@ private fun ReportSummaryCard(report: GlobalSecureReport) {
         else -> AccentMint
     }
 
+    // 新增：计算层通过数
+    val passedCount = report.results.count { it.success }
+    val totalCount = report.results.size
+
     GlassCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -128,6 +152,16 @@ private fun ReportSummaryCard(report: GlobalSecureReport) {
                     color = riskColor, letterSpacing = 0.3.sp)
                 Text("风险评分: ${"%.1f".format(report.riskScore)}%",
                     fontSize = 12.sp, color = TextSecondary)
+                // 新增：层通过数总结
+                if (totalCount > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "$passedCount / $totalCount 层通过",
+                        fontSize = 11.sp,
+                        color = if (passedCount == totalCount) AccentMint else AccentGold,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     }
@@ -202,6 +236,8 @@ private fun ReportFindingItem(finding: Finding) {
         Severity.MEDIUM -> AccentGold
         else -> AccentMint
     }
+    // 新增：evidence 独立展开状态
+    var showFullEvidence by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -222,8 +258,54 @@ private fun ReportFindingItem(finding: Finding) {
             }
             if (finding.evidence.isNotBlank()) {
                 Spacer(Modifier.height(2.dp))
-                Text(finding.evidence, fontSize = 10.sp, color = TextTertiary, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(
+                    finding.evidence,
+                    fontSize = 10.sp,
+                    color = TextTertiary,
+                    maxLines = if (showFullEvidence) Int.MAX_VALUE else 3,
+                    overflow = if (showFullEvidence) androidx.compose.ui.text.style.TextOverflow.Visible
+                               else androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable { showFullEvidence = !showFullEvidence }
+                )
+                // 新增：展开/收起提示
+                if (finding.evidence.length > 100) {
+                    Text(
+                        if (showFullEvidence) "收起" else "展开全部",
+                        fontSize = 9.sp,
+                        color = AccentPurple,
+                        modifier = Modifier.clickable { showFullEvidence = !showFullEvidence }
+                    )
+                }
             }
         }
     }
+}
+
+/**
+ * 将报告格式化为纯文本（用于分享）。
+ */
+private fun formatReportAsText(report: GlobalSecureReport): String {
+    val sb = StringBuilder()
+    sb.appendLine("=== APEX-Root 安全报告 ===")
+    sb.appendLine()
+    sb.appendLine("总体风险: ${report.overallRisk.name}")
+    sb.appendLine("风险评分: ${"%.1f".format(report.riskScore)}%")
+    val passed = report.results.count { it.success }
+    sb.appendLine("层级通过: $passed / ${report.results.size}")
+    sb.appendLine()
+    sb.appendLine("--- 各层详情 ---")
+    report.results.forEach { result ->
+        val status = if (result.success) "✅ 通过" else "❌ 异常"
+        sb.appendLine("${result.serviceName} [$status] (${(result.confidence * 100).toInt()}%, ${result.durationMs}ms)")
+        result.findings.forEach { finding ->
+            sb.appendLine("  · [${finding.severity.name}] ${finding.description}")
+            if (finding.evidence.isNotBlank()) {
+                sb.appendLine("    证据: ${finding.evidence.take(200)}")
+            }
+        }
+    }
+    sb.appendLine()
+    sb.appendLine("---")
+    sb.appendLine("由 APEX-Root 生成")
+    return sb.toString()
 }
