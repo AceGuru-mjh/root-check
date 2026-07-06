@@ -43,8 +43,8 @@ android {
         applicationId = "com.apex.root"
         minSdk = 29
         targetSdk = 34
-        versionCode = 105
-        versionName = "1.0.5"
+        versionCode = 106
+        versionName = "1.0.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 全架构由 splits.abi 控制，此处不再设置 ndk.abiFilters
@@ -79,8 +79,9 @@ android {
             // 无 keystore 时使用默认 debug 签名，确保开箱可构建
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // 禁用混淆与资源压缩：保留完整代码，便于调试与日志排查
+            isMinifyEnabled = false
+            isShrinkResources = false
             if (hasKeystore) {
                 signingConfig = signingConfigs.getByName("release")
             }
