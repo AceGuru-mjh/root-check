@@ -109,7 +109,8 @@ class RootDetectRepositoryImpl : com.apex.root.domain.repository.IRootDetectRepo
         val sb = StringBuilder()
         sb.appendLine("=== APEX 深度检测报告 (Ring3 root 级) ===")
         sb.appendLine()
-        sb.appendLine("[说明] 所有 Ring0 内核态检测已移除，仅保留 root 级 / 用户态检测")
+        sb.appendLine("[说明] 所有 Ring0 内核态检测已完全移除,仅保留 root 级 / 用户态 (Ring3) 检测")
+        sb.appendLine("[说明] syscall 篡改检测改用 layer5_sidechannel.cpp 的侧信道时序分析")
         sb.appendLine()
 
         // 1. Memory fingerprint

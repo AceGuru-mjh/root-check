@@ -45,15 +45,21 @@ static bool check_oat_dex_files() {
 
     int oat_count = 0, dex_count = 0;
     const char* p = buf;
-    while (*p) {
+    const char* buf_end = buf + strlen(buf);
+    while (p < buf_end && *p) {
         // Find .oat files (compiled) and .dex files (interpreted)
-        if (strstr(p, ".oat")) {
+        const char* oat_pos = strstr(p, ".oat");
+        const char* dex_pos = strstr(p, ".dex");
+        // Defensive: nullptr from strstr would cause wild-pointer arithmetic
+        if (oat_pos && (!dex_pos || oat_pos < dex_pos)) {
             oat_count++;
-            p = strstr(p, ".oat") + 4;
-        } else if (strstr(p, ".dex")) {
+            p = oat_pos + 4;
+        } else if (dex_pos) {
             dex_count++;
-            p = strstr(p, ".dex") + 4;
-        } else p++;
+            p = dex_pos + 4;
+        } else {
+            p++;
+        }
     }
 
     // In a normal app, we'd have a few oat files from the framework
@@ -74,25 +80,28 @@ static bool check_art_jit_region() {
     while (line < end) {
         char* nl = line;
         while (nl < end && *nl != '\n') nl++;
-        *nl = '\0';
+        // Defensive: only terminate the line if we actually found '\n'.
+        // If we ran off the end (no trailing newline), leave the buffer
+        // alone — line is already bounded by `end`.
+        if (nl < end) *nl = '\0';
 
         // Check for rwxp (writable + executable + private)
         if (strstr(line, "rwxp")) {
-            // Find the path (last column)
+            // Find the path (last column) — bounded scan
             const char* path_part = line;
             int spaces = 0;
-            for (const char* c = line; *c; c++) {
+            for (const char* c = line; *c && c < nl; c++) {
                 if (*c == ' ') { spaces++; if (spaces == 4) { path_part = c + 1; break; } }
             }
             // If JIT region from ART, it should be [anon:dalvik-jit-code-cache]
-            if (path_part[0] == '\0' || path_part[0] == '\n') {
+            if (path_part >= nl || path_part[0] == '\0' || path_part[0] == '\n') {
                 suspicious_jit++;
             } else if (strstr(path_part, "dalvik") == nullptr &&
                        strstr(path_part, "jit") == nullptr) {
                 suspicious_jit++;
             }
         }
-        line = nl + 1;
+        line = (nl < end) ? nl + 1 : end;
     }
     return suspicious_jit > 3;
 }

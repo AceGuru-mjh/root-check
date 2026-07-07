@@ -2,6 +2,7 @@
 #include <android/log.h>
 #include <sys/system_properties.h>
 #include <cstring>
+#include <memory>
 #include "bare_syscall/syscall_bridge.h"
 #include "detect/layer1_prop.h"
 #include "detect/layer2_art.h"
@@ -120,8 +121,25 @@ Java_com_apex_root_data_jni_NativeBridge_isDeviceRootedNative(JNIEnv*, jobject) 
 
 JNIEXPORT jint JNICALL
 Java_com_apex_root_island_NativeIsland_createIsolatedEnvNative(JNIEnv* env, jobject, jstring name) {
+    if (!name) {
+        LOGE("createIsolatedEnvNative: null name");
+        return -1;
+    }
     const char* cname = env->GetStringUTFChars(name, nullptr);
-    int pid = apex::island::create_isolated_environment(cname);
+    if (!cname) {
+        // OOM or JVM-broken — Java exception already pending
+        return -1;
+    }
+    int pid = -1;
+    // Ensure the JNI string is always released, even if the underlying
+    // call throws. A thrown C++ exception would otherwise leak the UTF chars.
+    try {
+        pid = apex::island::create_isolated_environment(cname);
+    } catch (const std::exception& e) {
+        LOGE("create_isolated_environment failed: %s", e.what());
+    } catch (...) {
+        LOGE("create_isolated_environment failed: unknown exception");
+    }
     env->ReleaseStringUTFChars(name, cname);
     return pid;
 }
@@ -316,28 +334,55 @@ Java_com_apex_root_data_jni_NativeBridge_getPostQuantumInfoNative(JNIEnv* env, j
 // 新增：L14 / L15 / L16 完整扫描接口
 // ─────────────────────────────────────────────────────────────
 
+// Helper: safely build a Java String from a variable-size native scan report.
+// Scanning 50+ framework paths can easily overflow the old 4KB stack buffer,
+// corrupting the return address and crashing the app with SIGSEGV. Heap-
+// allocate a larger buffer and guarantee NUL-termination.
+static jstring report_to_jstring(JNIEnv* env, int (*scanner)(char*, size_t), size_t initial_size = 16384) {
+    if (!env || !scanner) return env ? env->NewStringUTF("") : nullptr;
+
+    size_t cap = initial_size;
+    // Cap at 256KB to bound memory in pathological cases.
+    while (cap <= 256 * 1024) {
+        auto buf = std::make_unique<char[]>(cap);
+        if (!buf) return env->NewStringUTF("");
+        buf[0] = '\0';
+        scanner(buf.get(), cap);
+        // The scanners always NUL-terminate within out_size, so strlen is safe.
+        size_t used = strlen(buf.get());
+        // If we used >= cap-1 the output was truncated — retry with a bigger buffer.
+        if (used < cap - 1) {
+            return env->NewStringUTF(buf.get());
+        }
+        cap *= 2;
+    }
+    // Gave up at the cap — return whatever the last scan produced.
+    auto buf = std::make_unique<char[]>(cap);
+    if (!buf) return env->NewStringUTF("");
+    buf[0] = '\0';
+    scanner(buf.get(), cap);
+    return env->NewStringUTF(buf.get());
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_virtualXposedFullScanNative(JNIEnv* env, jobject) {
-    char report[4096];
-    report[0] = '\0';
-    virtualXposedFullScan(report, sizeof(report));
-    return env->NewStringUTF(report);
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return virtualXposedFullScan(b, s);
+    });
 }
 
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_dangerousAppsFullScanNative(JNIEnv* env, jobject) {
-    char report[4096];
-    report[0] = '\0';
-    dangerousAppsFullScan(report, sizeof(report));
-    return env->NewStringUTF(report);
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return dangerousAppsFullScan(b, s);
+    });
 }
 
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_magiskExtensionsFullScanNative(JNIEnv* env, jobject) {
-    char report[4096];
-    report[0] = '\0';
-    magiskExtensionsFullScan(report, sizeof(report));
-    return env->NewStringUTF(report);
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return magiskExtensionsFullScan(b, s);
+    });
 }
 
 JNIEXPORT jboolean JNICALL
@@ -447,10 +492,9 @@ Java_com_apex_root_data_jni_NativeBridge_fullMemoryFingerprintNative(JNIEnv*, jo
 
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_deepMemoryScanReportNative(JNIEnv* env, jobject) {
-    char report[4096];
-    report[0] = '\0';
-    deepMemoryFingerprintScan(report, sizeof(report));
-    return env->NewStringUTF(report);
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return deepMemoryFingerprintScan(b, s);
+    });
 }
 
 JNIEXPORT jint JNICALL
@@ -474,10 +518,9 @@ Java_com_apex_root_data_jni_NativeBridge_detectSELinuxPolicyModNative(JNIEnv*, j
 
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_selinuxFullScanNative(JNIEnv* env, jobject) {
-    char report[2048];
-    report[0] = '\0';
-    runSELinuxFullScan(report, sizeof(report));
-    return env->NewStringUTF(report);
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return runSELinuxFullScan(b, s);
+    }, 4096);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -491,10 +534,9 @@ Java_com_apex_root_data_jni_NativeBridge_detectShamikoNative(JNIEnv*, jobject) {
 
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_shamikoFullScanNative(JNIEnv* env, jobject) {
-    char report[2048];
-    report[0] = '\0';
-    shamikoFullScan(report, sizeof(report));
-    return env->NewStringUTF(report);
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return shamikoFullScan(b, s);
+    }, 4096);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -504,10 +546,9 @@ Java_com_apex_root_data_jni_NativeBridge_detectZygiskNextNative(JNIEnv*, jobject
 
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_zygiskNextFullScanNative(JNIEnv* env, jobject) {
-    char report[2048];
-    report[0] = '\0';
-    zygiskNextFullScan(report, sizeof(report));
-    return env->NewStringUTF(report);
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return zygiskNextFullScan(b, s);
+    }, 4096);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -529,10 +570,9 @@ Java_com_apex_root_data_jni_NativeBridge_detectMountNamespaceHidingNative(JNIEnv
 
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_artEnhancedScanNative(JNIEnv* env, jobject) {
-    char report[2048];
-    report[0] = '\0';
-    detectArtEnhanced(report, sizeof(report));
-    return env->NewStringUTF(report);
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return detectArtEnhanced(b, s);
+    }, 4096);
 }
 
 // ─── Xposed 框架检测（layer11_hook.cpp::detectXposedFramework）──
@@ -562,10 +602,9 @@ Java_com_apex_root_data_jni_NativeBridge_detectCustomRecoveryNative(JNIEnv*, job
 
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_firmwareFullScanNative(JNIEnv* env, jobject) {
-    char report[2048];
-    report[0] = '\0';
-    firmwareFullScan(report, sizeof(report));
-    return env->NewStringUTF(report);
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return firmwareFullScan(b, s);
+    }, 4096);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -574,12 +613,14 @@ Java_com_apex_root_data_jni_NativeBridge_firmwareFullScanNative(JNIEnv* env, job
 
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_getDeviceIdentifierNative(JNIEnv* env, jobject) {
-    char buf[256];
+    // 512 bytes comfortably holds: serial (≤ 64) + hostname (≤ 256) + 20-digit ns + separators
+    char buf[512];
     // Build device ID from system properties
     auto read_prop = [](const char* prop) -> std::string {
         FILE* f = fopen(prop, "r");
         if (!f) return "";
-        char line[128] = {};
+        // Hostnames on Linux can be up to 256 bytes; sized accordingly.
+        char line[256] = {};
         if (fgets(line, sizeof(line), f)) {
             fclose(f);
             std::string s(line);
@@ -592,6 +633,7 @@ Java_com_apex_root_data_jni_NativeBridge_getDeviceIdentifierNative(JNIEnv* env, 
 
     // Read Android serial number via system property API
     auto read_system_property = [](const char* key) -> std::string {
+        // PROP_VALUE_MAX is 92 on Android, but be defensive.
         char val[128] = {};
         int ret = __system_property_get(key, val);
         if (ret > 0) return std::string(val);
@@ -606,19 +648,40 @@ Java_com_apex_root_data_jni_NativeBridge_getDeviceIdentifierNative(JNIEnv* env, 
         brand.empty() ? "android" : brand.c_str(),
         (long long)bs_clock_ns());
     if (n < 0) return env->NewStringUTF("apex-root-default");
+    // snprintf always NUL-terminates within sizeof(buf), so no overflow risk.
+    // If truncation happened (n >= sizeof(buf)), surface it rather than return
+    // a misleadingly short identifier.
+    if ((size_t)n >= sizeof(buf)) {
+        LOGE("Device identifier truncated (need %d bytes)", n);
+        return env->NewStringUTF("apex-root-truncated");
+    }
     return env->NewStringUTF(buf);
 }
 
 JNIEXPORT jbyteArray JNICALL
 Java_com_apex_root_data_jni_NativeBridge_sha3_512Native(JNIEnv* env, jobject, jbyteArray data) {
+    if (!data) {
+        LOGE("sha3_512Native: null data array");
+        return env->NewByteArray(0);
+    }
     jsize len = env->GetArrayLength(data);
+    if (len < 0) {
+        LOGE("sha3_512Native: negative array length");
+        return env->NewByteArray(0);
+    }
     jbyte* bytes = env->GetByteArrayElements(data, nullptr);
+    if (!bytes) {
+        // JVM OOM or pending exception
+        return env->NewByteArray(0);
+    }
     auto hash = apex::crypto::sha3_512(
         reinterpret_cast<const uint8_t*>(bytes), static_cast<size_t>(len));
     env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
 
     jbyteArray result = env->NewByteArray(64);
-    env->SetByteArrayRegion(result, 0, 64, reinterpret_cast<const jbyte*>(hash.data()));
+    if (result) {
+        env->SetByteArrayRegion(result, 0, 64, reinterpret_cast<const jbyte*>(hash.data()));
+    }
     return result;
 }
 

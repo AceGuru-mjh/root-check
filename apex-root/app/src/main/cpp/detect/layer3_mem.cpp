@@ -14,9 +14,14 @@ struct MemSignature {
 
 // Common memory name matchers
 static bool match_lib(const char* maps, size_t len, const char* lib_name) {
+    // Defensive: callers can pass an empty/uninitialised buffer when read_maps
+    // fails — never dereference a nullptr.
+    if (!maps || len == 0 || !lib_name) return false;
     return strstr(maps, lib_name) != nullptr;
 }
 static bool match_anon_exec(const char* maps, size_t len) {
+    if (!maps || len == 0) return false;
+    const char* maps_end = maps + len;
     // Match anonymous executable mappings: anon_inode: or [anon: with r-xp
     const char* markers[] = {
         "anon_inode:", " [anon:", "[stack:", "[heap:"
@@ -24,14 +29,13 @@ static bool match_anon_exec(const char* maps, size_t len) {
     for (auto m : markers) {
         const char* p = maps;
         while ((p = strstr(p, m)) != nullptr) {
-            // Check if followed by r-xp (executable)
+            // Find the start of this maps line (bounded)
             const char* nl = p;
-            while (nl > maps && *nl != '\n') nl--;
-            if (*nl == '\n') nl++;
-            // Find perms field
-            while (*nl == ' ' || *nl == '\t') nl++;
+            while (nl > maps && *(nl - 1) != '\n') nl--;
+            // Find perms field (first non-space after line start)
+            while (nl < maps_end && (*nl == ' ' || *nl == '\t')) nl++;
             const char* space = nl;
-            while (*space && *space != ' ') space++;
+            while (space < maps_end && *space && *space != ' ' && *space != '\n') space++;
             if (space - nl >= 4 && nl[0] == 'r' && nl[1] == '-' && nl[2] == 'x') return true;
             p++;
         }
@@ -39,9 +43,11 @@ static bool match_anon_exec(const char* maps, size_t len) {
     return false;
 }
 static bool match_memfd(const char* maps, size_t len) {
+    if (!maps || len == 0) return false;
     return strstr(maps, "/memfd:") != nullptr;
 }
 static bool match_dmabuf(const char* maps, size_t len) {
+    if (!maps || len == 0) return false;
     return strstr(maps, "dmabuf") != nullptr;
 }
 
@@ -100,9 +106,12 @@ static bool read_maps(char* buf, size_t size, size_t* out_len) {
 // ─── Public API ────────────────────────────────────────────
 
 bool detectSuspiciousMemory() {
-    char buf[16384];
+    // /proc/self/maps on a real Android app can easily exceed 16KB
+    // (Zygote preloads, ART, Compose, etc.). Use 64KB to match other
+    // scanners in this file and avoid silent truncation.
+    char buf[65536];
     size_t len = 0;
-    if (!read_maps(buf, sizeof(buf), &len)) return true;
+    if (!read_maps(buf, sizeof(buf), &len)) return false;  // cannot read → unknown, not "suspicious"
 
     // Check for RWX mappings (unusual)
     int rwx_count = 0;
@@ -111,14 +120,16 @@ bool detectSuspiciousMemory() {
     while (line < end) {
         char* nl = line;
         while (nl < end && *nl != '\n') nl++;
-        *nl = '\0';
+        // Only terminate when we actually have a newline in-bounds.
+        // Writing *nl = '\0' when nl == end is a stack buffer overflow.
+        if (nl < end) *nl = '\0';
 
         char* perms = line;
-        while (*perms && *perms != ' ') perms++;
-        if (*perms == ' ') perms++;
-        if (strncmp(perms, "rwx", 3) == 0) rwx_count++;
+        while (perms < nl && *perms && *perms != ' ') perms++;
+        if (perms < nl && *perms == ' ') perms++;
+        if (perms + 3 <= nl && strncmp(perms, "rwx", 3) == 0) rwx_count++;
 
-        line = nl + 1;
+        line = (nl < end) ? nl + 1 : end;
     }
     return rwx_count > 3;
 }
@@ -230,19 +241,19 @@ bool detectFridaMemory() {
 }
 
 int countRWXPages() {
-    char buf[16384]; size_t len = 0;
+    char buf[65536]; size_t len = 0;
     if (!read_maps(buf, sizeof(buf), &len)) return -1;
     int count = 0;
     char* line = buf; char* end = buf + len;
     while (line < end) {
         char* nl = line;
         while (nl < end && *nl != '\n') nl++;
-        *nl = '\0';
+        if (nl < end) *nl = '\0';
         char* perms = line;
-        while (*perms && *perms != ' ') perms++;
-        if (*perms == ' ') perms++;
-        if (strncmp(perms, "rwx", 3) == 0) count++;
-        line = nl + 1;
+        while (perms < nl && *perms && *perms != ' ') perms++;
+        if (perms < nl && *perms == ' ') perms++;
+        if (perms + 3 <= nl && strncmp(perms, "rwx", 3) == 0) count++;
+        line = (nl < end) ? nl + 1 : end;
     }
     return count;
 }

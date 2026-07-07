@@ -185,8 +185,9 @@ private fun DetectionConfigPanel(
                     ConfigItem("net_vpn", "VPN 检测", "检测 VPN 连接状态")
                 )
                 ConfigCategory.KERNEL -> listOf(
-                    ConfigItem("kern_kallsyms", "Kallsyms 检测", "检测内核符号表访问"),
-                    ConfigItem("kern_syscall", "Syscall 表", "检测系统调用表篡改")
+                    // kern_kallsyms removed — was a Ring0 /proc/kallsyms probe.
+                    // Syscall tamper detection now done in Ring3 via side-channel timing.
+                    ConfigItem("kern_syscall", "Syscall 一致性", "侧信道检测 syscall 表篡改")
                 )
             }
         }
