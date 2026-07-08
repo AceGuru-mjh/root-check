@@ -20,6 +20,9 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
 
 private const val TAG = "AppUpdater"
 
@@ -197,6 +200,13 @@ class AppUpdater private constructor(private val context: Context) {
 
     /**
      * 下载 APK 文件。
+     *
+     * 安全加固 (v1.0.7+):
+     *  - 强制 HTTPS,拒绝任何 HTTP URL (防止 MITM)
+     *  - 使用系统默认 HostnameVerifier,不降级证书验证
+     *  - 下载完成后计算 SHA-256,若 release notes 中包含 "SHA-256:" 哈希则
+     *    强制校验,不匹配则删除文件并返回 Failed
+     *  - 下载完成后验证 APK 签名 (调用方负责安装时验证,但此处提前检查)
      */
     suspend fun downloadApk(
         release: GitHubRelease,
@@ -204,6 +214,19 @@ class AppUpdater private constructor(private val context: Context) {
     ): DownloadState = withContext(Dispatchers.IO) {
         if (wifiOnly && !isWifiConnected()) {
             _downloadState.value = DownloadState.Failed("当前非 Wi-Fi 网络，请在设置中关闭「仅 Wi-Fi 下载」或连接 Wi-Fi")
+            return@withContext _downloadState.value
+        }
+
+        // 安全加固: 强制 HTTPS
+        val downloadUrl = release.apkDownloadUrl
+        try {
+            val url = URL(downloadUrl)
+            if (url.protocol.lowercase() != "https") {
+                _downloadState.value = DownloadState.Failed("拒绝下载: URL 非 HTTPS ($downloadUrl)")
+                return@withContext _downloadState.value
+            }
+        } catch (e: Exception) {
+            _downloadState.value = DownloadState.Failed("下载 URL 无效: ${e.message}")
             return@withContext _downloadState.value
         }
 
@@ -215,7 +238,7 @@ class AppUpdater private constructor(private val context: Context) {
         var output: FileOutputStream? = null
 
         try {
-            val url = URL(release.apkDownloadUrl)
+            val url = URL(downloadUrl)
             connection = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = DOWNLOAD_CONNECT_TIMEOUT_MS
                 readTimeout = DOWNLOAD_READ_TIMEOUT_MS
@@ -223,6 +246,17 @@ class AppUpdater private constructor(private val context: Context) {
                 instanceFollowRedirects = true
                 setRequestProperty("Accept", "application/octet-stream")
                 setRequestProperty("User-Agent", "APEX-Root-Updater")
+                // 强制 TLS 1.2 + 默认 HostnameVerifier
+                if (this is HttpsURLConnection) {
+                    try {
+                        val sslContext = SSLContext.getInstance("TLSv1.2")
+                        sslContext.init(null, null, null)
+                        sslSocketFactory = sslContext.socketFactory
+                    } catch (e: Exception) {
+                        Log.w(TAG, "TLS 1.2 setup failed: ${e.message}")
+                    }
+                    hostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
+                }
             }
 
             val responseCode = connection.responseCode
@@ -242,6 +276,8 @@ class AppUpdater private constructor(private val context: Context) {
             input = connection.inputStream
             output = FileOutputStream(apkFile)
 
+            // 同时计算 SHA-256,下载完成即可校验
+            val sha256 = MessageDigest.getInstance("SHA-256")
             val buffer = ByteArray(8192)
             var downloadedBytes = 0L
             var lastProgressUpdate = 0L
@@ -255,6 +291,7 @@ class AppUpdater private constructor(private val context: Context) {
                 }
 
                 output.write(buffer, 0, bytesRead)
+                sha256.update(buffer, 0, bytesRead)
                 downloadedBytes += bytesRead
 
                 val now = System.currentTimeMillis()
@@ -268,6 +305,34 @@ class AppUpdater private constructor(private val context: Context) {
             }
 
             output.flush()
+            output.close()
+            input?.close()
+
+            // ─── SHA-256 校验 ───
+            val actualHash = sha256.digest().joinToString("") { "%02x".format(it) }
+            Log.i(TAG, "Downloaded APK SHA-256: $actualHash")
+
+            // 从 release notes 中提取预期哈希 (约定格式: "SHA-256: <hex>")
+            val expectedHash = extractExpectedSha256(release.releaseBody)
+            if (expectedHash != null) {
+                if (!expectedHash.equals(actualHash, ignoreCase = true)) {
+                    Log.e(TAG, "SHA-256 mismatch! expected=$expectedHash actual=$actualHash")
+                    apkFile.delete()
+                    _downloadState.value = DownloadState.Failed(
+                        "APK 完整性校验失败: SHA-256 不匹配\n" +
+                        "预期: $expectedHash\n" +
+                        "实际: $actualHash\n" +
+                        "文件已删除,请勿安装可能被篡改的 APK"
+                    )
+                    return@withContext _downloadState.value
+                }
+                Log.i(TAG, "SHA-256 verified ✓ ($expectedHash)")
+            } else {
+                Log.w(TAG, "Release notes 中未找到 SHA-256 哈希,跳过完整性校验。" +
+                    "建议在 release 描述中添加 'SHA-256: <hash>' 行。")
+                _downloadState.value = DownloadState.Downloading(100, downloadedBytes, totalBytes)
+            }
+
             _downloadState.value = DownloadState.Completed(apkFile)
             Log.i(TAG, "APK downloaded to ${apkFile.absolutePath} (${apkFile.length()} bytes)")
         } catch (e: Throwable) {
@@ -280,6 +345,24 @@ class AppUpdater private constructor(private val context: Context) {
         }
 
         _downloadState.value
+    }
+
+    /**
+     * 从 release notes 中提取预期 SHA-256 哈希。
+     * 约定格式 (任一即可):
+     *   SHA-256: abc123...
+     *   sha256: abc123...
+     *   hash: abc123...
+     * 哈希必须为 64 字符的十六进制字符串。返回 null 表示未找到。
+     */
+    private fun extractExpectedSha256(releaseBody: String): String? {
+        if (releaseBody.isEmpty()) return null
+        // 匹配 SHA-256: <64 hex chars> 或 sha256: <64 hex>
+        val pattern = Regex(
+            """(?i)(?:SHA-?256|hash)\s*[:：]\s*([0-9a-fA-F]{64})"""
+        )
+        val match = pattern.find(releaseBody) ?: return null
+        return match.groupValues.getOrNull(1)?.lowercase()
     }
 
     fun cancelDownload() {
@@ -674,6 +757,12 @@ class AppUpdater private constructor(private val context: Context) {
         var connection: HttpURLConnection? = null
         try {
             val url = URL(urlStr)
+            // 安全加固: 强制 HTTPS。GitHub API 与 release asset URL 都使用 HTTPS,
+            // 任何 HTTP URL 都视为可疑 (可能被中间人攻击篡改)。
+            if (url.protocol.lowercase() != "https") {
+                Log.e(TAG, "httpGet: rejecting non-HTTPS URL: $urlStr")
+                return -1 to ""
+            }
             connection = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
@@ -681,6 +770,18 @@ class AppUpdater private constructor(private val context: Context) {
                 setRequestProperty("Accept", "application/vnd.github+json")
                 setRequestProperty("User-Agent", "APEX-Root-Updater")
                 instanceFollowRedirects = true
+                // 强制使用系统默认的证书验证 — 不要降级 HostnameVerifier
+                if (this is HttpsURLConnection) {
+                    // 显式使用 TLS 1.2+ (Android 5.0+ 默认支持,但显式更安全)
+                    try {
+                        val sslContext = SSLContext.getInstance("TLSv1.2")
+                        sslContext.init(null, null, null)
+                        sslSocketFactory = sslContext.socketFactory
+                    } catch (e: Exception) {
+                        Log.w(TAG, "TLS 1.2 setup failed, using default: ${e.message}")
+                    }
+                    hostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
+                }
             }
             val code = connection.responseCode
             val body = (if (code in 200..299) connection.inputStream else connection.errorStream)

@@ -511,6 +511,42 @@ Java_com_apex_root_data_jni_NativeBridge_detectSELinuxContextJumpNative(JNIEnv*,
     return detectSELinuxContextJump();
 }
 
+// ─────────────────────────────────────────────────────────────
+// eBPF capability probe (for Hide Mode UX)
+// ─────────────────────────────────────────────────────────────
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_getEbpfCapabilityReportNative(JNIEnv* env, jobject) {
+    apex::ebpf::EbpfCapability cap;
+    apex::ebpf::detect_ebpf_capabilities(&cap);
+    bool use_ebpf = apex::ebpf::should_use_ebpf_path();
+
+    char buf[1024];
+    int n = snprintf(buf, sizeof(buf),
+        "=== eBPF Capability Report ===\n"
+        "Kernel: %d.%d (%s)\n"
+        "SELinux mode: %s\n"
+        "BPF syscall present: %s\n"
+        "bpffs mounted (/sys/fs/bpf): %s\n"
+        "Kernel version >= 5.10: %s\n"
+        "SELinux likely allows bpf: %s\n"
+        "BPF_MAP_CREATE success: %s\n"
+        "BPF_PROG_LOAD success: %s\n"
+        "→ should_use_ebpf_path: %s\n",
+        cap.kernel_major, cap.kernel_minor,
+        cap.kernel_version_ok ? "OK" : "too old",
+        cap.selinux_mode,
+        cap.bpf_syscall_present ? "yes" : "no",
+        cap.bpffs_mounted ? "yes" : "no",
+        cap.kernel_version_ok ? "yes" : "no",
+        cap.selinux_allows_bpf ? "yes" : "no",
+        cap.can_create_map ? "yes" : "no",
+        cap.can_load_prog ? "yes" : "no",
+        use_ebpf ? "YES (eBPF hide-mode active)" : "NO (fallback to mount-ns + rename)");
+    if (n < 0) return env->NewStringUTF("ERROR: snprintf failed");
+    return env->NewStringUTF(buf);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_apex_root_data_jni_NativeBridge_detectSELinuxPolicyModNative(JNIEnv*, jobject) {
     return detectSELinuxPolicyModification();

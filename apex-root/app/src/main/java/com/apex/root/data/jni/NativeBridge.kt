@@ -52,6 +52,16 @@ object NativeBridge {
         detectSELinuxContextJumpNative()
     }
 
+    // ─── eBPF capability probe (Hide Mode UX) ─────────
+    /**
+     * Probe the kernel + SELinux environment for eBPF hide-mode support.
+     * Returns a human-readable report describing whether eBPF path will
+     * be used or whether hide-mode falls back to mount-namespace + rename.
+     */
+    fun getEbpfCapabilityReport(): String = NativeLibraryLoader.safeCall("eBPF capability probe unavailable") {
+        getEbpfCapabilityReportNative()
+    }
+
     fun detectSELinuxPolicyMod(): Boolean = NativeLibraryLoader.safeCall(false) {
         detectSELinuxPolicyModNative()
     }
@@ -256,6 +266,7 @@ object NativeBridge {
     private external fun deepMemoryScanReportNative(): String
     private external fun countRWXPagesNative(): Int
     private external fun detectSELinuxContextJumpNative(): Boolean
+    private external fun getEbpfCapabilityReportNative(): String
     private external fun detectSELinuxPolicyModNative(): Boolean
     private external fun selinuxFullScanNative(): String
     private external fun detectShamikoNative(): Boolean
