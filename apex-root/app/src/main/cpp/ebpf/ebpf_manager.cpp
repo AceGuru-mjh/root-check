@@ -423,48 +423,24 @@ bool hide_kernel_module(const char* mod_name) {
     return true; // Module already hidden or not loaded
 }
 
+// ═══════════════════════════════════════════════════════════
+//  protect_syscall_table() — REMOVED (Ring0 检测残留)
+// ----------------------------------------------------------------
+//  原实现读取 /proc/kallsyms 来定位 sys_call_table 的内核符号地址,
+//  并尝试写 /proc/sys/kernel/kptr_restrict 来"保护"它。这属于
+//  Ring0 (内核态) 检测路径, 与本仓库 "仅 Ring3 root 级检测" 的
+//  定位相违。在新版中:
+//
+//    - 内核 syscall 表 Hook 检测统一由 layer5_sidechannel.cpp
+//      的侧信道时序分析覆盖 (detectSyscallResultInconsistency)
+//    - 本函数保留为 no-op 占位符, 以维持 ABI 兼容 (调用方
+//      activate_game_mode / deactivate_game_mode 仍引用此符号),
+//      但不再读取 /proc/kallsyms
+//
+//  返回值: 始终为 true (与原实现的 "最佳情况" 语义一致)
+// ═══════════════════════════════════════════════════════════
 bool protect_syscall_table() {
-    char buf[16384];
-    if (!read_file("/proc/kallsyms", buf, sizeof(buf))) {
-        return true; // kallsyms restricted - syscall table likely protected
-    }
-
-    // Look for sys_call_table symbol
-    const char* mark = " sys_call_table";
-    const char* found = strstr(buf, mark);
-    if (!found) {
-        // sys_call_table not found in kallsyms - likely hidden via kptr_restrict
-        return true;
-    }
-
-    // Check if the address is zeroed out (kallsyms_lookup_name protection)
-    bool all_zero = true;
-    for (int i = 0; i < 16; i++) {
-        char c = *(found - 16 + i);
-        if (c != '0' && c != '\0' && c != '\n') { all_zero = false; break; }
-    }
-    if (all_zero) return true; // Already wiped
-
-    // Attempt to protect via /proc/sys/kernel/kptr_restrict
-    int64_t fd;
-    #if defined(__aarch64__)
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/sys/kernel/kptr_restrict"), "i"(O_WRONLY), "i"(0));
-    #else
-        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    if (fd >= 0) {
-        const char* val = "2";
-        int64_t n;
-        #if defined(__aarch64__)
-        asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                     : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(val), "r"(1) : "x0", "x1", "x2", "x8");
-        #else
-            n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-        #endif
-        close_fd(fd);
-    }
-
+    // No-op — see comment above. Avoids Ring0 /proc/kallsyms dependency.
     return true;
 }
 

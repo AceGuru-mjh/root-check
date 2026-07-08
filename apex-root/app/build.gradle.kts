@@ -26,15 +26,40 @@ android {
     // - 存在 apex-release.jks：debug/release 均使用该签名（便于与已安装版本共存）
     // - 不存在：debug 使用默认 debug 签名，release 产出 unsigned APK
     //   这样开箱即用，无需手动生成 keystore 即可构建 debug。
+    //
+    // 安全修复: 签名密钥密码不再硬编码于源码中。
+    //   优先从 gradle.properties (项目根,不入库) 读取;其次从环境变量读取。
+    //   读取顺序: APEX_STORE_PASS / APEX_KEY_PASS
+    //   (本地开发可在 ~/.gradle/gradle.properties 中设置)
     val ksFile = rootProject.file("apex-release.jks")
     val hasKeystore = ksFile.exists()
+    val apexStorePass = project.findProperty("APEX_STORE_PASS") as String?
+        ?: System.getenv("APEX_STORE_PASS")
+    val apexKeyPass = project.findProperty("APEX_KEY_PASS") as String?
+        ?: System.getenv("APEX_KEY_PASS")
+    val apexKeyAlias = project.findProperty("APEX_KEY_ALIAS") as String?
+        ?: System.getenv("APEX_KEY_ALIAS")
+        ?: "root"
+    // 只有 keystore 文件存在 且 密码可用时,才创建 release signingConfig。
+    // 这样既不破坏开源开发体验 (没有 keystore 时仍可 debug build),
+    // 也避免把密码泄露到源码历史里。
+    val hasSigningCreds = hasKeystore && !apexStorePass.isNullOrEmpty() && !apexKeyPass.isNullOrEmpty()
+    if (hasKeystore && !hasSigningCreds) {
+        logger.warn("APEX: apex-release.jks exists but APEX_STORE_PASS/APEX_KEY_PASS not set — " +
+            "set them in ~/.gradle/gradle.properties or env to sign release builds. " +
+            "Falling back to debug/unsigned.")
+    }
     signingConfigs {
-        if (hasKeystore) {
+        if (hasSigningCreds) {
             create("release") {
                 storeFile = ksFile
-                storePassword = "meng411722"
-                keyAlias = "root"
-                keyPassword = "meng411722"
+                storePassword = apexStorePass
+                keyAlias = apexKeyAlias
+                keyPassword = apexKeyPass
+                // 启用 v2/v3 签名方案,提高篡改难度
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
@@ -73,16 +98,17 @@ android {
 
     buildTypes {
         debug {
-            if (hasKeystore) {
+            if (hasSigningCreds) {
                 signingConfig = signingConfigs.getByName("release")
             }
             // 无 keystore 时使用默认 debug 签名，确保开箱可构建
         }
         release {
-            // 禁用混淆与资源压缩：保留完整代码，便于调试与日志排查
-            isMinifyEnabled = false
-            isShrinkResources = false
-            if (hasKeystore) {
+            // 启用混淆与资源压缩: 移除未使用代码,减小APK体积,提高逆向难度
+            // (此前因调试需要关闭,现已恢复 — proguard-rules.pro 已加全 JNI keep 规则)
+            isMinifyEnabled = true
+            isShrinkResources = true
+            if (hasSigningCreds) {
                 signingConfig = signingConfigs.getByName("release")
             }
             proguardFiles(

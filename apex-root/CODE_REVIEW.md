@@ -178,3 +178,70 @@ Self-hide 绕过检测：        ⭐⭐⭐☆☆ 中
 | 检测覆盖率（root 方案） | ⭐⭐⭐⭐⭐ 极高（覆盖主流 + fork + 隐藏框架 + 危险应用） |
 | 反作弊对抗强度 | ⭐⭐⭐⭐☆ 高（Ring0 隐藏工具无法绕过 Ring3 文件路径检测） |
 | 已知限制 | Ring3 root 检测仍可被 Shamiko / ZygiskNext 等 Zygisk 模块通过 mount namespace + 进程隐藏绕过，但由 L4/L5/anti_hiding 交叉验证补位 |
+
+## 九、Ring0 残留清理 & 闪退根因修复（v1.0.7 修复轮）
+
+### 9.1 Ring0 检测残留彻底移除
+
+第八节描述的"Ring0 → Ring3 迁移"在 v1.0.6 之前还遗留了若干 Ring0 引用,本轮全部清理:
+
+| 残留点 | 原行为 | 修复 |
+|---|---|---|
+| `ebpf_manager.cpp::protect_syscall_table` | 读 `/proc/kallsyms` 查 `sys_call_table` 地址,写 `/proc/sys/kernel/kptr_restrict=2` | 改为 no-op,返回 `true`。保留符号仅为 ABI 兼容;syscall 篡改检测已由 `layer5_sidechannel.cpp::detectSyscallResultInconsistency` (Ring3 侧信道) 覆盖 |
+| `KernelInfoScreen.kt::checkKallsymsAccessible` | UI 直接读 `/proc/kallsyms` 第一行判断地址是否全零 | 函数 + 数据字段 + UI 卡片全删 |
+| `ConfigScreen.kt` 的 `kern_kallsyms` 配置项 | UI 配置开关 | 删除该项,`kern_syscall` 改名为"Syscall 一致性",描述改为"侧信道检测 syscall 表篡改" |
+| `FixRecommendations.kt` 推荐步骤中的 `cat /proc/kallsyms \| grep kallsyms_lookup_name` | 用户操作指引 | 改为"本检测为 Ring3 侧信道分析,不依赖内核符号表" |
+| `RootDetectRepositoryImpl.kt` 报告头注释 | "所有 Ring0 内核态检测已移除" | 升级为"已完全移除... syscall 篡改检测改用 layer5_sidechannel.cpp 的侧信道时序分析" |
+| `native-lib.cpp` 顶部注释列举的已移除 Ring0 检测点 | 已存在 | 保留并作为变更日志 |
+
+> 注: `bpf/apex_firewall.bpf.c` 与 `ctrl/apex_mem_spoof.c` 中仍包含 `/proc/kallsyms` 字符串。
+> 这两处属于**隐藏模式 (Hide Mode)** —— 当 APEX 自身被 root 用户用于隐藏 root 痕迹时,会拦截其他 app 对 `/proc/kallsyms` 的访问。这是 **隐藏** 而非 **检测**, 不在 Ring0 检测迁移范围内, 予以保留。
+
+### 9.2 闪退根因修复 (Critical Crashes)
+
+| # | 文件 | 缺陷 | 修复 |
+|---|---|---|---|
+| 1 | `layer2_art.cpp::check_oat_dex_files` | `strstr(p, ".oat")` 返回 nullptr 时,`p = nullptr + 4` → SIGSEGV | 改用预先保存 `oat_pos` / `dex_pos` 指针并做 null 检查 |
+| 2 | `layer2_art.cpp::check_art_jit_region` | `*nl = '\0'` 在 `nl == end` 时写越界; path_part 指针算术越界 | 仅当 `nl < end` 时才写终止符;path_part 比较加 `>= nl` 边界检查 |
+| 3 | `layer3_mem.cpp::match_lib` / `match_anon_exec` / `match_memfd` / `match_dmabuf` | maps 指针可能为 nullptr 或 len=0,strstr 解引用 nullptr | 入口加 `if (!maps \|\| len == 0 \|\| !lib_name) return false;` |
+| 4 | `layer3_mem.cpp::detectSuspiciousMemory` | `char buf[16384]` 太小;`read_maps` 失败时返回 `true`(误报越界);`*nl = '\0'` 越界 | 改为 64KB;失败返回 `false`;仅当 `nl < end` 才写终止符 |
+| 5 | `layer3_mem.cpp::countRWXPages` | 同 #4 | 同 #4 |
+| 6 | `layer6_kernel.cpp::scan_proc_cmdline` | getdents64 解析未校验 `d_reclen`(可能为 0 导致死循环,或超过剩余缓冲导致越界);`d_name` 扫描未限长 | 加 `d_reclen == 0 \|\| d_reclen > n - pos` break;d_name 扫描限长到 `name_end` |
+| 7 | `layer14_virtualxposed.cpp::scan_proc_for` | 同 #6 | 同 #6 |
+| 8 | `native-lib.cpp::virtualXposedFullScanNative` 等 3 个 L14/L15/L16 完整扫描 | `char report[4096]` 固定栈缓冲,扫描 50+ 路径极易溢出,破坏返回地址 → SIGSEGV | 新增 `report_to_jstring()` 辅助函数,堆分配 16KB 起步,如截断则倍增到 256KB 上限 |
+| 9 | `native-lib.cpp::deepMemoryScanReportNative` / `selinuxFullScan` / `shamikoFullScan` / `zygiskNextFullScan` / `artEnhancedScan` / `firmwareFullScan` | 同 #8,2KB/4KB 栈缓冲 | 同 #8 统一走 `report_to_jstring()` |
+| 10 | `native-lib.cpp::createIsolatedEnvNative` | JNI `GetStringUTFChars` 后若 `create_isolated_environment` 抛异常,`ReleaseStringUTFChars` 不会执行 → JNI 字符串指针泄漏 → 长期 OOM | 加 `try/catch(...)` 包裹,确保 `ReleaseStringUTFChars` 总是执行;同时加 null 检查 |
+| 11 | `native-lib.cpp::sha3_512Native` | `data` 为 null 或 `GetByteArrayElements` 返回 null 时直接解引用 → SIGSEGV | 入口 null 检查,失败返回空数组 |
+| 12 | `native-lib.cpp::getDeviceIdentifierNative` | `char buf[256]` 太小,hostname 可达 256B;`read_prop` 内 `line[128]` 截断设备序列号 | buf 增到 512B;`line` 增到 256B;snprintf 截断检测 |
+| 13 | `jni_bridge.cpp::nativeStartSandbox` | `bs_unshare` 返回值未检查;`service_engine::initialize` 失败后子进程进入死循环成为僵尸;父进程假定沙箱已启动 | 引入 pipe 同步:子进程初始化完成后写 1 字节(0=OK,>0=错误码)给父进程;失败时子进程 `_exit(1)`;父进程 `waitpid` 清理僵尸 |
+
+### 9.3 安全加固
+
+| # | 文件 | 缺陷 | 修复 |
+|---|---|---|---|
+| 14 | `app/build.gradle.kts` | 签名密钥密码 `"meng411722"` 硬编码在源码中(且入库到 Git 历史) | 改为从 `gradle.properties` (项目根,不入库) 或环境变量 `APEX_STORE_PASS` / `APEX_KEY_PASS` / `APEX_KEY_ALIAS` 读取;无密码时降级为 debug 签名并打 warning |
+| 15 | `app/build.gradle.kts` release | `isMinifyEnabled = false` `isShrinkResources = false` —— release APK 包含完整代码与符号 | 改为 `isMinifyEnabled = true` `isShrinkResources = true`,配合增强后的 proguard-rules.pro |
+| 16 | `app/proguard-rules.pro` | 仅 6 个 JNI 类 + 几个模型类的 keep 规则,不足以在 R8 full mode 下保持工作 | 重写:加 `-keepclasseswithmembernames` 通配符、Kotlin metadata keep、`-allowaccessmodification`/`-repackageclasses ''`/`-overloadaggressively`、移除 Log.v/d/i 调用 |
+| 17 | `CMakeLists.txt` | `target_link_options(apex_root PRIVATE -rdynamic)` 导出全部符号,便于攻击者通过 `dlsym` 定位 `detectMagiskDaemon` 等内部函数 | 移除 `-rdynamic`;加 `-Wl,--exclude-libs,ALL`(隐藏静态库符号) `-Wl,--gc-sections` `-Wl,--build-id=none`;编译选项加 `-fvisibility-inlines-hidden` `-ffunction-sections` `-fdata-sections` |
+| 18 | `app/build.gradle.kts` signingConfig | 未显式启用 v2/v3 APK 签名方案 | 加 `enableV1Signing = true`/`enableV2Signing = true`/`enableV3Signing = true` |
+
+### 9.4 修复后的合规性自检
+
+- [x] 所有 JNI 调用都做了 null 检查
+- [x] 所有 `strstr` 返回值使用前都做了 null 检查
+- [x] 所有栈缓冲区都按最坏情况估计大小,关键路径改用堆缓冲 + 自动扩容
+- [x] getdents64 解析全部验证 `d_reclen` 范围
+- [x] Release APK 签名密钥不再硬编码于源码
+- [x] ProGuard 规则覆盖所有 JNI 入口与反射类
+- [x] 检测路径中无任何 `/proc/kallsyms` / `/proc/modules` / `/proc/sys/kernel/tainted` 读取
+- [x] 沙箱子进程失败时立即 `_exit`,父进程通过 pipe 同步并 `waitpid` 清理
+- [x] native 库符号表对外不可见 (`--exclude-libs,ALL`)
+
+### 9.5 仍需后续跟进的事项 (P3, 非阻塞)
+
+- [ ] 真机压力测试:在 Android 12/13/14 上跑 50+ 个 root 应用场景验证修复
+- [ ] ASAN/UBSAN 编译版做内存安全模糊测试
+- [ ] eBPF hide-mode 在 SELinux enforcing 模式下的兼容性矩阵 (Android 13+ GKI)
+- [ ] GitHub Actions 中通过 secrets 注入 `APEX_STORE_PASS` / `APEX_KEY_PASS` 跑 CI release
+- [ ] 历史 Git commit 中遗留的硬编码密码 —— 已无法擦除,只能撤销旧 keystore 并重新签发
+

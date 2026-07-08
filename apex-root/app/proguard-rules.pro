@@ -1,42 +1,86 @@
-# Keep JNI native methods — 方法名必须与 C++ JNI 符号 (Java_..._<name>Native) 一致
--keepclasseswithmembernames class com.apex.root.data.jni.NativeBridge {
+# ═══════════════════════════════════════════════════════════
+# APEX-Root ProGuard / R8 rules
+# ----------------------------------------------------------------
+# 全部 native 方法所在的类必须 keep — 否则 R8 重命名后, JNI
+# 符号 (Java_com_apex_root_...) 找不到对应的 Java 方法。
+# 同时保留所有 native 方法签名 (参数类型不能被混淆)。
+# ═══════════════════════════════════════════════════════════
+
+# ─── JNI bridge classes — keep class name + native method signatures ───
+-keep class com.apex.root.data.jni.NativeBridge {
     native <methods>;
 }
--keepclasseswithmembernames class com.apex.root.island.NativeIsland {
+-keep class com.apex.root.data.jni.NativeBridge$* { *; }
+
+-keep class com.apex.root.island.NativeIsland {
     native <methods>;
 }
--keepclasseswithmembernames class com.apex.root.cure.NativeCure {
+-keep class com.apex.root.cure.NativeCure {
     native <methods>;
 }
--keepclasseswithmembernames class com.apex.root.guard.NativeGuard {
+-keep class com.apex.root.guard.NativeGuard {
     native <methods>;
 }
--keepclasseswithmembernames class com.apex.root.game.NativeGameMode {
+-keep class com.apex.root.game.NativeGameMode {
     native <methods>;
 }
--keepclasseswithmembernames class com.apex.root.hid.NativeHwid {
+-keep class com.apex.root.hid.NativeHwid {
     native <methods>;
 }
 
-# Keep model classes (used by JNI / serialization)
+# JNI also requires the *declaring class* of native methods to retain its
+# exact name (the JNI symbol is mangled from the FQN). The
+# -keepclasseswithmembernames above only keeps the member name, not the
+# class name; for native methods we need both. The rules above are correct.
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# ─── JNI-referenced model classes (used in native signatures / reflection) ───
 -keep class com.apex.root.domain.model.** { *; }
 -keep class com.apex.root.domain.guard.model.** { *; }
+-keep class com.apex.root.domain.trust.model.** { *; }
+-keep class com.apex.root.core.error.AppError { *; }
 
-# Keep protobuf generated classes
+# ─── Protobuf generated classes (reflection-heavy) ───
 -keep class com.apex.root.ipc.** { *; }
 -keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { *; }
+-dontwarn com.google.protobuf.**
 
-# Keep Compose lifecycle / ViewModel
+# ─── Compose lifecycle / ViewModel (instantiated by reflection) ───
 -keep class com.apex.root.viewmodel.** { *; }
 -keep class com.apex.root.ApexRootApp { *; }
+-keep class com.apex.root.ui.MainActivity { *; }
 
-# ─── WorkManager — keep Worker classes (instantiated by reflection) ───
+# ─── WorkManager — Worker classes instantiated by reflection ───
 -keep class com.apex.root.work.** { *; }
 -keep class androidx.work.** { *; }
 -dontwarn androidx.work.**
 
+# ─── NotificationCompat (Notifier) ───
+-keep class com.apex.root.core.notification.** { *; }
+
 # ─── Kotlinx Serialization (used by some libs) ───
 -dontwarn kotlinx.serialization.**
 
-# ─── NotificationCompat (used by Notifier) ───
--keep class com.apex.root.core.notification.** { *; }
+# ─── Kotlin metadata — keep @Metadata annotation so reflection works ───
+-keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,RuntimeVisibleTypeAnnotations,Signature,InnerClasses,EnclosingMethod,*Annotation*
+
+# ─── Remove debug logs in release builds ───
+-assumenosideeffects class android.util.Log {
+    public static *** v(...);
+    public static *** d(...);
+    public static *** i(...);
+}
+# Keep __android_log_print calls (native logs) — they are not removed by R8.
+# This only strips Java-level Log.v/d/i calls.
+
+# ─── Optimization: inline trivial methods, allow R8 full mode ───
+-allowaccessmodification
+-overloadaggressively
+-repackageclasses ''
+-mergeinterfacesaggressively
+
+# ─── Kotlin coroutines internals ───
+-dontwarn kotlinx.coroutines.**
+-keep class kotlinx.coroutines.** { *; }

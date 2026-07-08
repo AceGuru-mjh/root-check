@@ -28,7 +28,8 @@ data class KernelInfo(
     val loadedModules: List<String>,
     val selinuxStatus: String,
     val teeVersion: String,
-    val kallsymsAccessible: Boolean,
+    // kallsymsAccessible removed — was a Ring0 /proc/kallsyms probe.
+    // Detection path is now Ring3-only (see layer5_sidechannel.cpp).
     val vbarAddress: String,
     val securityPatch: String
 )
@@ -134,14 +135,7 @@ fun KernelInfoScreen(onBack: () -> Unit = {}) {
                     item {
                         InfoCard(icon = Icons.Default.Shield, title = "安全补丁", value = kernelInfo.securityPatch)
                     }
-                    item {
-                        InfoCard(
-                            icon = Icons.Default.Visibility,
-                            title = "Kallsyms 访问",
-                            value = if (kernelInfo.kallsymsAccessible) "可访问" else "受限",
-                            valueColor = if (kernelInfo.kallsymsAccessible) AccentMint else ErrorRed
-                        )
-                    }
+                    // Kallsyms 访问 card removed — Ring0 probe, see KernelInfo data class.
                 }
 
                 item { Spacer(Modifier.height(32.dp)) }
@@ -200,7 +194,7 @@ private fun readKernelInfoFromDevice(): KernelInfo = runCatching {
         ?: "未知"
 
     val loadedModules = readLoadedModules()
-    val kallsymsAccessible = checkKallsymsAccessible()
+    // kallsymsAccessible check removed (Ring0 /proc/kallsyms probe).
 
     KernelInfo(
         kernelVersion = kernelVersion,
@@ -209,7 +203,6 @@ private fun readKernelInfoFromDevice(): KernelInfo = runCatching {
         loadedModules = loadedModules,
         selinuxStatus = selinux,
         teeVersion = "需 root 才能读取",
-        kallsymsAccessible = kallsymsAccessible,
         vbarAddress = "需 root 才能读取",
         securityPatch = securityPatch
     )
@@ -221,7 +214,6 @@ private fun readKernelInfoFromDevice(): KernelInfo = runCatching {
         loadedModules = emptyList(),
         selinuxStatus = "未知",
         teeVersion = "未知",
-        kallsymsAccessible = false,
         vbarAddress = "未知",
         securityPatch = "未知"
     )
@@ -256,11 +248,6 @@ private fun readLoadedModules(): List<String> = runCatching {
     }
 }.getOrDefault(emptyList())
 
-private fun checkKallsymsAccessible(): Boolean = runCatching {
-    val f = File("/proc/kallsyms")
-    if (!f.exists()) return false
-    val first = f.bufferedReader().readLine() ?: return false
-    // 非特权进程读取时，地址通常为 0；若能读到非零地址则视为可访问
-    val addr = first.substringBefore(' ').trim()
-    addr.isNotEmpty() && addr != "0" && addr.any { it != '0' }
-}.getOrDefault(false)
+// checkKallsymsAccessible() removed — Ring0 /proc/kallsyms probe.
+// Syscall-tamper detection is now done in Ring3 via
+// NativeBridge.detectSyscallResultInconsistency() (layer5_sidechannel.cpp).

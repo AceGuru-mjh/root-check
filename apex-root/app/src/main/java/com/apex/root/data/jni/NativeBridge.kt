@@ -85,8 +85,9 @@ object NativeBridge {
         detectMountNamespaceHidingNative()
     }
 
-    // 已移除：detectSyscallTableHook() — Ring0 检测，依赖 /proc/kallsyms
-    // 改用：detectSyscallResultInconsistency() — 用户态 syscall 结果一致性检测
+    // Ring0 /proc/kallsyms-based detectSyscallTableHook() fully removed.
+    // Syscall tamper detection is now Ring3-only:
+    //   detectSyscallResultInconsistency() — user-mode syscall result consistency.
     fun detectSyscallResultInconsistency(): Boolean = NativeLibraryLoader.safeCall(false) {
         detectSyscallResultInconsistencyNative()
     }
@@ -263,7 +264,7 @@ object NativeBridge {
     private external fun zygiskNextFullScanNative(): String
     private external fun detectProcessHidingNative(): Boolean
     private external fun detectMountNamespaceHidingNative(): Boolean
-    // 已移除：detectSyscallTableHookNative — Ring0 检测
+    // Ring0 detectSyscallTableHookNative removed — replaced by Ring3 side-channel.
     private external fun detectSyscallResultInconsistencyNative(): Boolean
     private external fun artEnhancedScanNative(): String
     private external fun detectXposedFrameworkNative(): Boolean

@@ -143,8 +143,23 @@ add_library(apex_root SHARED
 )
 target_include_directories(apex_root PRIVATE ${CORE_INCLUDE_DIRS})
 target_link_libraries(apex_root PRIVATE baresyscall trusted_root ${LIBOQS_TARGET} dl log)
-target_link_options(apex_root PRIVATE -rdynamic)
-target_compile_options(apex_root PRIVATE -fvisibility=hidden -fstack-protector-strong)
+# 安全加固:
+#   - 移除 -rdynamic (会导出全部符号, 便于攻击者定位 detectMagiskDaemon 等内部函数)
+#   - 添加 -Wl,--exclude-libs,ALL 隐藏所有静态库 (liboqs / baresyscall / trusted_root) 的符号
+#   - 仍保留 JNI 入口 (Java_com_apex_root_*) — 它们由 JNI ABI 调用, 必须可见
+#   - 启用 -fstack-protector-strong 与 -fvisibility=hidden (后者已在 target_compile_options)
+target_link_options(apex_root PRIVATE
+    -Wl,--exclude-libs,ALL
+    -Wl,--gc-sections
+    -Wl,--build-id=none
+)
+target_compile_options(apex_root PRIVATE
+    -fvisibility=hidden
+    -fvisibility-inlines-hidden
+    -fstack-protector-strong
+    -ffunction-sections
+    -fdata-sections
+)
 
 # ─── 20 micro-service plugins (individual .so files) ─────
 set(PLUGIN_DIRS

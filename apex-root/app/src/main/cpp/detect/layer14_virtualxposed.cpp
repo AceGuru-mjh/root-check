@@ -76,23 +76,30 @@ static bool scan_proc_for(const char* needle) {
         char d_name[];
     };
     size_t pos = 0;
-    while (pos < (size_t)n) {
+    while (pos + sizeof(linux_dirent64) <= (size_t)n) {
         auto* dirent = (linux_dirent64*)(dentry_buf + pos);
+        // Defensive validation — see layer6_kernel.cpp for rationale.
+        if (dirent->d_reclen == 0 || dirent->d_reclen > (size_t)n - pos) {
+            break;
+        }
         if (dirent->d_type == 4) {
+            const char* name_end = (const char*)dirent + dirent->d_reclen;
             bool all_digits = true;
-            for (int i = 0; dirent->d_name[i]; i++) {
-                if (dirent->d_name[i] < '0' || dirent->d_name[i] > '9') {
+            bool any_char = false;
+            for (const char* c = dirent->d_name; c < name_end && *c; c++) {
+                any_char = true;
+                if (*c < '0' || *c > '9') {
                     all_digits = false; break;
                 }
             }
-            if (all_digits && dirent->d_name[0]) {
+            if (any_char && all_digits) {
                 char cmdline_path[64];
                 int idx = 0;
                 const char* pfx = "/proc/";
-                for (int i = 0; pfx[i]; i++) cmdline_path[idx++] = pfx[i];
-                for (int i = 0; dirent->d_name[i]; i++) cmdline_path[idx++] = dirent->d_name[i];
+                for (int i = 0; pfx[i] && idx < (int)sizeof(cmdline_path) - 1; i++) cmdline_path[idx++] = pfx[i];
+                for (int i = 0; dirent->d_name[i] && idx < (int)sizeof(cmdline_path) - 1; i++) cmdline_path[idx++] = dirent->d_name[i];
                 const char* sfx = "/cmdline";
-                for (int i = 0; sfx[i]; i++) cmdline_path[idx++] = sfx[i];
+                for (int i = 0; sfx[i] && idx < (int)sizeof(cmdline_path) - 1; i++) cmdline_path[idx++] = sfx[i];
                 cmdline_path[idx] = '\0';
                 char buf[512];
                 if (read_file(cmdline_path, buf, sizeof(buf)) && strstr(buf, needle)) {
