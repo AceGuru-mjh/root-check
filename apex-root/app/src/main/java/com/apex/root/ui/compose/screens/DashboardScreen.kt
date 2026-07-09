@@ -38,6 +38,7 @@ fun DashboardScreen(
     uiState: ApexUiState,
     onScan: () -> Unit,
     onDeepScan: (() -> Unit)? = null,
+    onParallelScan: (() -> Unit)? = null,
     onToggleGameMode: () -> Unit,
     onApplyCure: (CureLevel) -> Unit,
     onToggleHwid: () -> Unit,
@@ -61,6 +62,10 @@ fun DashboardScreen(
     onNavigateToPermissions: (() -> Unit)? = null,
     onNavigateToLogs: (() -> Unit)? = null,
     onNavigateToUpdate: (() -> Unit)? = null,
+    onNavigateToGuard: (() -> Unit)? = null,
+    onEstablishBaseline: (() -> Unit)? = null,
+    onStartGuardMonitor: (() -> Unit)? = null,
+    onStopGuardMonitor: (() -> Unit)? = null,
     apexViewModel: ApexViewModel? = null
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -153,7 +158,7 @@ fun DashboardScreen(
                     Spacer(Modifier.height(12.dp))
                 }
 
-                QuickActionsRow(onScan, onDeepScan, uiState.isScanning)
+                QuickActionsRow(onScan, onDeepScan, onParallelScan, uiState.isScanning)
 
                 Spacer(Modifier.height(16.dp))
 
@@ -498,7 +503,12 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun QuickActionsRow(onScan: () -> Unit, onDeepScan: (() -> Unit)?, isScanning: Boolean) {
+private fun QuickActionsRow(
+    onScan: () -> Unit,
+    onDeepScan: (() -> Unit)?,
+    onParallelScan: (() -> Unit)?,
+    isScanning: Boolean
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -517,6 +527,18 @@ private fun QuickActionsRow(onScan: () -> Unit, onDeepScan: (() -> Unit)?, isSca
             Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(if (isScanning) "扫描中..." else "快速检测", fontWeight = FontWeight.SemiBold, letterSpacing = 0.3.sp)
+        }
+        if (onParallelScan != null) {
+            OutlinedButton(
+                onClick = onParallelScan, enabled = !isScanning,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(vertical = 14.dp)
+            ) {
+                Icon(Icons.Default.Bolt, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("并行扫描", fontWeight = FontWeight.SemiBold, letterSpacing = 0.3.sp)
+            }
         }
         if (onDeepScan != null) {
             OutlinedButton(
