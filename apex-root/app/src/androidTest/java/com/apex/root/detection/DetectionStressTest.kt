@@ -329,6 +329,74 @@ class DetectionStressTest {
         assert(!baseline.hasBaseline())
     }
 
+    // ─── v1.2.0 Parallel scan stability (10 consecutive runs) ───
+    @Test
+    fun test32_parallel_scan_stability() {
+        val engine = com.apex.root.domain.parallel.ParallelDetectionEngine()
+        kotlinx.coroutines.runBlocking {
+            var prevRisk = -1
+            var maxMs = 0L
+            repeat(10) { i ->
+                val result = engine.scanParallel()
+                Log.i(TAG, "[PARALLEL_STAB] iter $i: risk=${result.totalRiskScore}, " +
+                    "layers=${result.detectedCount}/${result.totalLayers}, " +
+                    "time=${result.totalLatencyMs}ms")
+                if (prevRisk >= 0) {
+                    // Risk score should be stable across runs (no flapping)
+                    assert(result.totalRiskScore == prevRisk) {
+                        "Risk score flapped: $prevRisk → ${result.totalRiskScore}"
+                    }
+                }
+                prevRisk = result.totalRiskScore
+                maxMs = maxOf(maxMs, result.totalLatencyMs)
+                engine.reset()
+            }
+            Log.i(TAG, "[PARALLEL_STAB] 10 iters done, max=${maxMs}ms, final risk=$prevRisk")
+            if (com.apex.root.core.NativeLibraryLoader.isAvailable) {
+                assert(maxMs < 15_000L) {
+                    "Max parallel scan time ${maxMs}ms exceeds 15s"
+                }
+            }
+        }
+    }
+
+    // ─── v1.2.0 RealtimeGuardMonitor start/stop/check lifecycle ───
+    @Test
+    fun test33_guard_monitor_lifecycle() {
+        val ctx = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val monitor = com.apex.root.domain.parallel.RealtimeGuardMonitor(ctx)
+        monitor.clearBaseline()
+        assert(!monitor.hasBaseline())
+
+        kotlinx.coroutines.runBlocking {
+            // Establish baseline first
+            monitor.establishBaseline()
+            assert(monitor.hasBaseline())
+
+            // Single check
+            monitor.checkNow()
+            // Give it a moment to process
+            kotlinx.coroutines.delay(500)
+            val state = monitor.state.value
+            Log.i(TAG, "[GUARD] state: $state")
+            assert(state.lastCheckTimestamp != null) { "checkNow should set timestamp" }
+        }
+
+        // Start monitor with short interval (30s — minimum allowed)
+        monitor.start(30_000L)
+        assert(monitor.state.value.isActive)
+        kotlinx.coroutines.runBlocking { kotlinx.coroutines.delay(200) }
+        assert(monitor.state.value.isActive)
+
+        monitor.stop()
+        assert(!monitor.state.value.isActive)
+
+        // Cleanup
+        monitor.clearBaseline()
+        assert(!monitor.hasBaseline())
+        Log.i(TAG, "[GUARD] lifecycle test complete")
+    }
+
     @Test
     fun test21_mem_fingerprint() = stressBooleanCall("MEM_mask") {
         val mask = NativeBridge.fullMemoryFingerprint()

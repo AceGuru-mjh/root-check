@@ -40,6 +40,7 @@ import com.apex.root.ui.compose.screens.FeatureTestScreen
 import com.apex.root.ui.compose.screens.FridaConsoleScreen
 import com.apex.root.ui.compose.screens.GlassLogViewerScreen
 import com.apex.root.ui.compose.screens.GlassPermissionGuideScreen
+import com.apex.root.ui.compose.screens.GuardMonitorScreen
 import com.apex.root.ui.compose.screens.HideModeScreen
 import com.apex.root.ui.compose.screens.HistoryScreen
 import com.apex.root.ui.compose.screens.KernelInfoScreen
@@ -205,6 +206,7 @@ private fun MainApp(
                         uiState = uiState,
                         onScan = { apexViewModel.runScan() },
                         onDeepScan = { apexViewModel.runDeepScan() },
+                        onParallelScan = { apexViewModel.runParallelScan() },
                         onToggleGameMode = { apexViewModel.toggleGameMode() },
                         onApplyCure = { level -> apexViewModel.applyCure(level) },
                         onToggleHwid = { apexViewModel.toggleHwidSpoof() },
@@ -227,6 +229,10 @@ private fun MainApp(
                         onNavigateToLSPosed = { navController.navigate("lsposed_manager") },
                         onNavigateToPermissions = { navController.navigate("permissions") },
                         onNavigateToUpdate = { navController.navigate("update") },
+                        onNavigateToGuard = { navController.navigate("guard_monitor") },
+                        onEstablishBaseline = { apexViewModel.establishBaseline() },
+                        onStartGuardMonitor = { apexViewModel.startGuardMonitor() },
+                        onStopGuardMonitor = { apexViewModel.stopGuardMonitor() },
                         apexViewModel = apexViewModel
                     )
                 }
@@ -398,6 +404,17 @@ private fun MainApp(
                 ) {
                     UpdateScreen(
                         viewModel = updateViewModel,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = "guard_monitor",
+                    enterTransition = { slideInHorizontally(initialOffsetX = { it }) + fadeIn(tween(300)) },
+                    exitTransition = { slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(300)) }
+                ) {
+                    GuardMonitorScreen(
+                        uiState = uiState,
+                        viewModel = apexViewModel,
                         onBack = { navController.popBackStack() }
                     )
                 }
