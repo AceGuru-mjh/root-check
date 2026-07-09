@@ -228,6 +228,107 @@ class DetectionStressTest {
     @Test
     fun test20_ebpf_capability() = stressStringCall("EBPF_cap", NativeBridge::getEbpfCapabilityReport)
 
+    // ─── v1.1.0 L17-L20 new detection layers ───
+    @Test
+    fun test25_l17_modern_root_forks() {
+        stressBooleanCall("L17_sukisu", NativeBridge::detectSukiSU)
+        stressBooleanCall("L17_sukisuUltra", NativeBridge::detectSukiSUUltra)
+        stressBooleanCall("L17_rezygiskV2", NativeBridge::detectReZygiskV2)
+        stressBooleanCall("L17_magiskDelta", NativeBridge::detectMagiskDelta)
+        stressBooleanCall("L17_modernForksV2", NativeBridge::detectModernRootForksV2)
+        stressStringCall("L17_fullScan", NativeBridge::modernRootForksFullScan)
+    }
+
+    @Test
+    fun test26_l18_apatch_kpm() {
+        stressBooleanCall("L18_kpm", NativeBridge::detectAPatchKPM)
+        stressBooleanCall("L18_trampoline", NativeBridge::detectAPatchTrampoline)
+        stressBooleanCall("L18_kp", NativeBridge::detectKernelPatchProject)
+        stressStringCall("L18_fullScan", NativeBridge::apatchKpmFullScan)
+    }
+
+    @Test
+    fun test27_l19_hide_frameworks() {
+        stressBooleanCall("L19_zygiskAsst", NativeBridge::detectZygiskAssistant)
+        stressBooleanCall("L19_persistentScripts", NativeBridge::detectPersistentScripts)
+        stressStringCall("L19_fullScan", NativeBridge::hideFrameworksFullScan)
+    }
+
+    @Test
+    fun test28_l20_modern_hooks() {
+        stressBooleanCall("L20_artHooks", NativeBridge::detectModernArtHooks)
+        stressBooleanCall("L20_fridaVariants", NativeBridge::detectFridaVariants)
+        stressBooleanCall("L20_lspatch", NativeBridge::detectLSPatch)
+        stressBooleanCall("L20_modernHooks", NativeBridge::detectModernHookFrameworks)
+        stressStringCall("L20_fullScan", NativeBridge::modernHooksFullScan)
+    }
+
+    // ─── v1.1.0 Parallel engine + cross-validation ───
+    @Test
+    fun test29_parallel_engine() {
+        val engine = com.apex.root.domain.parallel.ParallelDetectionEngine()
+        kotlinx.coroutines.runBlocking {
+            val result = engine.scanParallel()
+            Log.i(TAG, "[PARALLEL] ${result.detectedCount}/${result.totalLayers} layers, " +
+                "risk=${result.totalRiskScore}, time=${result.totalLatencyMs}ms")
+            if (com.apex.root.core.NativeLibraryLoader.isAvailable) {
+                assert(result.totalLatencyMs < 10_000L) {
+                    "Parallel scan took ${result.totalLatencyMs}ms — exceeds 10s budget"
+                }
+            }
+            assert(result.layers.size == 19) {
+                "Expected 19 layer results, got ${result.layers.size}"
+            }
+        }
+    }
+
+    @Test
+    fun test30_cross_validation() {
+        val engine = com.apex.root.domain.parallel.ParallelDetectionEngine()
+        kotlinx.coroutines.runBlocking {
+            val base = engine.scanParallel()
+            val validated = com.apex.root.domain.parallel.CrossValidator.validate(base)
+            Log.i(TAG, "[XVAL] confidence=${validated.confidence}%, " +
+                "rootType=${validated.inferredRootType}, " +
+                "highConf=${validated.isHighConfidence}, " +
+                "likelyFP=${validated.isLikelyFalsePositive}")
+            Log.i(TAG, "[XVAL] conclusion: ${validated.conclusion}")
+            assert(validated.confidence in 0..100) {
+                "Confidence ${validated.confidence} out of range"
+            }
+        }
+    }
+
+    @Test
+    fun test31_baseline_capture_and_diff() {
+        val ctx = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val baseline = com.apex.root.domain.parallel.DeviceFingerprintBaseline(ctx)
+        baseline.clearBaseline()
+        assert(!baseline.hasBaseline())
+
+        kotlinx.coroutines.runBlocking {
+            val engine = com.apex.root.domain.parallel.ParallelDetectionEngine()
+            val scanResult = engine.scanParallel()
+            val snapshot = baseline.captureSnapshot(scanResult)
+            val saved = baseline.saveBaseline(snapshot)
+            assert(saved) { "Failed to save baseline" }
+            assert(baseline.hasBaseline())
+
+            val loaded = baseline.loadBaseline()
+            assert(loaded != null) { "Failed to load baseline" }
+            assert(loaded!!.riskScore == snapshot.riskScore)
+
+            val diff = baseline.diff(snapshot)
+            assert(diff != null) { "Diff returned null despite baseline existing" }
+            assert(diff!!.newDetectedLayers.isEmpty()) {
+                "Self-diff should have no new layers, got ${diff.newDetectedLayers}"
+            }
+        }
+
+        baseline.clearBaseline()
+        assert(!baseline.hasBaseline())
+    }
+
     @Test
     fun test21_mem_fingerprint() = stressBooleanCall("MEM_mask") {
         val mask = NativeBridge.fullMemoryFingerprint()

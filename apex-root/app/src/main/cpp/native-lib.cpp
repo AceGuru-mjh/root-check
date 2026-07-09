@@ -20,6 +20,10 @@
 #include "detect/layer14_virtualxposed.h"
 #include "detect/layer15_dangerous_apps.h"
 #include "detect/layer16_magisk_extensions.h"
+#include "detect/layer17_modern_root_forks.h"
+#include "detect/layer18_apatch_kpm.h"
+#include "detect/layer19_hide_frameworks.h"
+#include "detect/layer20_modern_hooks.h"
 #include "detect/selinux_context.h"
 #include "detect/anti_hiding.h"
 #include "namespace/namespace_isolation.h"
@@ -39,7 +43,7 @@
 extern "C" {
 
 // ─────────────────────────────────────────────────────────────
-// APEX-Detect: Full 16-layer detection (Ring3 root-level only)
+// APEX-Detect: Full 20-layer detection (Ring3 root-level only)
 // ----------------------------------------------------------------
 // 已移除所有 Ring0 内核态检测：
 //   - /proc/kallsyms 扫描
@@ -48,10 +52,15 @@ extern "C" {
 //   - /sys/kpm sysfs KPM 节点
 //   - /proc/kernelsu 内核 API
 //   - syscall_table 符号检查
-// 新增检测层：
-//   - L14: VirtualXposed / 太极 / 双开分身
-//   - L15: 危险应用 (GameGuardian / CE / Lucky Patcher 等)
-//   - L16: Magisk 扩展 (DenyList / ZygiskNext / ReZygisk / LSPosed / Riru)
+// 检测层 (v1.1.0 扩展到 20 层):
+//   L1-L13: 原 16 层架构 (1-13)
+//   L14: VirtualXposed / 太极 / 双开分身
+//   L15: 危险应用 (GameGuardian / CE / Lucky Patcher 等)
+//   L16: Magisk 扩展 (DenyList / ZygiskNext / ReZygisk / LSPosed / Riru)
+//   L17: 现代 Root Fork (SukiSU / Magisk Delta / Kitsune / ReZygisk variants) [v1.1.0]
+//   L18: APatch KPM 用户态 + Trampoline + KernelPatch [v1.1.0]
+//   L19: 隐藏框架 (Zygisk-Assistant / AML / MagiskFrida / 持久化脚本) [v1.1.0]
+//   L20: 现代 Hook 框架 (Pine/SandHook/ByteHook/ShadowHook/Frida variants/LSPatch) [v1.1.0]
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jstring JNICALL
@@ -76,6 +85,12 @@ Java_com_apex_root_data_jni_NativeBridge_runQuickScanNative(JNIEnv* env, jobject
                detectGameKiller() || detectMemoryEditors() || detectCrackingTools();
     bool l16 = detectMagiskDenyList() || detectZygiskModules() ||
                detectLSPosedManager() || detectRiruModules() || detectModernForks();
+    // v1.1.0 新增四层检测
+    bool l17 = detectModernRootForks();
+    bool l18 = detectAPatchKPMUsermode() || detectAPatchTrampoline() ||
+               detectAPatchComponents() || detectKernelPatchProject();
+    bool l19 = detectModernHideFrameworks();
+    bool l20 = detectModernHookFrameworks();
 
     result += "L1 系统属性:     " + std::string(l1 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L2 ART注入:      " + std::string(l2 ? "❌ 异常" : "✅ 正常") + "\n";
@@ -92,14 +107,19 @@ Java_com_apex_root_data_jni_NativeBridge_runQuickScanNative(JNIEnv* env, jobject
     result += "L14 虚拟框架:    " + std::string(l14 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L15 危险应用:    " + std::string(l15 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L16 Magisk扩展:  " + std::string(l16 ? "❌ 异常" : "✅ 正常") + "\n";
+    result += "L17 Root Fork:   " + std::string(l17 ? "❌ 异常" : "✅ 正常") + "\n";
+    result += "L18 APatch KPM:  " + std::string(l18 ? "❌ 异常" : "✅ 正常") + "\n";
+    result += "L19 隐藏框架:    " + std::string(l19 ? "❌ 异常" : "✅ 正常") + "\n";
+    result += "L20 现代Hook:    " + std::string(l20 ? "❌ 异常" : "✅ 正常") + "\n";
 
     int risk_count = (l1?1:0)+(l2?1:0)+(l3?1:0)+(l4?1:0)+(l5?1:0)+(l6?1:0)+(l7?1:0)+
                      (l8?1:0)+(l9?1:0)+(l10?1:0)+(l11?1:0)+(l12?1:0)+
-                     (l14?1:0)+(l15?1:0)+(l16?1:0);
-    result += "\n风险指标: " + std::to_string(risk_count) + "/15\n";
+                     (l14?1:0)+(l15?1:0)+(l16?1:0)+
+                     (l17?1:0)+(l18?1:0)+(l19?1:0)+(l20?1:0);
+    result += "\n风险指标: " + std::to_string(risk_count) + "/19\n";
     if (risk_count == 0) result += "结论: ✅ 设备安全\n";
-    else if (risk_count <= 3) result += "结论: ⚠️ 轻度风险\n";
-    else if (risk_count <= 7) result += "结论: ⚠️ 中等风险\n";
+    else if (risk_count <= 4) result += "结论: ⚠️ 轻度风险\n";
+    else if (risk_count <= 9) result += "结论: ⚠️ 中等风险\n";
     else result += "结论: ❌ 高风险\n";
 
     return env->NewStringUTF(result.c_str());
@@ -112,7 +132,13 @@ Java_com_apex_root_data_jni_NativeBridge_isDeviceRootedNative(JNIEnv*, jobject) 
            detectMagiskDaemon() || detectKernelSU() || detectAPatch() ||
            detectXposedFramework() || detectMagiskDenyList() ||
            detectZygiskModules() || detectLSPosedManager() ||
-           detectRiruModules() || detectModernForks();
+           detectRiruModules() || detectModernForks() ||
+           // v1.1.0 新增检测层
+           detectModernRootForks() ||
+           detectAPatchKPMUsermode() || detectAPatchTrampoline() ||
+           detectAPatchComponents() || detectKernelPatchProject() ||
+           detectModernHideFrameworks() ||
+           detectModernHookFrameworks();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -261,6 +287,12 @@ Java_com_apex_root_data_jni_NativeBridge_getRiskScoreNative(JNIEnv*, jobject) {
     if (detectLSPosedManager()) score += 5;
     if (detectRiruModules()) score += 4;
     if (detectModernForks()) score += 3;
+    // v1.1.0 新增检测层评分
+    if (detectModernRootForks()) score += 8;         // SukiSU/Magisk Delta 等现代 fork
+    if (detectAPatchKPMUsermode() || detectAPatchTrampoline() ||
+        detectAPatchComponents() || detectKernelPatchProject()) score += 8;
+    if (detectModernHideFrameworks()) score += 7;    // Zygisk-Assistant/AML/MagiskFrida
+    if (detectModernHookFrameworks()) score += 9;    // Pine/SandHook/Frida variants/LSPatch
     return score > 100 ? 100 : score;
 }
 
@@ -383,6 +415,110 @@ Java_com_apex_root_data_jni_NativeBridge_magiskExtensionsFullScanNative(JNIEnv* 
     return report_to_jstring(env, [](char* b, size_t s) -> int {
         return magiskExtensionsFullScan(b, s);
     });
+}
+
+// ─────────────────────────────────────────────────────────────
+// v1.1.0 新增: L17-L20 完整扫描接口
+// ─────────────────────────────────────────────────────────────
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_modernRootForksFullScanNative(JNIEnv* env, jobject) {
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return modernRootForksFullScan(b, s);
+    });
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_apatchKpmFullScanNative(JNIEnv* env, jobject) {
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return apatchKpmFullScan(b, s);
+    });
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_hideFrameworksFullScanNative(JNIEnv* env, jobject) {
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return hideFrameworksFullScan(b, s);
+    });
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_modernHooksFullScanNative(JNIEnv* env, jobject) {
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return modernHooksFullScan(b, s);
+    });
+}
+
+// ─── L17-L20 单项 boolean 检测 ───
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectModernRootForksV2Native(JNIEnv*, jobject) {
+    return detectModernRootForks();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectSukiSUNative(JNIEnv*, jobject) {
+    return detectSukiSU();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectSukiSUUltraNative(JNIEnv*, jobject) {
+    return detectSukiSUUltra();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectReZygiskV2Native(JNIEnv*, jobject) {
+    return detectReZygisk();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectMagiskDeltaNative(JNIEnv*, jobject) {
+    return detectMagiskDelta();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectAPatchKPMNative(JNIEnv*, jobject) {
+    return detectAPatchKPMUsermode();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectAPatchTrampolineNative(JNIEnv*, jobject) {
+    return detectAPatchTrampoline();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectKernelPatchProjectNative(JNIEnv*, jobject) {
+    return detectKernelPatchProject();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectZygiskAssistantNative(JNIEnv*, jobject) {
+    return detectZygiskAssistant();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectPersistentScriptsNative(JNIEnv*, jobject) {
+    return detectPersistentScripts();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectModernArtHooksNative(JNIEnv*, jobject) {
+    return detectModernArtHooks();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectFridaVariantsNative(JNIEnv*, jobject) {
+    return detectFridaVariants();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectLSPatchNative(JNIEnv*, jobject) {
+    return detectLSPatch();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectModernHookFrameworksNative(JNIEnv*, jobject) {
+    return detectModernHookFrameworks();
 }
 
 JNIEXPORT jboolean JNICALL

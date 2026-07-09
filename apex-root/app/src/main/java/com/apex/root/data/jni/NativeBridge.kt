@@ -198,6 +198,43 @@ object NativeBridge {
         magiskExtensionsFullScanNative()
     }
 
+    // ─── v1.1.0 新增: L17-L20 检测层 ──────────────────
+    /** L17: 现代 Root Fork (SukiSU / Magisk Delta / Kitsune / ReZygisk variants) */
+    fun detectModernRootForksV2(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectModernRootForksV2Native()
+    }
+    fun detectSukiSU(): Boolean = NativeLibraryLoader.safeCall(false) { detectSukiSUNative() }
+    fun detectSukiSUUltra(): Boolean = NativeLibraryLoader.safeCall(false) { detectSukiSUUltraNative() }
+    fun detectReZygiskV2(): Boolean = NativeLibraryLoader.safeCall(false) { detectReZygiskV2Native() }
+    fun detectMagiskDelta(): Boolean = NativeLibraryLoader.safeCall(false) { detectMagiskDeltaNative() }
+    fun modernRootForksFullScan(): String = NativeLibraryLoader.safeCall("") {
+        modernRootForksFullScanNative()
+    }
+
+    /** L18: APatch KPM 用户态 + Trampoline + KernelPatch */
+    fun detectAPatchKPM(): Boolean = NativeLibraryLoader.safeCall(false) { detectAPatchKPMNative() }
+    fun detectAPatchTrampoline(): Boolean = NativeLibraryLoader.safeCall(false) { detectAPatchTrampolineNative() }
+    fun detectKernelPatchProject(): Boolean = NativeLibraryLoader.safeCall(false) { detectKernelPatchProjectNative() }
+    fun apatchKpmFullScan(): String = NativeLibraryLoader.safeCall("") {
+        apatchKpmFullScanNative()
+    }
+
+    /** L19: 隐藏框架 (Zygisk-Assistant / AML / MagiskFrida / 持久化脚本) */
+    fun detectZygiskAssistant(): Boolean = NativeLibraryLoader.safeCall(false) { detectZygiskAssistantNative() }
+    fun detectPersistentScripts(): Boolean = NativeLibraryLoader.safeCall(false) { detectPersistentScriptsNative() }
+    fun hideFrameworksFullScan(): String = NativeLibraryLoader.safeCall("") {
+        hideFrameworksFullScanNative()
+    }
+
+    /** L20: 现代 Hook 框架 (Pine/SandHook/ByteHook/ShadowHook/Frida variants/LSPatch) */
+    fun detectModernArtHooks(): Boolean = NativeLibraryLoader.safeCall(false) { detectModernArtHooksNative() }
+    fun detectFridaVariants(): Boolean = NativeLibraryLoader.safeCall(false) { detectFridaVariantsNative() }
+    fun detectLSPatch(): Boolean = NativeLibraryLoader.safeCall(false) { detectLSPatchNative() }
+    fun detectModernHookFrameworks(): Boolean = NativeLibraryLoader.safeCall(false) { detectModernHookFrameworksNative() }
+    fun modernHooksFullScan(): String = NativeLibraryLoader.safeCall("") {
+        modernHooksFullScanNative()
+    }
+
     // ─── Hide Mode (隐藏模式控制) ──────────────────────
     // 启动隐藏模式：对除 APEX 外的应用隐藏 root 痕迹
     fun enableHideMode(appUid: Int): Int = NativeLibraryLoader.safeCall(-1) {
@@ -300,6 +337,26 @@ object NativeBridge {
     private external fun detectStorageIsolationNative(): Boolean
     private external fun detectMagiskHideLegacyNative(): Boolean
     private external fun magiskExtensionsFullScanNative(): String
+
+    // v1.1.0 L17-L20 native
+    private external fun detectModernRootForksV2Native(): Boolean
+    private external fun detectSukiSUNative(): Boolean
+    private external fun detectSukiSUUltraNative(): Boolean
+    private external fun detectReZygiskV2Native(): Boolean
+    private external fun detectMagiskDeltaNative(): Boolean
+    private external fun modernRootForksFullScanNative(): String
+    private external fun detectAPatchKPMNative(): Boolean
+    private external fun detectAPatchTrampolineNative(): Boolean
+    private external fun detectKernelPatchProjectNative(): Boolean
+    private external fun apatchKpmFullScanNative(): String
+    private external fun detectZygiskAssistantNative(): Boolean
+    private external fun detectPersistentScriptsNative(): Boolean
+    private external fun hideFrameworksFullScanNative(): String
+    private external fun detectModernArtHooksNative(): Boolean
+    private external fun detectFridaVariantsNative(): Boolean
+    private external fun detectLSPatchNative(): Boolean
+    private external fun detectModernHookFrameworksNative(): Boolean
+    private external fun modernHooksFullScanNative(): String
     private external fun detectFirmwareTamperingNative(): Boolean
     private external fun detectAVBStatusNative(): Boolean
     private external fun detectCustomRecoveryNative(): Boolean
