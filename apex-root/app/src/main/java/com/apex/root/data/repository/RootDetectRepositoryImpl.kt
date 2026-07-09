@@ -157,6 +157,23 @@ class RootDetectRepositoryImpl : com.apex.root.domain.repository.IRootDetectRepo
         if (NativeBridge.detectMagiskHideLegacy()) sb.appendLine("MagiskHide (legacy): 检测到")
         if (NativeBridge.detectMagiskDenyList()) sb.appendLine("Magisk DenyList: 检测到")
 
+        // 9. v1.1.0 新增 L17-L20 检测层
+        sb.appendLine()
+        sb.appendLine("--- L17 现代 Root Fork (v1.1.0) ---")
+        sb.appendLine(NativeBridge.modernRootForksFullScan())
+
+        sb.appendLine()
+        sb.appendLine("--- L18 APatch KPM / KernelPatch (v1.1.0) ---")
+        sb.appendLine(NativeBridge.apatchKpmFullScan())
+
+        sb.appendLine()
+        sb.appendLine("--- L19 隐藏框架深度检测 (v1.1.0) ---")
+        sb.appendLine(NativeBridge.hideFrameworksFullScan())
+
+        sb.appendLine()
+        sb.appendLine("--- L20 现代 Hook 框架 (v1.1.0) ---")
+        sb.appendLine(NativeBridge.modernHooksFullScan())
+
         return sb.toString()
     }
 
