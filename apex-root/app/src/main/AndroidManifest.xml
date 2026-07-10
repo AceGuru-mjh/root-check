@@ -11,11 +11,21 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- v1.0.7: 读取手机状态/身份信息 (设备指纹 / IMEI / 序列号) -->
+    <!-- 用于: 设备指纹基线、HWID 检测、设备唯一标识 -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
     <!-- 存储 / 日志保存（Android 12 及以下） -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
+
+    <!-- v1.0.7: Android 13+ 媒体权限 (替代 READ_EXTERNAL_STORAGE) -->
+    <!-- 用于: 导出报告时写入 Documents/Download 目录 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <!-- 所有文件访问（Android 11+，用于把扫描/崩溃日志导出到外部存储任意目录） -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
@@ -27,6 +37,20 @@
 
     <!-- 请求安装包（规则更新 / 自更新预留） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- v1.0.7: 查询设备上其他应用 (Android 11+ Package Visibility) -->
+    <!-- 用于: 检测已安装的 root 框架 / 危险应用 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+        </intent>
+        <package android:name="com.topjohnwu.magisk" />
+        <package android:name="io.github.huskydg.magisk" />
+        <package android:name="me.weishu.kernelsu" />
+        <package android:name="me.bmax.apatch" />
+        <package android:name="org.lsposed.manager" />
+        <package android:name="org.lsposed.lspatch" />
+    </queries>
 
     <application
         android:name=".ApexRootApp"

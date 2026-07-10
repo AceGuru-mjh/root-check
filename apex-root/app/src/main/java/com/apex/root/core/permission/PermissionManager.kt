@@ -40,6 +40,7 @@ object PermissionManager {
         ROOT,
         NOTIFICATION,
         STORAGE,
+        PHONE_STATE,    // v1.0.7: 读取手机信息 (设备指纹 / IMEI / 序列号)
         ACCESSIBILITY,
         OVERLAY,
         USAGE_STATS
@@ -163,6 +164,22 @@ object PermissionManager {
     }
 
     /**
+     * v1.0.7: 读取手机状态权限 (READ_PHONE_STATE)。
+     * 用于: 设备指纹基线、HWID 检测、IMEI/序列号读取。
+     * Android 6.0+ 需运行时申请。
+     */
+    fun checkPhoneState(context: Context): PermissionInfo {
+        val granted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.READ_PHONE_STATE
+        ) == PackageManager.PERMISSION_GRANTED
+        return PermissionInfo(
+            PermType.PHONE_STATE,
+            if (granted) PermState.GRANTED else PermState.DENIED,
+            if (granted) "已授权（可读取设备指纹/序列号）" else "未授权（设备指纹基线需要）"
+        )
+    }
+
+    /**
      * 无障碍服务状态。
      * Android 不允许运行时弹窗申请无障碍权限，必须引导用户到系统设置页开启。
      */
@@ -236,10 +253,36 @@ object PermissionManager {
             root,
             checkNotification(context),
             checkStorage(context),
+            checkPhoneState(context),    // v1.0.7
             checkAccessibility(context),
             checkOverlay(context),
             checkUsageStats(context)
         )
+    }
+
+    /**
+     * v1.0.7: 获取所有需要运行时申请的权限列表 (用于 RequestMultiplePermissions)。
+     * 包含: 通知权限 (Android 13+) + READ_PHONE_STATE + 存储权限 (Android 10-)
+     */
+    fun getRuntimePermissions(): List<String> {
+        val perms = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        perms.add(Manifest.permission.READ_PHONE_STATE)
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
+            perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        return perms
+    }
+
+    /**
+     * v1.0.7: 检查所有运行时权限是否已授权。
+     */
+    fun areAllRuntimePermissionsGranted(context: Context): Boolean {
+        return getRuntimePermissions().all { perm ->
+            ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+        }
     }
 
     /** 判断是否有已启用的无障碍服务绑定到本应用 */

@@ -76,6 +76,12 @@ fun GlassPermissionGuideScreen(onFinished: () -> Unit) {
 
     var storageGranted by remember { mutableStateOf(isStorageGranted()) }
 
+    // v1.0.7: 读取手机状态权限 (READ_PHONE_STATE) — 设备指纹/IMEI/序列号
+    fun isPhoneStateGranted(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) ==
+            PackageManager.PERMISSION_GRANTED
+    var phoneStateGranted by remember { mutableStateOf(isPhoneStateGranted()) }
+
     // 运行时权限请求 Launcher（通知权限 — 直接弹出系统对话框）
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -84,7 +90,7 @@ fun GlassPermissionGuideScreen(onFinished: () -> Unit) {
         notifRequested = true
     }
 
-    // 多权限请求 Launcher（用于同时请求通知 + 旧版存储权限，Android 10 及以下）
+    // 多权限请求 Launcher（用于同时请求通知 + 旧版存储权限 + 读取手机信息，Android 10 及以下）
     val multiPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -96,23 +102,31 @@ fun GlassPermissionGuideScreen(onFinished: () -> Unit) {
                 Manifest.permission.READ_EXTERNAL_STORAGE -> {
                     storageGranted = granted || isStorageGranted()
                 }
+                Manifest.permission.READ_PHONE_STATE -> {
+                    phoneStateGranted = granted || isPhoneStateGranted()
+                }
             }
         }
         notifRequested = true
     }
 
     // ─── 首次启动：自动弹出系统权限对话框 ───
-    // 修复：原实现仅在 !notifGranted 时请求，且与 MainActivity 的请求冲突。
+    // 修复 v1.0.7: 现在同时请求 READ_PHONE_STATE 权限 (读取手机信息/设备指纹)。
+    // 修复历史: 原实现仅在 !notifGranted 时请求，且与 MainActivity 的请求冲突。
     // 现在改为：进入引导页后短暂延迟（等 Composable 完成组合），然后可靠地弹出
-    // 系统权限对话框。使用 RequestMultiplePermissions 同时请求通知 + 存储（Android 10-）。
+    // 系统权限对话框。使用 RequestMultiplePermissions 同时请求所有运行时权限。
     LaunchedEffect(Unit) {
         // 短暂延迟，确保 Composable 已完全组合，避免与 SplashScreen 动画冲突
         delay(300)
 
-        // 构建需要请求的权限列表
+        // 构建需要请求的权限列表 (v1.0.7: 新增 READ_PHONE_STATE)
         val permsToRequest = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notifGranted) {
             permsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        // v1.0.7: READ_PHONE_STATE 始终需要 (用于设备指纹基线)
+        if (!phoneStateGranted) {
+            permsToRequest.add(Manifest.permission.READ_PHONE_STATE)
         }
         // Android 10 及以下：请求 READ_EXTERNAL_STORAGE
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q && !storageGranted) {
@@ -196,8 +210,8 @@ fun GlassPermissionGuideScreen(onFinished: () -> Unit) {
             Spacer(Modifier.height(24.dp))
 
             // ─── 权限提示横幅 ───
-            // 首次进入必须授权的提示
-            if (!notifGranted || (!storageGranted && Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q)) {
+            // 首次进入必须授权的提示 (v1.0.7: 含 READ_PHONE_STATE)
+            if (!notifGranted || !phoneStateGranted || (!storageGranted && Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -316,6 +330,33 @@ fun GlassPermissionGuideScreen(onFinished: () -> Unit) {
                             }
                             runCatching { context.startActivity(intent) }
                         }
+                    }
+                }
+            )
+
+            Spacer(Modifier.height(14.dp))
+
+            // v1.0.7: 读取手机信息权限卡片 (设备指纹/IMEI/序列号)
+            PermissionRow(
+                icon = Icons.Filled.PhoneAndroid,
+                iconTint = if (phoneStateGranted) AccentMint else AccentGold,
+                title = "读取手机信息",
+                detail = if (phoneStateGranted) {
+                    "已授权（可读取设备指纹/序列号）"
+                } else {
+                    "未授权（设备指纹基线与 HWID 检测需要）"
+                },
+                actionLabel = if (phoneStateGranted) null else "去授权",
+                onAction = {
+                    try {
+                        multiPermissionLauncher.launch(arrayOf(Manifest.permission.READ_PHONE_STATE))
+                    } catch (e: Throwable) {
+                        // 用户可能已永久拒绝,跳转到应用详情设置页
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        runCatching { context.startActivity(intent) }
                     }
                 }
             )

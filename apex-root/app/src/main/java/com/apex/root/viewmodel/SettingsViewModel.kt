@@ -1,7 +1,11 @@
 package com.apex.root.viewmodel
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.apex.root.data.*
@@ -29,6 +33,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val _settings = MutableStateFlow(repository.load())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+
+    // v1.0.7: 通知权限请求事件 — UI 订阅此 StateFlow,值为 true 时弹出权限请求对话框
+    private val _notificationPermissionNeeded = MutableStateFlow(false)
+    val notificationPermissionNeeded: StateFlow<Boolean> = _notificationPermissionNeeded.asStateFlow()
 
     // ── Detection ──
 
@@ -225,25 +233,61 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ── Notifications ──
+    //
+    // 修复 v1.0.7: 在 Android 13+ (TIRAMISU) 上,如果用户未授权 POST_NOTIFICATIONS,
+    // 直接调用 NotificationManager.notify() 会抛 SecurityException 导致闪退。
+    // 现在在每次开启通知设置时,先检查权限;若未授权则不实际发送通知
+    // (设置仍然保存,等用户授权后自动生效)。
 
     fun updateNotifyScanComplete(enabled: Boolean) {
         _settings.update { it.copy(notifyScanComplete = enabled) }; persist()
+        if (enabled) verifyNotificationPermission()
     }
 
     fun updateNotifyRiskFound(enabled: Boolean) {
         _settings.update { it.copy(notifyRiskFound = enabled) }; persist()
+        if (enabled) verifyNotificationPermission()
     }
 
     fun updateNotifyGuardAlert(enabled: Boolean) {
         _settings.update { it.copy(notifyGuardAlert = enabled) }; persist()
+        if (enabled) verifyNotificationPermission()
     }
 
     fun updateNotifyCureResult(enabled: Boolean) {
         _settings.update { it.copy(notifyCureResult = enabled) }; persist()
+        if (enabled) verifyNotificationPermission()
     }
 
     fun updateNotifyUpdateAvailable(enabled: Boolean) {
         _settings.update { it.copy(notifyUpdateAvailable = enabled) }; persist()
+        if (enabled) verifyNotificationPermission()
+    }
+
+    /**
+     * 检查通知权限是否已授权。
+     * Android 13+ 需要 POST_NOTIFICATIONS 运行时权限;
+     * Android 12 及以下默认授权。
+     *
+     * 若未授权,发送一个 _notificationPermissionNeeded 事件让 UI 弹出权限请求对话框。
+     */
+    private fun verifyNotificationPermission() {
+        val app = getApplication<Application>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                app,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                Log.w("SettingsViewModel", "Notification permission not granted — requesting via UI")
+                _notificationPermissionNeeded.value = true
+            }
+        }
+    }
+
+    /** UI 触发权限请求后调用,清除标志 */
+    fun onNotificationPermissionRequested() {
+        _notificationPermissionNeeded.value = false
     }
 
     // ── Privacy ──
