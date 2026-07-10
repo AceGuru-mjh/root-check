@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.rememberNestedScrollInteropConnection
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -113,9 +115,12 @@ fun DashboardScreen(
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             LiquidGlassContainer(fluidColorsDark = PageFluidColors.dashboard, fluidColorsLight = PageFluidColors.dashboardLight) {
+                // 修复 v1.0.7: Column 必须加 nestedScroll 连接到 topBar 的 collapse 行为,
+                // 否则 verticalScroll 与 CollapsibleGlassTopBar 的手势冲突导致无法滑动
                 Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .nestedScroll(rememberNestedScrollInteropConnection())
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {

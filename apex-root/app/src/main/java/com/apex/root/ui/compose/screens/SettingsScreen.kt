@@ -2,6 +2,13 @@
 
 package com.apex.root.ui.compose.screens
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings as AndroidSettings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,6 +49,40 @@ fun SettingsScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val snackbarHostState = remember { SnackbarHostState() }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val context = LocalContext.current
+
+    // v1.0.7: 通知权限请求 — 当 SettingsViewModel 发出 notificationPermissionNeeded 事件时,
+    // 弹出系统权限对话框 (Android 13+)。修复点击通知设置闪退问题。
+    val notifPermissionNeeded by viewModel.notificationPermissionNeeded.collectAsState()
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.onNotificationPermissionRequested()
+        if (granted) {
+            scope.launch { snackbarHostState.showSnackbar("通知权限已授权") }
+        } else {
+            scope.launch { snackbarHostState.showSnackbar("通知权限被拒绝,可在系统设置中手动开启") }
+        }
+    }
+    LaunchedEffect(notifPermissionNeeded) {
+        if (notifPermissionNeeded) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } catch (e: Exception) {
+                    // 用户可能已永久拒绝,跳转到应用通知设置页
+                    val intent = Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                        putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    runCatching { context.startActivity(intent) }
+                    viewModel.onNotificationPermissionRequested()
+                }
+            } else {
+                viewModel.onNotificationPermissionRequested()
+            }
+        }
+    }
 
     // 修复：原 key 是 Unit，apexViewModel 为 null 时永远不会再订阅 snackbar。
     LaunchedEffect(apexViewModel) {

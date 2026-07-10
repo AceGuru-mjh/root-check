@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -159,7 +160,25 @@ object Notifier {
     }
 
     private fun notify(context: Context, id: Int, notif: android.app.Notification) {
+        // 修复 v1.0.7: Android 13+ 必须检查 POST_NOTIFICATIONS 权限,
+        // 否则 NotificationManager.notify() 会抛 SecurityException 导致闪退。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                android.util.Log.w("Notifier", "POST_NOTIFICATIONS not granted — skipping notification $id")
+                return
+            }
+        }
         val nm = ContextCompat.getSystemService(context, NotificationManager::class.java) ?: return
-        nm.notify(id, notif)
+        try {
+            nm.notify(id, notif)
+        } catch (e: SecurityException) {
+            android.util.Log.e("Notifier", "notify($id) denied: ${e.message}")
+        } catch (e: Throwable) {
+            android.util.Log.e("Notifier", "notify($id) failed: ${e.message}")
+        }
     }
 }
