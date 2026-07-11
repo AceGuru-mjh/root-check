@@ -62,6 +62,14 @@ object NativeBridge {
         getEbpfCapabilityReportNative()
     }
 
+    /**
+     * P1-1 修复: 设置微服务插件目录 (nativeLibraryDir + "/plugins")。
+     * 必须在沙箱启动 / service_engine::initialize() 之前调用。
+     */
+    fun setPluginsDir(path: String) = NativeLibraryLoader.safeRun {
+        setPluginsDirNative(path)
+    }
+
     fun detectSELinuxPolicyMod(): Boolean = NativeLibraryLoader.safeCall(false) {
         detectSELinuxPolicyModNative()
     }
@@ -304,6 +312,7 @@ object NativeBridge {
     private external fun countRWXPagesNative(): Int
     private external fun detectSELinuxContextJumpNative(): Boolean
     private external fun getEbpfCapabilityReportNative(): String
+    private external fun setPluginsDirNative(path: String)
     private external fun detectSELinuxPolicyModNative(): Boolean
     private external fun selinuxFullScanNative(): String
     private external fun detectShamikoNative(): Boolean

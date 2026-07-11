@@ -32,6 +32,9 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     private val _progress = MutableStateFlow(0f)
     val progress: StateFlow<Float> = _progress.asStateFlow()
 
+    // P1-6 修复: 保存超时 Job,在扫描完成/ViewModel 销毁时取消,避免协程泄漏
+    private var timeoutJob: kotlinx.coroutines.Job? = null
+
     /**
      * 警报历史列表（累积所有收到的警报，不丢失）。
      * 与 [uiState] 中的单个 Alert 状态互补：uiState 反映"当前活跃警报"，
@@ -105,8 +108,9 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
                 // 扫描超时保护 — 30s 内未收到 Report 则超时报错
-                // 避免用户因沙箱无响应而看到永久卡死的 Scanning 状态
-                launch {
+                // P1-6 修复: 保存 Job 引用,在收到 Report/Alert 时取消,避免泄漏
+                timeoutJob?.cancel()
+                timeoutJob = launch {
                     delay(30_000L)
                     if (_uiState.value is UiState.Scanning) {
                         _uiState.value = UiState.Error("扫描超时（30s 未收到响应）")
@@ -128,6 +132,9 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun parseReport(data: ByteArray) {
+        // P1-6 修复: 收到 Report 后取消超时 Job
+        timeoutJob?.cancel()
+        timeoutJob = null
         val report = DetectionProtocol.decodeReport(data)
         if (report != null) {
             _uiState.value = UiState.Report(report)
@@ -137,6 +144,9 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun parseAlert(data: ByteArray) {
+        // P1-6 修复: 收到 Alert 后取消超时 Job (Alert 也表示扫描有响应)
+        timeoutJob?.cancel()
+        timeoutJob = null
         val alert = DetectionProtocol.decodeAlert(data)
         if (alert != null) {
             // 累积到历史列表（最多保留 50 条，超出丢弃最旧）
@@ -199,6 +209,9 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         try {
             client.closeNow()
         } catch (_: Throwable) {}
+        // P1-6 修复: 取消超时 Job,避免 ViewModel 销毁后协程仍在运行
+        timeoutJob?.cancel()
+        timeoutJob = null
         super.onCleared()
     }
 }

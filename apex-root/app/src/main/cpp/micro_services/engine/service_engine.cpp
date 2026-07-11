@@ -34,7 +34,20 @@ static void shuffle_services(int* indices, int count) {
 
 namespace service_engine {
 
-static const char* PLUGINS_DIR = "/data/app/com.apex.root/lib/arm64/plugins";
+// P1-1 修复: 不再硬编码路径,改为运行时可设置。默认 "plugins" 相对路径
+// (会被 dlopen 解析为进程当前工作目录下的 plugins/,通常无效,但不崩溃)
+// 实际路径由 Kotlin 通过 set_plugins_dir() 在 initialize() 前设置。
+static char g_plugins_dir[512] = "plugins";
+static bool g_plugins_dir_set = false;
+
+void set_plugins_dir(const char* path) {
+    if (!path) return;
+    std::lock_guard<std::mutex> lock(g_engine_mutex);
+    strncpy(g_plugins_dir, path, sizeof(g_plugins_dir) - 1);
+    g_plugins_dir[sizeof(g_plugins_dir) - 1] = '\0';
+    g_plugins_dir_set = true;
+    LOGI("Plugins dir set to: %s", g_plugins_dir);
+}
 
 static bool load_native_plugin(const char* path) {
     void* handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
@@ -52,7 +65,8 @@ bool initialize() {
     g_plugin_count = 0;
 
     // Discover and load plugin .so files
-    int fd = static_cast<int>(bs_openat(-100, PLUGINS_DIR, 0x10000, 0));
+    // P1-1 修复: 使用运行时设置的 g_plugins_dir 而非硬编码 PLUGINS_DIR
+    int fd = static_cast<int>(bs_openat(-100, g_plugins_dir, 0x10000, 0));
     if (fd >= 0) {
         char dentry_buf[8192];
         int64_t n = bs_getdents64(fd, dentry_buf, sizeof(dentry_buf));
@@ -73,14 +87,15 @@ bool initialize() {
                         dirent->d_name[name_len-3] == '.' &&
                         dirent->d_name[name_len-2] == 's' &&
                         dirent->d_name[name_len-1] == 'o') {
+                        // P1-1 修复: 使用 g_plugins_dir 构建完整路径
                         char full_path[512];
                         int idx = 0;
-                        for (int i = 0; PLUGINS_DIR[i]; i++) {
-                            if (idx < (int)sizeof(full_path) - 1) full_path[idx++] = PLUGINS_DIR[i];
+                        for (int i = 0; g_plugins_dir[i] && idx < (int)sizeof(full_path) - 1; i++) {
+                            full_path[idx++] = g_plugins_dir[i];
                         }
                         if (idx < (int)sizeof(full_path) - 1) full_path[idx++] = '/';
-                        for (size_t i = 0; i < name_len; i++) {
-                            if (idx < (int)sizeof(full_path) - 1) full_path[idx++] = dirent->d_name[i];
+                        for (size_t i = 0; i < name_len && idx < (int)sizeof(full_path) - 1; i++) {
+                            full_path[idx++] = dirent->d_name[i];
                         }
                         full_path[idx] = '\0';
                         load_native_plugin(full_path);

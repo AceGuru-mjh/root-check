@@ -4,6 +4,7 @@
 #include <cstring>
 #include <memory>
 #include "bare_syscall/syscall_bridge.h"
+#include "include/apex_common.h"
 #include "detect/layer1_prop.h"
 #include "detect/layer2_art.h"
 #include "detect/layer3_mem.h"
@@ -32,6 +33,7 @@
 #include "guard/guard_engine.h"
 #include "game/game_mode.h"
 #include "hid/hwid_spoof.h"
+#include "micro_services/engine/service_engine.h"
 
 #define LOG_TAG "APEX-NATIVE"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -41,6 +43,14 @@
 #include "trusted_root/crypto/crypto_primitives.h"
 
 extern "C" {
+
+// P1-4 修复: JNI_OnLoad 从 jni_bridge.cpp (未编译) 移到 native-lib.cpp (实际编译)
+// 这样版本日志才能真正在库加载时打印
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
+    (void)vm;
+    LOGI("APEX Root v1.1.1 native library loaded (20-layer + parallel engine + P0/P1 fixes)");
+    return JNI_VERSION_1_6;
+}
 
 // ─────────────────────────────────────────────────────────────
 // APEX-Detect: Full 20-layer detection (Ring3 root-level only)
@@ -324,7 +334,10 @@ Java_com_apex_root_data_jni_NativeBridge_getSignedReportNative(JNIEnv* env, jobj
 
     // Build report string
     std::string report = "=== APEX-Root Signed Detection Report ===\n";
-    report += "Version: 1.0.3\n";
+    // P1-3 修复: 使用 apex::VERSION_STRING 而非硬编码
+    report += "Version: ";
+    report += apex::VERSION_STRING;
+    report += "\n";
     report += "Timestamp: " + std::to_string(bs_clock_ns()) + "\n\n";
 
     for (int i = 0; i < 12; i++) {
@@ -681,6 +694,26 @@ Java_com_apex_root_data_jni_NativeBridge_getEbpfCapabilityReportNative(JNIEnv* e
         use_ebpf ? "YES (eBPF hide-mode active)" : "NO (fallback to mount-ns + rename)");
     if (n < 0) return env->NewStringUTF("ERROR: snprintf failed");
     return env->NewStringUTF(buf);
+}
+
+// ─────────────────────────────────────────────────────────────
+// P1-1 修复: 设置微服务插件目录 (从 Kotlin 传入 nativeLibraryDir + "/plugins")
+// 必须在 service_engine::initialize() 之前调用
+// ─────────────────────────────────────────────────────────────
+
+JNIEXPORT void JNICALL
+Java_com_apex_root_data_jni_NativeBridge_setPluginsDirNative(JNIEnv* env, jobject, jstring path) {
+    if (!path) {
+        LOGE("setPluginsDirNative: null path");
+        return;
+    }
+    const char* cpath = env->GetStringUTFChars(path, nullptr);
+    if (!cpath) {
+        LOGE("setPluginsDirNative: GetStringUTFChars returned null");
+        return;
+    }
+    apex::engine::service_engine::set_plugins_dir(cpath);
+    env->ReleaseStringUTFChars(path, cpath);
 }
 
 JNIEXPORT jboolean JNICALL

@@ -16,7 +16,8 @@ object ReportExporter {
 
     data class ExportReport(
         val appName: String = "APEX Root",
-        val version: String = "1.0.3",
+        // P1-3 修复: 使用 BuildConfig.VERSION_NAME 替代硬编码 "1.0.3"
+        val version: String = com.apex.root.BuildConfig.VERSION_NAME,
         val timestamp: String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
         val riskScore: Int = 0,
         val scanResult: String = "",
@@ -136,6 +137,50 @@ object ReportExporter {
             android.util.Log.e("ReportExporter", "FileProvider URI error", e)
         } catch (e: Throwable) {
             android.util.Log.e("ReportExporter", "shareReport failed", e)
+        }
+    }
+
+    /**
+     * P1-8: 利用 MANAGE_EXTERNAL_STORAGE 权限,将报告保存到 Downloads 目录。
+     *
+     * 如果用户已授予「所有文件访问权限」(Android 11+),报告会保存到
+     * /storage/emulated/0/Download/APEX-Root/ 目录,用户可直接在文件管理器查看。
+     * 否则降级到 cacheDir + 分享 Intent (同 shareReport)。
+     *
+     * @return 保存的文件路径,失败返回 null
+     */
+    fun saveReportToDownloads(context: Context, uiState: ApexUiState): String? {
+        try {
+            val json = exportToJson(uiState)
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+
+            // 检查是否有 MANAGE_EXTERNAL_STORAGE 权限 (Android 11+)
+            val canWriteExternal = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                android.os.Environment.isExternalStorageManager()
+            } else {
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            }
+
+            val file = if (canWriteExternal) {
+                // P1-8: 利用 MANAGE_EXTERNAL_STORAGE,保存到公共 Downloads 目录
+                val dir = File(android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS
+                ), "APEX-Root")
+                if (!dir.exists()) dir.mkdirs()
+                File(dir, "apex_report_$timestamp.json").apply { writeText(json) }
+            } else {
+                // 降级: cacheDir (通过 FileProvider 分享)
+                File(context.cacheDir, "apex_report_$timestamp.json").apply { writeText(json) }
+            }
+
+            android.util.Log.i("ReportExporter", "Report saved to: ${file.absolutePath}")
+            return file.absolutePath
+        } catch (e: Throwable) {
+            android.util.Log.e("ReportExporter", "saveReportToDownloads failed", e)
+            return null
         }
     }
 
