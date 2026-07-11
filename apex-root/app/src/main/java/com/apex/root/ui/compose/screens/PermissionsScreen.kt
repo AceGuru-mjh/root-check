@@ -328,6 +328,7 @@ private fun permissionMeta(type: PermType): Triple<ImageVector, Color, String> =
     PermType.ROOT -> Triple(Icons.Default.AdminPanelSettings, AccentPurple, "ROOT 权限")
     PermType.NOTIFICATION -> Triple(Icons.Default.Notifications, AccentBlue, "通知权限")
     PermType.STORAGE -> Triple(Icons.Default.Folder, AccentGold, "存储 / 日志导出")
+    PermType.PHONE_STATE -> Triple(Icons.Default.PhoneAndroid, AccentMint, "读取手机信息")
     PermType.ACCESSIBILITY -> Triple(Icons.Default.AccessibilityNew, AccentMint, "无障碍服务")
     PermType.OVERLAY -> Triple(Icons.Default.Layers, AccentCyan, "悬浮窗权限")
     PermType.USAGE_STATS -> Triple(Icons.Default.Insights, AccentPurpleSoft, "使用情况访问")
@@ -377,6 +378,10 @@ private fun handleRequest(
             } else {
                 requestRuntime(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE))
             }
+        }
+        PermType.PHONE_STATE -> {
+            // v1.0.7: 读取手机信息 — 运行时弹窗
+            requestRuntime(arrayOf(Manifest.permission.READ_PHONE_STATE))
         }
         PermType.ACCESSIBILITY -> {
             openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS, null)
