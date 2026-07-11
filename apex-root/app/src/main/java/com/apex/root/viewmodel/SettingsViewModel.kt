@@ -60,16 +60,19 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _settings.update { it.copy(riskThreshold = threshold.coerceIn(0, 100)) }; persist()
     }
 
+    // P1-5 修复: 使用 _settings.update{} 原子 CAS,避免 read-modify-write 竞态
     fun updatePluginEnabled(index: Int, enabled: Boolean) {
-        _settings.value = when (index) {
-            1 -> _settings.value.copy(pluginL1Enabled = enabled)
-            2 -> _settings.value.copy(pluginL2Enabled = enabled)
-            3 -> _settings.value.copy(pluginL3Enabled = enabled)
-            4 -> _settings.value.copy(pluginL4Enabled = enabled)
-            5 -> _settings.value.copy(pluginL5Enabled = enabled)
-            6 -> _settings.value.copy(pluginL6Enabled = enabled)
-            7 -> _settings.value.copy(pluginL7Enabled = enabled)
-            else -> _settings.value
+        _settings.update { current ->
+            when (index) {
+                1 -> current.copy(pluginL1Enabled = enabled)
+                2 -> current.copy(pluginL2Enabled = enabled)
+                3 -> current.copy(pluginL3Enabled = enabled)
+                4 -> current.copy(pluginL4Enabled = enabled)
+                5 -> current.copy(pluginL5Enabled = enabled)
+                6 -> current.copy(pluginL6Enabled = enabled)
+                7 -> current.copy(pluginL7Enabled = enabled)
+                else -> current
+            }
         }; persist()
     }
 

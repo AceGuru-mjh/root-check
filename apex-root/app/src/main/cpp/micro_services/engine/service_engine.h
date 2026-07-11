@@ -63,6 +63,10 @@ __attribute__((visibility("default"))) std::optional<ServicePlugin> get_service(
 __attribute__((visibility("default"))) ScanReport execute_scan(const ScanConfig& config);
 __attribute__((visibility("default"))) void shutdown();
 
+// P1-1 修复: 运行时设置插件目录 (从 Kotlin 传入 applicationInfo.nativeLibraryDir)
+// 必须在 initialize() 之前调用。若不调用,使用默认相对路径 "plugins"。
+__attribute__((visibility("default"))) void set_plugins_dir(const char* path);
+
 } // namespace service_engine
 } // namespace engine
 } // namespace apex

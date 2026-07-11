@@ -424,7 +424,8 @@ fun DashboardScreen(
                 ) {
                     Box(Modifier.size(3.dp).background(TextTertiary, CircleShape))
                     Spacer(Modifier.width(10.dp))
-                    Text("v1.0.3  ·  APEX-Root 全能安全平台",
+                    // P1-3 修复: 使用 BuildConfig.VERSION_NAME 替代硬编码 v1.0.3
+                    Text("v${com.apex.root.BuildConfig.VERSION_NAME}  ·  APEX-Root 全能安全平台",
                         style = MaterialTheme.typography.bodySmall, color = TextTertiary)
                 }
 
@@ -960,13 +961,12 @@ private fun RunningStatusBar(
     val context = androidx.compose.ui.platform.LocalContext.current
     val isDark = LocalIsDarkTheme.current
 
-    // 读取版本号
+    // 读取版本号 — P1-3 修复: 使用 BuildConfig.VERSION_NAME 替代硬编码
     val versionName = remember {
         try {
-            val pm = context.packageManager
-            pm.getPackageInfo(context.packageName, 0).versionName ?: "1.0.3"
+            com.apex.root.BuildConfig.VERSION_NAME
         } catch (e: Throwable) {
-            "1.0.3"
+            "unknown"
         }
     }
 

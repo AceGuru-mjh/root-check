@@ -72,6 +72,16 @@
             </intent-filter>
         </activity>
 
+        <!-- v1.1.1: 实时监控前台服务 — 利用 FOREGROUND_SERVICE_SPECIAL_USE 权限 -->
+        <service
+            android:name=".service.GuardMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Root detection monitoring" />
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

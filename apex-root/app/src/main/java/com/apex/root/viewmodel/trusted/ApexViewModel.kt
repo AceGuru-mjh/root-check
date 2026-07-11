@@ -189,6 +189,23 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 com.apex.root.core.NativeLibraryLoader.isAvailable
             }.getOrDefault(false)
             _uiState.update { it.copy(nativeAvailable = available) }
+
+            // P1-1 修复: native 库加载成功后,立即设置微服务插件目录
+            // 路径 = applicationInfo.nativeLibraryDir + "/plugins"
+            // 这样 service_engine::initialize() 才能正确 dlopen 20 个插件
+            if (available) {
+                runCatching {
+                    val app = getApplication<Application>()
+                    val nativeLibDir = app.applicationInfo.nativeLibraryDir
+                    if (!nativeLibDir.isNullOrEmpty()) {
+                        val pluginsDir = "$nativeLibDir/plugins"
+                        NativeBridge.setPluginsDir(pluginsDir)
+                        Log.i("ApexViewModel", "Plugins dir set: $pluginsDir")
+                    }
+                }.onFailure { e ->
+                    Log.w("ApexViewModel", "Failed to set plugins dir: ${e.message}")
+                }
+            }
         }
     }
 
@@ -530,6 +547,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * 启动实时监控 (Guard Monitor)。
+     * v1.1.1: 同时启动前台服务,确保后台持续监控。
      * @param intervalMs 检测间隔,默认 60s
      */
     fun startGuardMonitor(intervalMs: Long = 60_000L) {
@@ -546,16 +564,25 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             guardMonitor.start(intervalMs)
-            addLog(LogType.INFO, "实时监控已启动 (间隔 ${intervalMs / 1000}s)")
+            // P1-7: 启动前台服务,利用 FOREGROUND_SERVICE_SPECIAL_USE 权限
+            runCatching {
+                com.apex.root.service.GuardMonitorService.startService(getApplication(), intervalMs)
+            }
+            addLog(LogType.INFO, "实时监控已启动 (间隔 ${intervalMs / 1000}s, 前台服务运行中)")
             _snackbarChannel.tryEmit(SnackbarEvent("实时监控已启动,每 ${intervalMs / 1000}s 检测一次", SnackbarType.SUCCESS))
         }
     }
 
     /**
      * 停止实时监控。
+     * v1.1.1: 同时停止前台服务。
      */
     fun stopGuardMonitor() {
         guardMonitor.stop()
+        // P1-7: 停止前台服务
+        runCatching {
+            com.apex.root.service.GuardMonitorService.stopService(getApplication())
+        }
         addLog(LogType.INFO, "实时监控已停止")
         _snackbarChannel.tryEmit(SnackbarEvent("实时监控已停止", SnackbarType.WARNING))
     }
@@ -583,6 +610,39 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun clearGuardAlerts() {
         _uiState.update { it.copy(guardAlerts = emptyList()) }
+    }
+
+    /**
+     * P1-9: 扫描媒体文件,利用 READ_MEDIA_* 权限检测可疑的 root/hack 工具。
+     */
+    fun scanMedia() {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            addLog(LogType.INFO, "开始扫描媒体文件 (利用 READ_MEDIA_* 权限)...")
+            try {
+                val app = getApplication<Application>()
+                val findings = com.apex.root.domain.parallel.MediaScanner.scan(app)
+                val report = com.apex.root.domain.parallel.MediaScanner.generateReport(findings)
+                addLog(LogType.INFO, "媒体扫描完成: ${findings.size} 个可疑文件")
+                if (findings.isNotEmpty()) {
+                    _snackbarChannel.tryEmit(SnackbarEvent(
+                        "媒体扫描发现 ${findings.size} 个可疑文件",
+                        SnackbarType.WARNING
+                    ))
+                } else {
+                    _snackbarChannel.tryEmit(SnackbarEvent(
+                        "媒体扫描完成,未发现可疑文件",
+                        SnackbarType.SUCCESS
+                    ))
+                }
+                // 更新 UI state 中的扫描结果
+                _uiState.update {
+                    it.copy(scanResult = report)
+                }
+            } catch (e: Throwable) {
+                addLog(LogType.ERROR, "媒体扫描失败: ${e.message}")
+                _snackbarChannel.tryEmit(SnackbarEvent("媒体扫描失败: ${e.message}", SnackbarType.ERROR))
+            }
+        }
     }
 
     /**
@@ -636,6 +696,15 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Throwable) {
             Log.e("ApexViewModel", "notifyGuardAlert failed", e)
         }
+    }
+
+    // P1-2 修复: ViewModel 销毁时停止 guard monitor,避免 CoroutineScope 泄漏
+    override fun onCleared() {
+        runCatching {
+            guardMonitor.stop()
+            Log.i("ApexViewModel", "Guard monitor stopped in onCleared")
+        }
+        super.onCleared()
     }
 
     fun toggleGameMode() {

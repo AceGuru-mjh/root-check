@@ -5208,7 +5208,8 @@ private fun AboutGroup(
         )
         GlassSettingsItem(
             label = "版本信息",
-            subtitle = "APEX-Root v1.0.3",
+            // P1-3 修复: 使用 BuildConfig.VERSION_NAME 替代硬编码
+            subtitle = "APEX-Root v${com.apex.root.BuildConfig.VERSION_NAME}",
             icon = Icons.Default.Info,
             accentColor = AccentPurple
         )
