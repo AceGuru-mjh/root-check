@@ -2,7 +2,6 @@ package com.apex.root.ui.compose
 
 import android.os.Build
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -12,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import android.graphics.Shader
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 
 object PageFluidColors {
