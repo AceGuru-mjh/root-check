@@ -42,8 +42,12 @@ std::vector<ProcEntry> scan_processes() {
     if (n <= 0) return entries;
 
     size_t pos = 0;
-    while (pos < static_cast<size_t>(n)) {
+    while (pos + sizeof(linux_dirent64) <= static_cast<size_t>(n)) {
         auto* dirent = reinterpret_cast<linux_dirent64*>(buf + pos);
+        // P0-1 修复: 校验 d_reclen 防止无限循环 (reclen=0) 和越界读取 (reclen>剩余)
+        if (dirent->d_reclen == 0 || dirent->d_reclen > static_cast<size_t>(n) - pos) {
+            break;
+        }
         if (dirent->d_type == DT_DIR) {
             ProcEntry entry;
             entry.pid = 0;
@@ -51,12 +55,14 @@ std::vector<ProcEntry> scan_processes() {
             entry.flags = 0;
             std::memset(entry.name, 0, sizeof(entry.name));
 
+            // P0-1 修复: 限制 d_name 扫描范围到 record 边界,防止越界读
             const char* name = dirent->d_name;
+            const char* name_end = reinterpret_cast<const char*>(dirent) + dirent->d_reclen;
             bool all_digits = true;
             int val = 0;
-            for (int i = 0; name[i]; i++) {
-                if (name[i] >= '0' && name[i] <= '9') {
-                    val = val * 10 + (name[i] - '0');
+            for (const char* c = name; c < name_end && *c; c++) {
+                if (*c >= '0' && *c <= '9') {
+                    val = val * 10 + (*c - '0');
                 } else {
                     all_digits = false;
                     break;
@@ -105,7 +111,8 @@ std::vector<MemoryRegion> read_process_maps(int pid) {
     while (line < end) {
         char* nl = line;
         while (nl < end && *nl != '\n') nl++;
-        *nl = '\0';
+        // P0-1 修复: 仅在找到换行符时才写终止符,避免写越界
+        if (nl < end) *nl = '\0';
 
         MemoryRegion mr{};
         // Parse: hex-hex perms
@@ -117,7 +124,7 @@ std::vector<MemoryRegion> read_process_maps(int pid) {
         mr.perms[pi] = '\0';
 
         regions.push_back(mr);
-        line = nl + 1;
+        line = (nl < end) ? nl + 1 : end;
     }
 
     return regions;

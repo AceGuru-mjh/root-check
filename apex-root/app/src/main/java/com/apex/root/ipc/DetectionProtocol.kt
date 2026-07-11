@@ -122,7 +122,9 @@ object DetectionProtocol {
                 riskScore = riskScore,
                 daemonSignature = daemonSig
             )
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
+            // P0-5 修复: catch Throwable 而非 Exception,捕获 OutOfMemoryError
+            // (恶意 len=0x7FFFFFFF 会触发 ByteArray(2GB) → OOM → Error,不是 Exception)
             return null
         }
     }
@@ -164,7 +166,8 @@ object DetectionProtocol {
                 timestamp = timestamp,
                 evidence = evidence
             )
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
+            // P0-5 修复: catch Throwable 捕获 OOM
             return null
         }
     }
@@ -189,7 +192,10 @@ object DetectionProtocol {
     }
 
     private fun readString(dis: DataInputStream, maxLen: Int): String {
-        val len = minOf(dis.readInt(), maxLen)
+        // P0-5 修复: 校验 len 防止负数或超大值导致 OOM/NegativeArraySizeException
+        val raw = dis.readInt()
+        if (raw < 0) throw java.io.IOException("negative string length: $raw")
+        val len = minOf(raw, maxLen)
         val bytes = ByteArray(len)
         dis.readFully(bytes)
         return bytes.decodeToString()
@@ -201,9 +207,15 @@ object DetectionProtocol {
     }
 
     private fun readBytes(dis: DataInputStream, fixedLen: Int = -1): ByteArray {
+        // P0-5 修复: 校验 len 防止恶意超大值导致 OOM
         val len = if (fixedLen >= 0) fixedLen else dis.readInt()
+        if (len < 0) throw java.io.IOException("negative byte length: $len")
+        if (len > MAX_BYTES_LENGTH) throw java.io.IOException("byte length too large: $len (max $MAX_BYTES_LENGTH)")
         val data = ByteArray(len)
         dis.readFully(data)
         return data
     }
+
+    // P0-5: 限制单次读取的最大字节数 (16MB),防止恶意 IPC 消息触发 OOM
+    private const val MAX_BYTES_LENGTH: Int = 16 * 1024 * 1024
 }

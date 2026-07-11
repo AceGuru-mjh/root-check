@@ -146,9 +146,24 @@ static bool compute_file_sha256(const char* path, uint8_t out[32]) {
     return true;
 }
 
+// P0-2 修复: 将 message 和 source 复制到固定大小数组,避免存储栈上指针导致悬空
 static void add_alert(AlertLevel level, const char* msg, const char* source) {
     if (alert_count >= 64) return;
-    SecurityAlert alert = {level, msg, source, bs_clock_ns()};
+    SecurityAlert alert = {};
+    alert.level = level;
+    alert.timestamp = bs_clock_ns();
+    if (msg) {
+        strncpy(alert.message, msg, sizeof(alert.message) - 1);
+        alert.message[sizeof(alert.message) - 1] = '\0';
+    } else {
+        alert.message[0] = '\0';
+    }
+    if (source) {
+        strncpy(alert.source, source, sizeof(alert.source) - 1);
+        alert.source[sizeof(alert.source) - 1] = '\0';
+    } else {
+        alert.source[0] = '\0';
+    }
     alert_buffer[alert_count++] = alert;
 }
 
@@ -256,18 +271,24 @@ bool check_process_integrity(const char* whitelist[], int count) {
 
     while ((n = bs_getdents64(fd, dentry_buf, sizeof(dentry_buf))) > 0) {
         size_t pos = 0;
-        while (pos < (size_t)n) {
+        while (pos + sizeof(apex_dirent64) <= (size_t)n) {
             auto* d = reinterpret_cast<apex_dirent64*>(dentry_buf + pos);
-            if (d->d_reclen == 0) break;
+            // P0-1 修复: 完整校验 d_reclen (原来只检查 ==0,没检查 > 剩余)
+            if (d->d_reclen == 0 || d->d_reclen > (size_t)n - pos) break;
 
             // Check if this is a numeric directory (process PID)
+            // P0-1 修复: 限制 d_name 扫描范围到 record 边界
+            const char* name_end = (const char*)d + d->d_reclen;
             bool is_pid = true;
-            for (int i = 0; d->d_name[i]; i++) {
-                if (d->d_name[i] < '0' || d->d_name[i] > '9') {
+            bool any_char = false;
+            for (const char* c = d->d_name; c < name_end && *c; c++) {
+                any_char = true;
+                if (*c < '0' || *c > '9') {
                     is_pid = false;
                     break;
                 }
             }
+            if (!any_char) is_pid = false;
 
             if (is_pid) {
                 // Read process cmdline to check against whitelist
