@@ -68,25 +68,32 @@ bool detectMagiskDaemon() {
     };
 
     size_t pos = 0;
-    while (pos < (size_t)n) {
+    while (pos + sizeof(linux_dirent64) <= (size_t)n) {
         auto* dirent = (linux_dirent64*)(dentry_buf + pos);
+        // P0-1 修复: 校验 d_reclen 防止无限循环和越界读取
+        if (dirent->d_reclen == 0 || dirent->d_reclen > (size_t)n - pos) {
+            break;
+        }
         if (dirent->d_type == 4) { // DT_DIR
             // Check if name is all digits (pid)
+            const char* name_end = (const char*)dirent + dirent->d_reclen;
             bool all_digits = true;
-            for (int i = 0; dirent->d_name[i]; i++) {
-                if (dirent->d_name[i] < '0' || dirent->d_name[i] > '9') {
+            bool any_char = false;
+            for (const char* c = dirent->d_name; c < name_end && *c; c++) {
+                any_char = true;
+                if (*c < '0' || *c > '9') {
                     all_digits = false; break;
                 }
             }
-            if (all_digits) {
+            if (any_char && all_digits) {
                 char cmdline_path[64];
-                // Build /proc/<pid>/cmdline
+                // Build /proc/<pid>/cmdline — 带边界检查
                 int idx = 0;
                 const char* pfx = "/proc/";
-                for (int i = 0; pfx[i]; i++) cmdline_path[idx++] = pfx[i];
-                for (int i = 0; dirent->d_name[i]; i++) cmdline_path[idx++] = dirent->d_name[i];
+                for (int i = 0; pfx[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = pfx[i];
+                for (int i = 0; dirent->d_name[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = dirent->d_name[i];
                 const char* sfx = "/cmdline";
-                for (int i = 0; sfx[i]; i++) cmdline_path[idx++] = sfx[i];
+                for (int i = 0; sfx[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = sfx[i];
                 cmdline_path[idx] = '\0';
 
                 read_file_to_buf(cmdline_path, buf, sizeof(buf));

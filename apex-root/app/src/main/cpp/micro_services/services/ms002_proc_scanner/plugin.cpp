@@ -26,12 +26,17 @@ extern "C" apex::engine::ServiceResult execute(const apex::engine::ScanConfig& c
 
     int proc_count = 0;
     size_t pos = 0;
-    while (pos < static_cast<size_t>(n)) {
+    while (pos + sizeof(struct apex_dirent64) <= static_cast<size_t>(n)) {
         auto* dirent = reinterpret_cast<struct apex_dirent64*>(buf + pos);
+        // P0-1 修复: 校验 d_reclen 防止无限循环和越界读取
+        if (dirent->d_reclen == 0 || dirent->d_reclen > static_cast<size_t>(n) - pos) {
+            break;
+        }
         if (dirent->d_type == 4) {
             bool is_digit = true;
-            for (int i = 0; dirent->d_name[i]; i++) {
-                if (dirent->d_name[i] < '0' || dirent->d_name[i] > '9') {
+            const char* name_end = (const char*)dirent + dirent->d_reclen;
+            for (const char* c = dirent->d_name; c < name_end && *c; c++) {
+                if (*c < '0' || *c > '9') {
                     is_digit = false;
                     break;
                 }

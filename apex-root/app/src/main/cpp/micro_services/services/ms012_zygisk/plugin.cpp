@@ -35,15 +35,24 @@ extern "C" apex::engine::ServiceResult execute(const apex::engine::ScanConfig& c
             // Look for suspicious FD patterns
             int suspicious_fds = 0;
             size_t pos = 0;
-            while (pos < static_cast<size_t>(n)) {
+            while (pos + sizeof(struct apex_dirent64) <= static_cast<size_t>(n)) {
                 auto* dirent = reinterpret_cast<struct apex_dirent64*>(buf + pos);
+                // P0-1 修复: 校验 d_reclen 防止无限循环和越界读取
+                if (dirent->d_reclen == 0 || dirent->d_reclen > static_cast<size_t>(n) - pos) {
+                    break;
+                }
                 if (dirent->d_type == 8) { // DT_LNK
                     // Check if FD points to Zygisk sockets
                     char link_path[64];
                     int plen = 0;
                     const char* p = "/proc/self/fd/";
-                    for (int i = 0; p[i]; i++) link_path[plen++] = p[i];
-                    for (int i = 0; dirent->d_name[i]; i++) link_path[plen++] = dirent->d_name[i];
+                    const char* name_end = (const char*)dirent + dirent->d_reclen;
+                    for (int i = 0; p[i]; i++) {
+                        if (plen < (int)sizeof(link_path) - 1) link_path[plen++] = p[i];
+                    }
+                    for (const char* c = dirent->d_name; c < name_end && *c; c++) {
+                        if (plen < (int)sizeof(link_path) - 1) link_path[plen++] = *c;
+                    }
                     link_path[plen] = '\0';
                     // Read the link target
                     // fd openat check would go here

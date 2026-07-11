@@ -664,31 +664,53 @@ class AppUpdater private constructor(private val context: Context) {
     /**
      * 通过 su 读取 root 权限文件内容。
      * 非 root 设备会失败，返回 null。
+     *
+     * P0-4 修复: 原实现 readText() 在 su 弹窗未授权时会无限阻塞,
+     * 导致 Dispatchers.IO 线程耗尽。现改为先 waitFor(timeout) 再读,
+     * 超时立即 destroyForcibly。
      */
     private fun readRootFile(path: String): String? {
+        var process: Process? = null
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat '$path'"))
-            val text = process.inputStream.bufferedReader().readText()
+            process = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat '$path'"))
+            // P0-4 修复: 先等进程退出 (带超时),再读输出。避免 readText() 无限阻塞。
             val exited = process.waitFor(3000, java.util.concurrent.TimeUnit.MILLISECONDS)
-            if (exited && process.exitValue() == 0) text.trim().ifEmpty { null } else null
+            if (!exited) {
+                process.destroyForcibly()
+                return null
+            }
+            if (process.exitValue() != 0) return null
+            val text = process.inputStream.bufferedReader().use { it.readText() }
+            text.trim().ifEmpty { null }
         } catch (e: Throwable) {
             null
         } finally {
-            // process 由 GC 回收，不显式 destroy（避免影响 su 会话）
+            // P0-4 修复: 必须显式 destroy,Java Process 不会被 GC 回收
+            try { process?.destroyForcibly() } catch (_: Throwable) {}
         }
     }
 
     /**
      * 通过 su 检查 root 权限文件是否存在。
+     *
+     * P0-4 修复: 同 readRootFile,先 waitFor 再读。
      */
     private fun rootFileExists(path: String): Boolean {
+        var process: Process? = null
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "test -e '$path' && echo yes || echo no"))
-            val text = process.inputStream.bufferedReader().readText().trim()
+            process = Runtime.getRuntime().exec(arrayOf("su", "-c", "test -e '$path' && echo yes || echo no"))
             val exited = process.waitFor(3000, java.util.concurrent.TimeUnit.MILLISECONDS)
-            exited && process.exitValue() == 0 && text == "yes"
+            if (!exited) {
+                process.destroyForcibly()
+                return false
+            }
+            if (process.exitValue() != 0) return false
+            val text = process.inputStream.bufferedReader().use { it.readText().trim() }
+            text == "yes"
         } catch (e: Throwable) {
             false
+        } finally {
+            try { process?.destroyForcibly() } catch (_: Throwable) {}
         }
     }
 

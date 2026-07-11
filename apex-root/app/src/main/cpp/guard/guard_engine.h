@@ -20,8 +20,8 @@ enum class AlertLevel {
 
 struct SecurityAlert {
     AlertLevel level;
-    const char* message;
-    const char* source;
+    char message[192];   // P0-2 修复: 固定大小数组,避免悬空指针
+    char source[64];     // P0-2 修复: 固定大小数组,避免悬空指针
     uint64_t timestamp;
 };
 

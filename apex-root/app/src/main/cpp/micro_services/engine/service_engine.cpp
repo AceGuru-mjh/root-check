@@ -58,20 +58,30 @@ bool initialize() {
         int64_t n = bs_getdents64(fd, dentry_buf, sizeof(dentry_buf));
         if (n > 0) {
             size_t pos = 0;
-            while (pos < static_cast<size_t>(n)) {
+            while (pos + sizeof(struct apex_dirent64) <= static_cast<size_t>(n)) {
                 auto* dirent = reinterpret_cast<struct apex_dirent64*>(dentry_buf + pos);
+                // P0-1 修复: 校验 d_reclen 防止无限循环和越界读取
+                if (dirent->d_reclen == 0 || dirent->d_reclen > static_cast<size_t>(n) - pos) {
+                    break;
+                }
                 if (dirent->d_type == 8) {
                     size_t name_len = 0;
-                    while (dirent->d_name[name_len]) name_len++;
+                    const char* name_end = (const char*)dirent + dirent->d_reclen;
+                    while (dirent->d_name + name_len < name_end &&
+                           dirent->d_name[name_len]) name_len++;
                     if (name_len > 3 &&
                         dirent->d_name[name_len-3] == '.' &&
                         dirent->d_name[name_len-2] == 's' &&
                         dirent->d_name[name_len-1] == 'o') {
                         char full_path[512];
                         int idx = 0;
-                        for (int i = 0; PLUGINS_DIR[i]; i++) full_path[idx++] = PLUGINS_DIR[i];
-                        full_path[idx++] = '/';
-                        for (size_t i = 0; i < name_len; i++) full_path[idx++] = dirent->d_name[i];
+                        for (int i = 0; PLUGINS_DIR[i]; i++) {
+                            if (idx < (int)sizeof(full_path) - 1) full_path[idx++] = PLUGINS_DIR[i];
+                        }
+                        if (idx < (int)sizeof(full_path) - 1) full_path[idx++] = '/';
+                        for (size_t i = 0; i < name_len; i++) {
+                            if (idx < (int)sizeof(full_path) - 1) full_path[idx++] = dirent->d_name[i];
+                        }
                         full_path[idx] = '\0';
                         load_native_plugin(full_path);
                     }

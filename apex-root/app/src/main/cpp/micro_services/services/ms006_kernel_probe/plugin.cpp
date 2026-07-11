@@ -65,12 +65,17 @@ static bool scan_proc_cmdline(const char* needle) {
     };
 
     size_t pos = 0;
-    while (pos < (size_t)n) {
+    while (pos + sizeof(linux_dirent64) <= (size_t)n) {
         auto* dirent = (linux_dirent64*)(dentry_buf + pos);
+        // P0-1 修复: 校验 d_reclen 防止无限循环和越界读取
+        if (dirent->d_reclen == 0 || dirent->d_reclen > (size_t)n - pos) {
+            break;
+        }
         if (dirent->d_type == 4) { // DT_DIR
             bool all_digits = true;
-            for (int i = 0; dirent->d_name[i]; i++) {
-                if (dirent->d_name[i] < '0' || dirent->d_name[i] > '9') {
+            const char* name_end = (const char*)dirent + dirent->d_reclen;
+            for (const char* c = dirent->d_name; c < name_end && *c; c++) {
+                if (*c < '0' || *c > '9') {
                     all_digits = false; break;
                 }
             }
@@ -78,10 +83,16 @@ static bool scan_proc_cmdline(const char* needle) {
                 char cmdline_path[64];
                 int idx = 0;
                 const char* pfx = "/proc/";
-                for (int i = 0; pfx[i]; i++) cmdline_path[idx++] = pfx[i];
-                for (int i = 0; dirent->d_name[i]; i++) cmdline_path[idx++] = dirent->d_name[i];
+                for (int i = 0; pfx[i]; i++) {
+                    if (idx < (int)sizeof(cmdline_path) - 1) cmdline_path[idx++] = pfx[i];
+                }
+                for (const char* c = dirent->d_name; c < name_end && *c; c++) {
+                    if (idx < (int)sizeof(cmdline_path) - 1) cmdline_path[idx++] = *c;
+                }
                 const char* sfx = "/cmdline";
-                for (int i = 0; sfx[i]; i++) cmdline_path[idx++] = sfx[i];
+                for (int i = 0; sfx[i]; i++) {
+                    if (idx < (int)sizeof(cmdline_path) - 1) cmdline_path[idx++] = sfx[i];
+                }
                 cmdline_path[idx] = '\0';
 
                 char buf[512];
