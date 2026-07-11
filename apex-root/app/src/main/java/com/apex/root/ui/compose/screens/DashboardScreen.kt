@@ -113,8 +113,8 @@ fun DashboardScreen(
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             LiquidGlassContainer(fluidColorsDark = PageFluidColors.dashboard, fluidColorsLight = PageFluidColors.dashboardLight) {
-                // 修复 v1.0.7: LiquidGlassContainer 的 pointerInput(Unit){} 让触摸穿透,
-                // Column.verticalScroll 即可正常工作。Scaffold 已通过 nestedScroll 连接 TopBar。
+                // v1.0.9: LiquidGlassContainer 不再拦截触摸事件 (移除了 pointerInput),
+                // Column.verticalScroll + 按钮点击都能正常工作。
                 Column(
                 modifier = Modifier
                     .fillMaxSize()
