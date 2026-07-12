@@ -28,7 +28,7 @@
 │              Native 层 (C++ / JNI / NDK)                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
 │  │ detect/  │ │ ctrl/    │ │ ebpf/    │ │ cure/    │   │
-│  │ 16 层检测│ │ 隐藏控制 │ │ eBPF 防火│ │ 修复引擎│   │
+│  │ 20 层检测│ │ 隐藏控制 │ │ eBPF 防火│ │ 修复引擎│   │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
 │  │ guard/   │ │ game/    │ │ hid/     │ │ consensus│   │
@@ -39,9 +39,10 @@
 
 ---
 
-## 🔍 16 层检测架构
+## 🔍 20 层检测架构 (v1.1.0+)
 
-APEX-Root 采用 16 层深度检测，每层对应一个独立的 C++ 模块：
+APEX-Root 采用 20 层深度检测，每层对应一个独立的 C++ 模块。
+**所有 Ring0 内核态检测已完全移除**，仅保留 Ring3 root 级 / 用户态检测：
 
 | 层级 | 名称 | 检测目标 | 实现文件 |
 |------|------|----------|----------|
@@ -61,6 +62,10 @@ APEX-Root 采用 16 层深度检测，每层对应一个独立的 C++ 模块：
 | L14 | 虚拟框架 | VirtualXposed / 太极 / 双开分身 / Island | `layer14_virtualxposed.cpp` |
 | L15 | 危险应用 | GameGuardian / CheatEngine / Lucky Patcher | `layer15_dangerous_apps.cpp` |
 | L16 | Magisk 扩展 | DenyList / ZygiskNext / ReZygisk / LSPosed / Riru | `layer16_magisk_extensions.cpp` |
+| L17 | 现代 Root Fork | SukiSU / Magisk Delta / Kitsune / ReZygisk variants | `layer17_modern_root_forks.cpp` |
+| L18 | APatch KPM 用户态 | KPM 模块 / Trampoline / KernelPatch 项目 | `layer18_apatch_kpm.cpp` |
+| L19 | 隐藏框架深度 | Zygisk-Assistant / AML / MagiskFrida / 持久化脚本 | `layer19_hide_frameworks.cpp` |
+| L20 | 现代 Hook 框架 | Pine/SandHook/ByteHook/ShadowHook / Frida variants / LSPatch | `layer20_modern_hooks.cpp` |
 
 ### 微服务架构
 
@@ -264,7 +269,7 @@ apex-root/
 │       │   ├── hid/                  # HWID 伪装
 │       │   └── cure/                 # 修复
 │       ├── cpp/                      # C++ 原生代码
-│       │   ├── detect/               # 16 层检测
+│       │   ├── detect/               # 20 层检测
 │       │   ├── ctrl/                 # 隐藏控制
 │       │   ├── ebpf/                 # eBPF 防火墙
 │       │   ├── cure/                 # 修复引擎

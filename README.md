@@ -21,14 +21,14 @@
 [![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)]()
 [![NDK](https://img.shields.io/badge/NDK-28.2-FF6F00?logo=androidndk&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-Proprietary-red)]()
-[![Version](https://img.shields.io/badge/Version-1.0.0-00D4AA)]()
+[![Version](https://img.shields.io/badge/Version-1.1.1-00D4AA)]()
 
 <p>
-  <strong>🔍 16 层深度检测 · 🛡️ 3 模式隐藏系统 · 🧬 后量子签名 · ⚡ 微服务架构</strong>
+  <strong>🔍 20 层深度检测 · 🛡️ 3 模式隐藏系统 · 🧬 后量子签名 · ⚡ 微服务架构</strong>
 </p>
 
 <p>
-  <strong>16-Layer Detection · 3-Mode Hiding · Post-Quantum Signing · Microservice Architecture</strong>
+  <strong>20-Layer Detection · 3-Mode Hiding · Post-Quantum Signing · Microservice Architecture</strong>
 </p>
 
 ---
@@ -46,7 +46,7 @@
 | [📖 环境搭建指南](./docs/BUILD_ENV.md) | 从零搭建编译环境（JDK/SDK/NDK/CMake）超详细步骤 | 新手入门 |
 | [🔨 构建指南](./docs/BUILD.md) | debug/release 构建、APK 签名、ABI 分包、模块打包 | 开发者 |
 | [🩺 故障排查](./docs/TROUBLESHOOTING.md) | 编译/运行/原生库/Root 检测/隐藏模式问题超详细排查 | 所有用户 |
-| [🏗️ 架构设计](./docs/ARCHITECTURE.md) | 16 层检测、3 模式隐藏、微服务、后量子签名架构 | 架构师 |
+| [🏗️ 架构设计](./docs/ARCHITECTURE.md) | 20 层检测、3 模式隐藏、微服务、后量子签名架构 | 架构师 |
 | [💻 开发指南](./docs/DEVELOPMENT.md) | 代码规范、调试技巧、贡献流程、添加新检测层 | 贡献者 |
 
 ---
@@ -55,7 +55,7 @@
 
 ### 📖 项目简介
 
-**APEX-Root** 是一款专为 Android 设备完整性评估打造的专业级安全分析工具。它采用 **16 层深度检测架构**，覆盖从系统属性到固件完整性的全维度安全审计，配合 **3 模式隐藏系统**（检测/隐藏/游戏）实现透明化 root 管理。
+**APEX-Root** 是一款专为 Android 设备完整性评估打造的专业级安全分析工具。它采用 **20 层深度检测架构**，覆盖从系统属性到固件完整性的全维度安全审计，配合 **3 模式隐藏系统**（检测/隐藏/游戏）实现透明化 root 管理。
 
 本项目的核心理念是：**在感知安全与地面实况之间架起桥梁**——为安全研究者、开发者与企业 IT 管理员提供一把分毫不差的诊断仪器。
 
@@ -63,7 +63,7 @@
 
 ### ✨ 核心特性
 
-#### 🔍 16 层检测架构
+#### 🔍 20 层检测架构
 
 | 层级 | 名称 | 检测内容 | 技术实现 |
 |------|------|----------|----------|
@@ -126,7 +126,7 @@
 |------|------|----------|----------|
 | **快速** | < 500ms | L1 / L3 / L8-L10 | 日常即时检查 |
 | **标准** | 2-5s | L1-L12 + 反隐藏 | 定期安全审计 |
-| **深度** | 10-30s | 全 16 层 + 侧信道 | 安全研究 |
+| **深度** | 10-30s | 全 20 层 + 侧信道 | 安全研究 |
 | **取证** | 60s+ | 全层 + 自保护 + 签名 | 法医级分析 |
 
 ---
@@ -209,7 +209,7 @@ ls app/build/outputs/apk/debug/
 
 1. **启动应用**：首次使用需完成权限引导
 2. **扫描设备**：点击仪表盘的"快速检测"按钮
-3. **查看报告**：扫描完成后查看 16 层检测结果
+3. **查看报告**：扫描完成后查看 20 层检测结果
 4. **切换模式**：工具栏 → "隐藏模式" → 选择 Detection / Hide / Game
 
 #### 功能入口
@@ -246,7 +246,7 @@ apex-root/
 │       │   ├── core/             # 核心服务
 │       │   └── domain/           # 领域模型
 │       ├── cpp/                  # C++ 原生代码
-│       │   ├── detect/           # 16 层检测实现
+│       │   ├── detect/           # 20 层检测实现
 │       │   ├── ctrl/             # 隐藏功能控制
 │       │   ├── legacy/           # Android 10-11 回退
 │       │   ├── trusted_root/     # 后量子签名
@@ -309,6 +309,10 @@ apex-root/
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
 | v1.0.0 | 2026-06 | 16 层检测 + 3 模式隐藏 + 后量子签名 + UI 重构 |
+| v1.0.6 | 2026-07 | Ring0 移除 + 13 个 native 崩溃修复 + 安全加固 |
+| v1.0.9 | 2026-07 | UI 滑动/通知闪退/权限修复 |
+| v1.1.0 | 2026-07 | P0 高危修复 (getdents64/guard_alert/release.yml/su阻塞/IPC OOM/keystore) |
+| v1.1.1 | 2026-07 | P1 中危修复 + 20 层检测 + 并行引擎 + 交叉验证 + 实时监控 + 权限利用 |
 | v0.9.0 | 2026-01 | 初始版本 |
 
 ---
@@ -325,7 +329,7 @@ apex-root/
 
 ### 📖 Overview
 
-**APEX-Root** is a professional-grade security analysis tool for Android device integrity assessment. It employs a **16-layer deep detection architecture** covering full-dimension security auditing from system properties to firmware integrity, combined with a **3-mode hiding system** (Detection/Hide/Game) for transparent root management.
+**APEX-Root** is a professional-grade security analysis tool for Android device integrity assessment. It employs a **20-layer deep detection architecture** covering full-dimension security auditing from system properties to firmware integrity, combined with a **3-mode hiding system** (Detection/Hide/Game) for transparent root management.
 
 Core philosophy: **Bridging the chasm between perceived security and ground truth** — providing a diagnostic instrument of uncompromising precision for security researchers, developers, and enterprise IT administrators.
 
@@ -396,7 +400,7 @@ Core philosophy: **Bridging the chasm between perceived security and ground trut
 |------|----------|----------|----------|
 | **Quick** | < 500ms | L1 / L3 / L8-L10 | Daily instant check |
 | **Standard** | 2-5s | L1-L12 + anti-hiding | Regular security audit |
-| **Deep** | 10-30s | All 16 layers + side-channel | Security research |
+| **Deep** | 10-30s | All 20 layers + side-channel | Security research |
 | **Forensic** | 60s+ | All + self-protection + signing | Forensic analysis |
 
 ---
@@ -474,7 +478,7 @@ ls app/build/outputs/apk/debug/app-debug.apk
 
 1. **Launch app**: Complete permission guide on first use
 2. **Scan device**: Tap "Quick Scan" on dashboard
-3. **View report**: Check 16-layer detection results
+3. **View report**: Check 20-layer detection results
 4. **Switch mode**: Toolbar → "Hide Mode" → Select Detection / Hide / Game
 
 #### Feature Entry Points

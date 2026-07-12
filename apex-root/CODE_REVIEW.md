@@ -245,3 +245,67 @@ Self-hide 绕过检测：        ⭐⭐⭐☆☆ 中
 - [ ] GitHub Actions 中通过 secrets 注入 `APEX_STORE_PASS` / `APEX_KEY_PASS` 跑 CI release
 - [ ] 历史 Git commit 中遗留的硬编码密码 —— 已无法擦除,只能撤销旧 keystore 并重新签发
 
+
+## 十、v1.0.8 - v1.1.1 后续修复记录
+
+### 10.1 v1.0.8 — 编译错误修复
+
+| # | 问题 | 修复 |
+|---|---|---|
+| 1 | `rememberNestedScrollInteropConnection()` 在 Compose 1.7.0 才引入,项目用 1.5.x | 移除该调用,滑动修复仅依赖 LiquidGlassContainer pointerInput |
+| 2 | PermissionsScreen 缺少 PHONE_STATE 分支 | 添加 PHONE_STATE 到 permissionMeta + handleRequest |
+
+### 10.2 v1.0.9 — 按钮无响应修复
+
+| # | 问题 | 修复 |
+|---|---|---|
+| 1 | v1.0.7 添加的 `pointerInput(Unit){}` 拦截所有触摸事件,导致按钮无响应 | 完全移除 pointerInput,Box 默认不拦截事件 |
+
+### 10.3 v1.1.0 — P0 高危修复 (6 项)
+
+| # | 问题 | 修复 |
+|---|---|---|
+| 1 | 7 处 getdents64 未校验 d_reclen | 添加 `d_reclen==0 \|\| d_reclen>n-pos` 校验 + d_name 限长 |
+| 2 | guard_engine::add_alert 悬空指针 | SecurityAlert 改用 `char[192]`/`char[64]` 固定数组 |
+| 3 | release.yml 三个 bug | `env.X`→`secrets.X` / `cat >`→`cat >>` / 移除 `rm -f gradle.properties` |
+| 4 | AppUpdater.readRootFile 永久阻塞 | 先 `waitFor(3000)` 超时 `destroyForcibly`,再读输出 |
+| 5 | DetectionProtocol OOM 崩溃 | `catch(Throwable)` + len 范围校验 + 16MB 上限 |
+| 6 | keystore 泄露 + git 卫生 | `git rm --cached` keystore + .gitignore 添加 `*.jks` + 删除 build_test/ 残留 |
+
+### 10.4 v1.1.1 — P1 中危修复 + 权限利用 (9 项)
+
+| # | 问题 | 修复 |
+|---|---|---|
+| 1 | PLUGINS_DIR 硬编码 | 新增 set_plugins_dir() 运行时设置 + JNI 桥接 |
+| 2 | ApexViewModel 无 onCleared | 添加 onCleared 停止 guardMonitor |
+| 3 | 7 处硬编码版本号 | 替换为 BuildConfig.VERSION_NAME / apex::VERSION_STRING |
+| 4 | jni_bridge.cpp 死代码 | 删除文件,JNI_OnLoad 移到 native-lib.cpp |
+| 5 | updatePluginEnabled 竞态 | read-modify-write → _settings.update{} 原子 CAS |
+| 6 | ScanViewModel 超时 Job 未取消 | 保存 Job,在 parseReport/Alert/onCleared 中 cancel |
+| 7 | FOREGROUND_SERVICE 权限未利用 | 新增 GuardMonitorService 前台服务 |
+| 8 | MANAGE_EXTERNAL_STORAGE 权限未利用 | ReportExporter.saveReportToDownloads() |
+| 9 | READ_MEDIA_* 权限未利用 | 新增 MediaScanner 扫描可疑媒体文件 |
+
+### 10.5 仍需后续跟进的事项 (P2, 非阻塞)
+
+- [ ] 升级 AGP 8.2→8.5+ / Gradle 8.2→8.7+ / Kotlin 1.9.20→2.0+
+- [ ] 添加 AppUpdater.extractExpectedSha256 / CrossValidator 单元测试
+- [ ] 升级 module.prop / update.json 版本号
+- [ ] 修复 SelfProtection.spawnVerifierProcess 进程泄漏
+- [ ] 修复 guard_engine compute_file_sha256 实现错误
+- [ ] git filter-repo 彻底清除历史中的 keystore + 密码
+
+### 10.6 Ring0 状态确认
+
+**Ring0 内核态检测保持完全移除状态,不恢复。**
+
+所有检测路径均为 Ring3 (root 级 / 用户态):
+- 不读 `/proc/kallsyms`
+- 不枚举 `/proc/modules`
+- 不读 `/proc/sys/kernel/tainted`
+- 不访问 `/sys/kpm` sysfs 节点
+- 不读 `/proc/kernelsu` 内核 API
+- 不检查 `syscall_table` 符号
+
+syscall 篡改检测由 `layer5_sidechannel.cpp::detectSyscallResultInconsistency` (Ring3 侧信道) 覆盖。
+`ebpf_manager.cpp::protect_syscall_table` 保留为 no-op (ABI 兼容),不执行任何 Ring0 操作。

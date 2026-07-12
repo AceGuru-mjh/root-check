@@ -164,8 +164,14 @@ object SelfProtection {
     fun init(ctx: Context) { context = ctx.applicationContext }
 
     // ─── Multi-process verification ─────────────────────────
+    // P2-8 修复: 保存 Process 引用,提供 stopVerifier() 方法停止,避免无限循环进程泄漏
+    @Volatile
+    private var verifierProcess: Process? = null
+
     fun spawnVerifierProcess(): Boolean {
         try {
+            // 先停止已有的 verifier
+            stopVerifier()
             val builder = ProcessBuilder(
                 "sh", "-c",
                 "while kill -0 ${
@@ -182,12 +188,23 @@ object SelfProtection {
             )
             builder.redirectErrorStream(true)
             val process = builder.start()
-            // Detach the verifier - don't track it in this process
             process.outputStream.close()
+            verifierProcess = process
             return true
         } catch (_: Exception) {
             return false
         }
+    }
+
+    /**
+     * P2-8: 停止 verifier 进程,避免泄漏。
+     * 应在 Application.onTerminate() 或 Activity.onDestroy() 中调用。
+     */
+    fun stopVerifier() {
+        try {
+            verifierProcess?.destroyForcibly()
+            verifierProcess = null
+        } catch (_: Throwable) {}
     }
 
     fun verifyChildProcess(pid: Int): Boolean {

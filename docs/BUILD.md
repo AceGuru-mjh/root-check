@@ -110,17 +110,18 @@ adb shell getprop ro.product.cpu.abi
 ```bash
 keytool -genkey -v \
     -keystore apex-release.jks \
-    -storepass meng411722 \
-    -keypass meng411722 \
+    -storepass YOUR_STRONG_PASSWORD \
+    -keypass YOUR_STRONG_PASSWORD \
     -alias root \
     -keyalg RSA -keysize 2048 \
     -validity 10000 \
     -dname "CN=APEX Root, OU=Dev, O=APEX, L=CN, ST=CN, C=CN"
 ```
 
-⚠️ **安全提示**：
+⚠️ **安全提示**（v1.1.0+ 更新）：
 - `apex-release.jks` 必须保密，切勿提交到 git（已在 .gitignore）
-- 密码 `meng411722` 是项目默认值，生产环境应修改
+- **不要使用硬编码密码**——旧版密码 `meng411722` 已在 git 历史中泄露，必须撤销旧 keystore 并重新生成
+- 密码应通过 `gradle.properties`（不入库）或环境变量 `APEX_STORE_PASS` / `APEX_KEY_PASS` 注入
 - `validity 10000` = 约 27 年有效期
 
 #### 步骤 2：执行 release 构建
@@ -301,8 +302,8 @@ externalNativeBuild {
 
 ```kotlin
 defaultConfig {
-    versionCode = 104      // 整数版本号（每次发布递增）
-    versionName = "1.0.4"  // 显示版本号
+    versionCode = 125      // 整数版本号（每次发布递增）
+    versionName = "1.1.1"  // 显示版本号
 }
 ```
 
@@ -315,8 +316,8 @@ defaultConfig {
 
 ```bash
 # 1. 更新版本号
-sed -i 's/versionCode = 104/versionCode = 105/' app/build.gradle.kts
-sed -i 's/versionName = "1.0.4"/versionName = "1.0.5"/' app/build.gradle.kts
+sed -i 's/versionCode = 125/versionCode = 126/' app/build.gradle.kts
+sed -i 's/versionName = "1.1.1"/versionName = "1.1.2"/' app/build.gradle.kts
 
 # 2. 构建 release APK
 ./gradlew assembleRelease
