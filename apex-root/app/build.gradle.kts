@@ -68,8 +68,8 @@ android {
         applicationId = "com.apex.root"
         minSdk = 29
         targetSdk = 34
-        versionCode = 125
-        versionName = "1.1.1"
+        versionCode = 126
+        versionName = "1.1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 全架构由 splits.abi 控制，此处不再设置 ndk.abiFilters

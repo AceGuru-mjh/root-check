@@ -620,10 +620,8 @@ Java_com_apex_root_data_jni_NativeBridge_detectMagiskHideLegacyNative(JNIEnv*, j
     return detectMagiskHideLegacy();
 }
 
-JNIEXPORT jboolean JNICALL
-Java_com_apex_root_data_jni_NativeBridge_detectMagiskDenyListCfgNative(JNIEnv*, jobject) {
-    return detectMagiskDenyList();
-}
+// P2-7: 删除孤儿 JNI 导出 detectMagiskDenyListCfgNative (Kotlin 未声明,功能重复)
+// 原代码: JNIEXPORT jboolean Java_..._detectMagiskDenyListCfgNative { return detectMagiskDenyList(); }
 
 JNIEXPORT jboolean JNICALL
 Java_com_apex_root_data_jni_NativeBridge_detectSyscallResultInconsistencyNative(JNIEnv*, jobject) {

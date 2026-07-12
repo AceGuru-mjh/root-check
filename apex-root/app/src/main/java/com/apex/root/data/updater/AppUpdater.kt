@@ -355,7 +355,8 @@ class AppUpdater private constructor(private val context: Context) {
      *   hash: abc123...
      * 哈希必须为 64 字符的十六进制字符串。返回 null 表示未找到。
      */
-    private fun extractExpectedSha256(releaseBody: String): String? {
+    // P2-5: 改为 internal 以便单元测试访问
+    internal fun extractExpectedSha256(releaseBody: String): String? {
         if (releaseBody.isEmpty()) return null
         // 匹配 SHA-256: <64 hex chars> 或 sha256: <64 hex>
         val pattern = Regex(
