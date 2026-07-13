@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">APEX Root</string>
+    <string name="app_name">Apex Agent</string>
 
     <!-- 模块标题 -->
     <string name="scan_title">APEX-Detect 检测引擎</string>
