@@ -86,15 +86,21 @@ jobs:
           fi
           rm -f apex-release.jks
 
-      - name: Find APK files
+      - name: Find and rename APK files
         id: find_apks
         run: |
           echo "##[group]APK files found"
           find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
           echo "##[endgroup]"
-          # 创建 APK 目录列表
+          # v1.0.1: 重命名 APK 为 apex-agent-{abi}.apk (去掉 debug 字样)
           mkdir -p artifacts
-          find app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \;
+          find app/build/outputs/apk -name "*.apk" | while read apk; do
+            # 提取 ABI: 从路径如 .../arm64-v8a/app-arm64-v8a-debug.apk
+            abi=$(echo "$apk" | grep -oP '(arm64-v8a|armeabi-v7a|x86_64)' | head -1)
+            if [ -z "$abi" ]; then abi="universal"; fi
+            cp "$apk" "artifacts/apex-agent-${abi}.apk"
+            echo "Renamed: $apk -> apex-agent-${abi}.apk"
+          done
           ls -lh artifacts/
 
       - name: Upload APK artifacts

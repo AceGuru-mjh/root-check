@@ -98,16 +98,6 @@ android {
         }
     }
 
-    // v1.0.1: APK 文件名改为 apex-agent-{abi}.apk (去掉 debug 字样)
-    android.applicationVariants.all {
-        val variant = this
-        variant.outputs.all {
-            val abi = filters.find { it.filterType == "ABI" }?.identifier ?: "universal"
-            // 输出文件名: apex-agent-arm64-v8a.apk
-            outputFileName = "apex-agent-${abi}.apk"
-        }
-    }
-
     buildTypes {
         debug {
             if (hasSigningCreds) {
