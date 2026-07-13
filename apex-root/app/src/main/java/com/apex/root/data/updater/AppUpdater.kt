@@ -865,7 +865,8 @@ class AppUpdater private constructor(private val context: Context) {
         }
     }
 
-    private fun compareVersions(v1: String, v2: String): Int {
+    // v1.0.3: 改为 public 供 UI 层使用 (原 private 只在 AppUpdater 内部用)
+    fun compareVersions(v1: String, v2: String): Int {
         val p1 = parseVersionParts(v1)
         val p2 = parseVersionParts(v2)
         for (i in 0 until maxOf(p1.size, p2.size)) {

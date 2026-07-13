@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -705,6 +706,52 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
             Log.i("ApexViewModel", "Guard monitor stopped in onCleared")
         }
         super.onCleared()
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // v1.0.3: 从删除的 UI 文件提取的检测流程,统一通过 ViewModel 暴露
+    // ═══════════════════════════════════════════════════════════
+
+    /** Frida 检测 (原 FridaConsoleScreen 直接调用) */
+    fun detectFridaStatus(): Boolean = NativeBridge.detectFrida()
+    fun detectSELinuxJump(): Boolean = NativeBridge.detectSELinuxContextJump()
+
+    /** LSPosed/Zygisk/Riru 检测 (原 LSPosedManagerScreen 直接调用) */
+    data class HookFrameworkStatus(
+        val xposed: Boolean, val lsposed: Boolean,
+        val riru: Boolean, val zygisk: Boolean
+    )
+    fun detectHookFrameworks(): HookFrameworkStatus = HookFrameworkStatus(
+        xposed = NativeBridge.detectXposedFramework(),
+        lsposed = NativeBridge.detectLSPosedManager(),
+        riru = NativeBridge.detectRiruModules(),
+        zygisk = NativeBridge.detectZygiskModules()
+    )
+
+    /** Guard 引擎直接控制 (原 DashboardScreen 直接调用 NativeGuard) */
+    fun startGuardian(): Boolean = runCatching {
+        com.apex.root.guard.NativeGuard.startGuardian()
+    }.getOrDefault(false)
+
+    fun checkGuardIntegrity(): Boolean = runCatching {
+        com.apex.root.guard.NativeGuard.checkIntegrity()
+    }.getOrDefault(false)
+
+    /** Native 库重试加载 (原 UpdateScreen 直接调用) */
+    fun retryNativeLoad() {
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            com.apex.root.core.NativeLibraryLoader.reset()
+            com.apex.root.core.NativeLibraryLoader.ensureLoaded()
+            val available = com.apex.root.core.NativeLibraryLoader.isAvailable
+            _uiState.update { it.copy(nativeAvailable = available) }
+        }
+    }
+
+    /** 权限检查 (原 PermissionsScreen 直接调用) */
+    suspend fun checkAllPermissions(): List<com.apex.root.core.permission.PermissionManager.PermissionInfo> {
+        return withContext(Dispatchers.IO) {
+            com.apex.root.core.permission.PermissionManager.checkAll(getApplication())
+        }
     }
 
     fun toggleGameMode() {
