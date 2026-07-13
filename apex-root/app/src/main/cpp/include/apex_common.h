@@ -11,8 +11,8 @@ namespace apex {
 // 未来可通过 CMake -DAPEX_VERSION 注入。
 constexpr uint32_t VERSION_MAJOR = 1;
 constexpr uint32_t VERSION_MINOR = 0;
-constexpr uint32_t VERSION_PATCH = 1;
-constexpr const char* VERSION_STRING = "1.0.1";
+constexpr uint32_t VERSION_PATCH = 3;
+constexpr const char* VERSION_STRING = "1.0.3";
 constexpr const char* BUILD_NAME = "APEX-Root Omnipotent";
 
 // Protocol constants
