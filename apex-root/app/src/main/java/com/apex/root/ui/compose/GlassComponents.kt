@@ -5,7 +5,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -88,10 +87,8 @@ fun GlassFeatureCard(
         modifier
             .animateContentSize(animationSpec = spring(dampingRatio = 0.75f, stiffness = 280f))
             .then(
-                if (onToggle != null) Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onToggle() }
+                // v1.0.1 修复: 移除 indication = null,使用默认 ripple 让用户看到点击反馈
+                if (onToggle != null) Modifier.clickable { onToggle() }
                 else Modifier
             )
     } else modifier
@@ -371,15 +368,31 @@ fun GlassSettingsItem(
     onClick: () -> Unit = {},
     trailing: @Composable (() -> Unit)? = null
 ) {
+    // v1.0.1 修复: 当有 trailing (如 Switch) 时,只在左侧内容区加 clickable,
+    // 不在整个 Row 上加 clickable — 否则 Row 的 clickable 会吞掉 Switch 的触摸事件。
+    val rowModifier = if (trailing != null) {
+        // 有 trailing 控件: Row 本身不可点击,让 trailing 接收触摸
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)
+    } else {
+        // 无 trailing: 整行可点击
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 20.dp, vertical = 16.dp)
+    }
+
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+        modifier = rowModifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // v1.0.1: 有 trailing 时,左侧内容区可点击 (触发 onClick)
+        val leftModifier = if (trailing != null) {
+            Modifier.weight(1f).clickable { onClick() }
+        } else {
+            Modifier.weight(1f)
+        }
+        Row(
+            modifier = leftModifier,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             if (icon != null) {
                 GlassIconBox(
                     icon = icon,
