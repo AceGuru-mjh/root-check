@@ -1,6 +1,6 @@
 id=apex-root
 name=APEX-Root Unidirectional Hide
-version=v1.1.1
-versionCode=125
+version=v1.0.1
+versionCode=1
 author=APEX-Root Team
 description=Unidirectional transparent root hiding: only APEX-Root sees real root status, all others see 100% clean system. Supports eBPF firewall (Android 12+) + legacy mount-ns/LD_PRELOAD fallback (Android 10-11). One-click switch between Detection / Hide / Game modes.
