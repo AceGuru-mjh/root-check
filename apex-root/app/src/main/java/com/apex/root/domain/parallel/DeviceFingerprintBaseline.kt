@@ -137,9 +137,12 @@ class DeviceFingerprintBaseline(private val context: Context) {
             "ro.secure",
             "ro.build.type"
         ).forEach { key ->
+            // v1.0.1 修复: SystemProperties 是 @hide API,Kotlin 2.0 严格模式不可用
+            // 改用反射读取 (兼容所有 Android 版本)
             val value = try {
-                @Suppress("DEPRECATION")
-                android.os.SystemProperties.get(key, "")
+                val cls = Class.forName("android.os.SystemProperties")
+                val method = cls.getMethod("get", String::class.java, String::class.java)
+                method.invoke(null, key, "") as? String ?: ""
             } catch (_: Throwable) { "" }
             if (value.isNotEmpty()) props[key] = value
         }

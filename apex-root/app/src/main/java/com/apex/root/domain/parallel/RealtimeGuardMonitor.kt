@@ -225,7 +225,7 @@ class RealtimeGuardMonitor(private val context: Context) {
      */
     suspend fun establishBaseline() {
         val scanResult = quickEngine.scanParallel()
-        val snapshot = baseline.captureBaseline(scanResult)
+        val snapshot = baseline.captureSnapshot(scanResult)
         baseline.saveBaseline(snapshot)
         Log.i(TAG, "Baseline established: risk=${snapshot.riskScore}, " +
             "layers=${snapshot.detectedLayerIds.size}, rootApps=${snapshot.installedRootApps}")

@@ -10,7 +10,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.apex.root.MainActivity
+import com.apex.root.ui.MainActivity
 import com.apex.root.core.notification.Notifier
 import com.apex.root.domain.parallel.RealtimeGuardMonitor
 import kotlinx.coroutines.CoroutineScope

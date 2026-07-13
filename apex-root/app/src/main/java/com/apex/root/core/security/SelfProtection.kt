@@ -164,21 +164,19 @@ object SelfProtection {
     fun init(ctx: Context) { context = ctx.applicationContext }
 
     // ─── Multi-process verification ─────────────────────────
-    // P2-8 修复: 保存 Process 引用,提供 stopVerifier() 方法停止,避免无限循环进程泄漏
+    // v1.0.1 修复: 用 java.lang.Process 全限定名,避免与 android.os.Process 冲突
     @Volatile
-    private var verifierProcess: Process? = null
+    private var verifierProcess: java.lang.Process? = null
 
     fun spawnVerifierProcess(): Boolean {
         try {
-            // 先停止已有的 verifier
             stopVerifier()
+            val pid = android.os.Process.myPid()
             val builder = ProcessBuilder(
                 "sh", "-c",
-                "while kill -0 ${
-                    Process.myPid()
-                } 2>/dev/null; do " +
-                        "if [ -f /proc/${Process.myPid()}/status ]; then " +
-                        "tp=\$(grep 'TracerPid:' /proc/${Process.myPid()}/status | awk '{print \$2}'); " +
+                "while kill -0 $pid 2>/dev/null; do " +
+                        "if [ -f /proc/$pid/status ]; then " +
+                        "tp=\$(grep 'TracerPid:' /proc/$pid/status | awk '{print \$2}'); " +
                         "if [ \"\$tp\" != \"0\" ] && [ \"\$tp\" != \"\" ]; then " +
                         "echo \"WARNING: TracerPid=\$tp detected on parent\" > /data/local/tmp/apex_alert; " +
                         "fi; " +
@@ -187,19 +185,15 @@ object SelfProtection {
                         "done"
             )
             builder.redirectErrorStream(true)
-            val process = builder.start()
-            process.outputStream.close()
-            verifierProcess = process
+            val proc = builder.start()
+            proc.outputStream.close()
+            verifierProcess = proc
             return true
         } catch (_: Exception) {
             return false
         }
     }
 
-    /**
-     * P2-8: 停止 verifier 进程,避免泄漏。
-     * 应在 Application.onTerminate() 或 Activity.onDestroy() 中调用。
-     */
     fun stopVerifier() {
         try {
             verifierProcess?.destroyForcibly()
