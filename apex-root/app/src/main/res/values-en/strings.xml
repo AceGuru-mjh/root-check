@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">APEX Root</string>
+    <string name="app_name">Apex Agent</string>
 
     <!-- Module titles -->
     <string name="scan_title">APEX-Detect Engine</string>
