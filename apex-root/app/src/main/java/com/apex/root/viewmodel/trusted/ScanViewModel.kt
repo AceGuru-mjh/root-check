@@ -203,15 +203,26 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // v1.0.2 P0-2 修复: onCleared 中用 GlobalScope launch 等待 closeAndJoin 完成
+    // 旧实现 closeNow() 只 cancel 不 join,ViewModel 销毁后 readerJob 协程可能
+    // 仍在运行并访问已销毁的 socket/reader → use-after-close 崩溃。
+    // 新实现: 用 GlobalScope.launch(NonCancellable) 调用 closeAndJoin() 确保
+    // readerJob 真正结束后再清理资源。GlobalScope 在进程级生命周期内有效,
+    // 即使 ViewModel scope 已取消也能完成清理。
     override fun onCleared() {
-        // 修复：client.disconnect() 是 suspend fun，不能在非 suspend 的 onCleared() 直接调用。
-        // 改用非挂起的 closeNow()，同步关闭 socket/reader/writer 并取消 reader job。
+        // 先取消超时 Job
+        timeoutJob?.cancel()
+        timeoutJob = null
+        // 用 NonCancellable scope 确保清理协程不会被立即取消
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.NonCancellable) {
+            try {
+                client.closeAndJoin()
+            } catch (_: Throwable) {}
+        }
+        // 同时同步关闭作为兜底 (如果协程没来得及执行)
         try {
             client.closeNow()
         } catch (_: Throwable) {}
-        // P1-6 修复: 取消超时 Job,避免 ViewModel 销毁后协程仍在运行
-        timeoutJob?.cancel()
-        timeoutJob = null
         super.onCleared()
     }
 }

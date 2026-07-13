@@ -136,9 +136,23 @@ class SecureSocketClient(
      * 非挂起的立即关闭（用于 onCleared 等不能调用 suspend 的场景）。
      * 同步关闭 socket / reader / writer，并取消 reader job（不等待 join）。
      */
+    // v1.0.2 P0-2 修复: 提供 closeAndJoin() 让调用方等待协程真正结束
     fun closeNow() {
         isRunning = false
         readerJob?.cancel()
+        cleanup()
+        clientScope.cancel()
+    }
+
+    /**
+     * v1.0.2: 关闭并等待 readerJob 真正结束,避免资源泄漏。
+     * closeNow() 只 cancel 不 join,ViewModel 销毁后协程可能仍在运行。
+     */
+    suspend fun closeAndJoin() {
+        isRunning = false
+        try {
+            readerJob?.cancelAndJoin()
+        } catch (_: Throwable) {}
         cleanup()
         clientScope.cancel()
     }
