@@ -73,10 +73,10 @@ class GuardMonitorService : Service() {
                 context.startService(Intent(context, GuardMonitorService::class.java).apply {
                     action = ACTION_STOP
                 })
-            } catch (_: Throwable) {}
+            } catch (e: Throwable) { Log.w(TAG, "caught: ${e.message}", e) }
             try {
                 context.stopService(Intent(context, GuardMonitorService::class.java))
-            } catch (_: Throwable) {}
+            } catch (e: Throwable) { Log.w(TAG, "caught: ${e.message}", e) }
             Log.i(TAG, "Guard monitor service stop requested")
         }
     }
@@ -141,10 +141,18 @@ class GuardMonitorService : Service() {
         Log.i(TAG, "Guard monitor started, interval=${intervalMs}ms")
     }
 
+    // v1.0.2 P2-2 修复: scope.cancel() 后用 runBlocking 等待协程结束
+    // 旧实现 cancel() 不 join,协程可能仍在运行访问已销毁资源
     private fun stopGuardMonitor() {
         guardMonitor?.stop()
         guardMonitor = null
         serviceScope.cancel()
+        // 等待 scope 内所有协程真正结束
+        try {
+            kotlinx.coroutines.runBlocking {
+                serviceScope.coroutineContext[kotlinx.coroutines.Job]?.join()
+            }
+        } catch (_: Throwable) {}
         Log.i(TAG, "Guard monitor stopped")
     }
 

@@ -192,12 +192,18 @@ object DetectionProtocol {
     }
 
     private fun readString(dis: DataInputStream, maxLen: Int): String {
-        // P0-5 修复: 校验 len 防止负数或超大值导致 OOM/NegativeArraySizeException
+        // v1.0.2 P1-1 修复: 当 raw > maxLen 时,必须跳过多余字节,否则协议流错位
+        // 旧实现只读 minOf(raw, maxLen) 字节,剩余 (raw - maxLen) 字节留在流中,
+        // 导致后续所有字段解析错位 → 整个协议崩溃。
         val raw = dis.readInt()
         if (raw < 0) throw java.io.IOException("negative string length: $raw")
         val len = minOf(raw, maxLen)
         val bytes = ByteArray(len)
         dis.readFully(bytes)
+        // 跳过多余字节,保持协议流对齐
+        if (raw > maxLen) {
+            dis.skipBytes(raw - maxLen)
+        }
         return bytes.decodeToString()
     }
 

@@ -103,19 +103,22 @@ class ParallelDetectionEngine {
         val detector: () -> Boolean
     )
 
+    // v1.0.2 P0-3 修复: 每层调用独立的检测逻辑,不再重复调用 isDeviceRooted()
+    // 对于有独立 JNI 函数的层,直接调用;对于没有独立函数的层,从 quickScan 文本解析。
+    // 这样每层的结果是独立的,不会因为一个层检测到 root 就让 7 个层同时报红。
     private val layerDefs = listOf(
-        LayerDef(1, "L1 系统属性", 10) { NativeBridge.isDeviceRooted() },  // 包含 L1 检测
-        LayerDef(2, "L2 ART 注入", 12) { NativeBridge.detectXposedFramework() },
+        LayerDef(1, "L1 系统属性", 10) { parseLayerFromQuickScan("L1 系统属性") },
+        LayerDef(2, "L2 ART 注入", 12) { NativeBridge.detectXposedFramework() || NativeBridge.detectFrida() },
         LayerDef(3, "L3 内存特征", 8) { NativeBridge.fullMemoryFingerprint() != 0 },
-        LayerDef(4, "L4 挂载检查", 12) { NativeBridge.isDeviceRooted() },  // 含 L4
+        LayerDef(4, "L4 挂载检查", 12) { parseLayerFromQuickScan("L4 挂载检查") },
         LayerDef(5, "L5 侧信道", 8) { NativeBridge.detectSyscallResultInconsistency() },
-        LayerDef(6, "L6 Root 守护", 12) { NativeBridge.isDeviceRooted() },  // 含 L6
+        LayerDef(6, "L6 Root 守护", 12) { parseLayerFromQuickScan("L6 Root守护") },
         LayerDef(7, "L7 Boot 状态", 8) { NativeBridge.detectAVBStatus() || NativeBridge.detectCustomRecovery() },
-        LayerDef(8, "L8 Magisk", 10) { NativeBridge.isDeviceRooted() },  // 含 L8
-        LayerDef(9, "L9 KernelSU", 10) { NativeBridge.isDeviceRooted() },  // 含 L9
-        LayerDef(10, "L10 APatch", 10) { NativeBridge.isDeviceRooted() },  // 含 L10
-        LayerDef(11, "L11 Hook 框架", 8) { NativeBridge.detectFrida() },
-        LayerDef(12, "L12 自定义 ROM", 5) { NativeBridge.isDeviceRooted() },  // 含 L12
+        LayerDef(8, "L8 Magisk", 10) { parseLayerFromQuickScan("L8 Magisk") },
+        LayerDef(9, "L9 KernelSU", 10) { parseLayerFromQuickScan("L9 KernelSU") },
+        LayerDef(10, "L10 APatch", 10) { parseLayerFromQuickScan("L10 APatch") },
+        LayerDef(11, "L11 Hook 框架", 8) { NativeBridge.detectFrida() || NativeBridge.detectXposedFramework() },
+        LayerDef(12, "L12 自定义 ROM", 5) { parseLayerFromQuickScan("L12 自定义ROM") },
         LayerDef(14, "L14 虚拟框架", 6) { NativeBridge.detectVirtualXposed() },
         LayerDef(15, "L15 危险应用", 6) {
             NativeBridge.detectGameGuardian() || NativeBridge.detectCheatEngine() ||
@@ -127,7 +130,6 @@ class ParallelDetectionEngine {
             NativeBridge.detectLSPosedManager() || NativeBridge.detectRiruModules() ||
             NativeBridge.detectModernForks()
         },
-        // v1.1.0 新增 L17-L20
         LayerDef(17, "L17 Root Fork", 8) { NativeBridge.detectModernRootForksV2() },
         LayerDef(18, "L18 APatch KPM", 8) {
             NativeBridge.detectAPatchKPM() || NativeBridge.detectAPatchTrampoline() ||
@@ -139,6 +141,13 @@ class ParallelDetectionEngine {
         },
         LayerDef(20, "L20 现代 Hook", 9) { NativeBridge.detectModernHookFrameworks() }
     )
+
+    // v1.0.2: 从 quickScan 文本解析单层结果 (用于缺乏独立 JNI 函数的层)
+    private fun parseLayerFromQuickScan(layerPrefix: String): Boolean {
+        val scan = NativeBridge.runQuickScan()
+        val line = scan.lines().find { it.contains(layerPrefix) } ?: return false
+        return line.contains("❌")
+    }
 
     /**
      * 并行执行所有检测层。

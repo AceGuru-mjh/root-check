@@ -72,38 +72,32 @@ object DetectionCache {
         )
     }
 
-    fun get(key: String): CachedResult? = lock.read {
+    // v1.0.2 P0-1 修复: 将读+删合并到单个 write 锁内,消除竞态条件
+    // 旧实现: 读锁内发现过期→返回null→释放读锁→获取写锁删除。
+    // 多线程同时访问同一过期 key 时,每个线程都会走一遍写锁删除,且在读锁释放
+    // 到写锁获取之间,另一个线程可能已经 put 了新值却被误删。
+    // 新实现: 直接用 write 锁完成 get+过期检查+remove,保证原子性。
+    fun get(key: String): CachedResult? = lock.write {
         val cached = cache.get(key)
         if (cached != null) {
             val age = System.currentTimeMillis() - cached.timestampMs
             if (age < cached.ttlMs) {
+                // 未过期 — 命中
                 hitCount.incrementAndGet()
                 updateStats()
-                return@read cached
+                return@write cached
+            } else {
+                // 过期 — 在同一个写锁内删除,不会被其他线程重复删除
+                cache.remove(key)
+                missCount.incrementAndGet()
+                updateStats()
+                return@write null
             }
-            // 过期 — 需要写锁删除
-            null
         } else {
             missCount.incrementAndGet()
             updateStats()
-            null
+            return@write null
         }
-    }?.also {
-        // 如果返回 null 是因为过期，清理它
-    } ?: run {
-        // 检查是否是过期导致的 null
-        lock.write {
-            val cached = cache.get(key)
-            if (cached != null) {
-                val age = System.currentTimeMillis() - cached.timestampMs
-                if (age >= cached.ttlMs) {
-                    cache.remove(key)
-                    missCount.incrementAndGet()
-                    updateStats()
-                }
-            }
-        }
-        null
     }
 
     fun put(key: String, value: CachedResult) = lock.write {

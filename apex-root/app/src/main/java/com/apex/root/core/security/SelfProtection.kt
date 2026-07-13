@@ -27,7 +27,7 @@ object SelfProtection {
                 verified = true
                 return true
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { android.util.Log.w("SelfProtection", "Operation failed: ${e.message}", e) }
         return false
     }
 
@@ -60,7 +60,7 @@ object SelfProtection {
                     }
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             issues.add("Cannot read memory maps")
         }
         return issues
@@ -85,7 +85,7 @@ object SelfProtection {
                 ?.trim()
                 ?.toIntOrNull() ?: 0
             tracerPid != 0
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             false
         }
     }
@@ -108,7 +108,7 @@ object SelfProtection {
                     found.add(lib)
                 }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { android.util.Log.w("SelfProtection", "Operation failed: ${e.message}", e) }
         return found
     }
 
@@ -151,7 +151,7 @@ object SelfProtection {
             if (suspiciousPaths.isNotEmpty()) {
                 issues.add("Foreign .so in data dir: ${suspiciousPaths.joinToString()}")
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { android.util.Log.w("SelfProtection", "Operation failed: ${e.message}", e) }
         return issues
     }
 
@@ -189,7 +189,7 @@ object SelfProtection {
             proc.outputStream.close()
             verifierProcess = proc
             return true
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             return false
         }
     }
@@ -198,14 +198,14 @@ object SelfProtection {
         try {
             verifierProcess?.destroyForcibly()
             verifierProcess = null
-        } catch (_: Throwable) {}
+        } catch (e: Throwable) { android.util.Log.w("SelfProtection", "Operation failed: ${e.message}", e) }
     }
 
     fun verifyChildProcess(pid: Int): Boolean {
         return try {
             val cmdline = File("/proc/$pid/cmdline").readText()
             cmdline.contains("com.apex.root")
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             false
         }
     }
