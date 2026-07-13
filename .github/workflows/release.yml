@@ -1,40 +1,27 @@
 name: Release CI
 
 # 触发条件:
-#   - 推送 v* 标签 → 构建签名 release APK 并发布到 GitHub Releases
-#   - 手动触发 (workflow_dispatch) → 仅构建,不发布
+#   - 推送 v* 标签 → 构建 APK 并发布到 GitHub Releases
 #
-# 所需 secrets (在 GitHub Settings → Secrets and variables → Actions 中配置):
-#   APEX_STORE_PASS  - keystore 文件密码
-#   APEX_KEY_PASS    - 签名密钥密码
-#   APEX_KEY_ALIAS   - 密钥别名 (默认 "root",如不同需配置)
-#
-# keystore 文件 (apex-release.jks) 通过 base64 编码后存为 secret:
-#   APEX_KEYSTORE_BASE64
-# 工作流会解码还原到 apex-root/apex-release.jks
-#
-# ⚠️ 不要把 .jks 文件提交到仓库;不要在 workflow 里 echo 任何 secret。
+# 如果配置了签名 secrets (APEX_KEYSTORE_BASE64 / APEX_STORE_PASS / APEX_KEY_PASS):
+#   → 构建签名 release APK
+# 否则:
+#   → 构建 debug APK (使用默认 debug 签名,可直接安装)
 
 on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: 'Publish to GitHub Releases (only effective on tag push)'
-        required: false
-        default: 'false'
 
 concurrency:
   group: release-ci-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-release:
-    name: Build Signed Release APK
+  build:
+    name: Build & Release APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: apex-root
@@ -42,8 +29,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # for version name derivation
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -56,100 +41,87 @@ jobs:
 
       - name: Set up Android NDK
         uses: nttld/setup-ndk@v1
-        id: setup_ndk
         with:
           ndk-version: r28b
           link-to-sdk: true
 
       - name: Restore keystore from secret
-        # P0-3 修复: 使用 secrets 上下文判断,而非 env (env 在 if 求值时尚未应用)
-        if: ${{ secrets.APEX_KEYSTORE_BASE64 != '' }}
+        if: ${{ vars.HAS_KEYSTORE == 'true' }}
         env:
           APEX_KEYSTORE_BASE64: ${{ secrets.APEX_KEYSTORE_BASE64 }}
         run: |
           echo "$APEX_KEYSTORE_BASE64" | base64 -d > apex-release.jks
-          # Sanity check: file must be non-empty and start with keystore magic
           if [ ! -s apex-release.jks ]; then
             echo "::error::keystore decode produced empty file"
             exit 1
           fi
           echo "Keystore restored ($(wc -c < apex-release.jks) bytes)"
 
-      - name: Configure signing credentials via gradle.properties
-        # P0-3 修复: 使用 secrets 上下文判断
-        if: ${{ secrets.APEX_STORE_PASS != '' }}
+      - name: Configure signing credentials
+        if: ${{ vars.HAS_KEYSTORE == 'true' }}
         env:
           APEX_STORE_PASS: ${{ secrets.APEX_STORE_PASS }}
           APEX_KEY_PASS: ${{ secrets.APEX_KEY_PASS }}
           APEX_KEY_ALIAS: ${{ secrets.APEX_KEY_ALIAS }}
         run: |
-          # P0-3 修复: 使用 >> 追加而非 > 覆盖,保留项目原有 gradle.properties 配置
           cat >> gradle.properties <<EOF
           APEX_STORE_PASS=$APEX_STORE_PASS
           APEX_KEY_PASS=$APEX_KEY_PASS
           APEX_KEY_ALIAS=${APEX_KEY_ALIAS:-root}
           EOF
-          # gradle.properties 现在包含明文密码,绝不能打印或上传
-          # GitHub Actions 自动 mask secret 值,但我们仍不打印文件内容
 
-      - name: Build release APK (per-ABI splits)
-        env:
-          APEX_STORE_PASS: ${{ secrets.APEX_STORE_PASS }}
-          APEX_KEY_PASS: ${{ secrets.APEX_KEY_PASS }}
-          APEX_KEY_ALIAS: ${{ secrets.APEX_KEY_ALIAS }}
+      - name: Build signed release APK
+        if: ${{ vars.HAS_KEYSTORE == 'true' }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Sanitize gradle.properties (remove credentials)
+      - name: Build debug APK (no signing secrets)
+        if: ${{ vars.HAS_KEYSTORE != 'true' }}
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Sanitize gradle.properties
         if: always()
         run: |
-          # P0-3 修复: 只删除凭证行,不删除整个文件 (保留项目原有配置)
           if [ -f gradle.properties ]; then
             sed -i '/APEX_STORE_PASS/d;/APEX_KEY_PASS/d;/APEX_KEY_ALIAS/d' gradle.properties
           fi
-
-      - name: Strip keystore from workspace
-        if: always()
-        run: |
           rm -f apex-release.jks
-          # P0-3 修复: 不再 rm gradle.properties (已在上一步骤 sed 清理凭证行)
 
-      - name: Verify APK signatures
+      - name: Find APK files
+        id: find_apks
         run: |
-          for apk in app/build/outputs/apk/release/*.apk; do
-            [ -f "$apk" ] || continue
-            echo "=== $apk ==="
-            # APK Signing Block v2/v3 verification
-            "${ANDROID_HOME}/build-tools/34.0.0/apksigner" verify --verbose --print-certs "$apk" || {
-              echo "::warning::apksigner not available or verification warning on $apk"
-            }
-          done
+          echo "##[group]APK files found"
+          find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+          echo "##[endgroup]"
+          # 创建 APK 目录列表
+          mkdir -p artifacts
+          find app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \;
+          ls -lh artifacts/
 
-      - name: Upload release APKs
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-apks
-          path: apex-root/app/build/outputs/apk/release/*.apk
-          retention-days: 30
+          name: apex-root-${{ github.ref_name }}
+          path: apex-root/artifacts/*.apk
+          retention-days: 90
           if-no-files-found: error
 
-  publish-release:
-    name: Publish to GitHub Releases
-    needs: build-release
+  publish:
+    name: Publish GitHub Release
+    needs: build
     runs-on: ubuntu-latest
-    # 仅 tag 推送时才发布;手动触发不发布
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: write  # 创建 Release 需要
+      contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Download APK artifacts
         uses: actions/download-artifact@v4
         with:
-          name: release-apks
+          name: apex-root-${{ github.ref_name }}
           path: release-assets/
+
+      - name: List release assets
+        run: ls -lh release-assets/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -159,6 +131,15 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          name: APEX-Root ${{ github.ref_name }}
+          body: |
+            ## APEX-Root ${{ github.ref_name }}
+
+            ### 下载说明
+            - `app-arm64-v8a-debug.apk` — 64位 ARM (主流手机)
+            - `app-armeabi-v7a-debug.apk` — 32位 ARM (老设备)
+            - `app-x86_64-debug.apk` — x86_64 (模拟器)
+
+            选择对应架构的 APK 安装即可。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
