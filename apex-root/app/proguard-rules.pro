@@ -77,10 +77,13 @@
 
 # ─── Optimization: inline trivial methods, allow R8 full mode ───
 -allowaccessmodification
--overloadaggressively
+# v1.1.3: 移除 -overloadaggressively (R8 已废弃,会产生警告)
 -repackageclasses ''
 -mergeinterfacesaggressively
 
 # ─── Kotlin coroutines internals ───
+# v1.1.3: 收窄 keep 规则,只保留必要部分 (原 -keep class kotlinx.coroutines.** { *; } 过宽)
 -dontwarn kotlinx.coroutines.**
--keep class kotlinx.coroutines.** { *; }
+-keepclassmembers class kotlinx.coroutines.** {
+    public static ** INSTANCE;
+}

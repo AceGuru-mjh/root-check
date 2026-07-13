@@ -1,6 +1,8 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    // v1.1.3: Kotlin 2.0 Compose 编译器插件 (替代 composeOptions.kotlinCompilerExtensionVersion)
+    id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.protobuf") version "0.9.4"
     id("org.jlleitschuh.gradle.ktlint")
     id("io.gitlab.arturbosch.detekt")
@@ -68,8 +70,8 @@ android {
         applicationId = "com.apex.root"
         minSdk = 29
         targetSdk = 34
-        versionCode = 126
-        versionName = "1.1.2"
+        versionCode = 127
+        versionName = "1.1.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 全架构由 splits.abi 控制，此处不再设置 ndk.abiFilters
@@ -132,9 +134,8 @@ android {
         buildConfig = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.4"
-    }
+    // v1.1.3: composeOptions 已移除 — Kotlin 2.0 的 compose 插件自动处理编译器扩展
+    // 原配置: composeOptions { kotlinCompilerExtensionVersion = "1.5.4" }
 
     packaging {
         jniLibs {

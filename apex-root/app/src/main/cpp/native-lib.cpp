@@ -48,7 +48,7 @@ extern "C" {
 // 这样版本日志才能真正在库加载时打印
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     (void)vm;
-    LOGI("APEX Root v1.1.1 native library loaded (20-layer + parallel engine + P0/P1 fixes)");
+    LOGI("APEX Root v1.1.3 native library loaded (20-layer + parallel engine + toolchain upgrade)");
     return JNI_VERSION_1_6;
 }
 
