@@ -53,6 +53,13 @@ android {
         compose = true
         aidl = false
         buildConfig = true
+        ndk = true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path("src/main/jni/CMakeLists.txt")
+        }
     }
 
     composeOptions {
