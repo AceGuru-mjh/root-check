@@ -4,6 +4,10 @@
 *.o
 *.obj
 *.out
+*.dll
+*.so
+*.a
+*.exe
 
 # Dependencies
 node_modules/
@@ -14,6 +18,11 @@ __pycache__/
 .pytest_cache/
 target/
 .gradle/
+
+# Build directories (common in Android/Java projects)
+build/
+.apk
+.dex
 
 # Logs and temp files
 *.log
@@ -33,7 +42,7 @@ target/
 .DS_Store
 Thumbs.db
 
-# Coverage
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
