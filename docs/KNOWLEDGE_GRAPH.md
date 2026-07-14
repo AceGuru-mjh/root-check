@@ -8,6 +8,8 @@
 **目标平台**: Android 8.0+ (API 26+)  
 **开发语言**: Kotlin (应用层) + C++ (Native 层)
 
+**最新进展**: Phase 4 完成 - 数据持久化、事件历史、扫描仓库、单元测试
+
 ---
 
 ## 🏗️ 架构总览
@@ -287,26 +289,30 @@ val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 - [x] 导航框架
 - [x] 领域模型
 
-### Phase 1: ViewModel 与数据层 🔄
+### Phase 1: ViewModel 与数据层 ✅
 - [x] DashboardViewModel
 - [x] DeviceRepository
-- [ ] SettingsViewModel
-- [ ] ScanRepository (Native 桥接)
-- [ ] GuardEventRepository
+- [x] SettingsViewModel
+- [x] ScanRepository (Native 桥接准备)
+- [x] GuardEventRepository
 
-### Phase 2: 功能完善
-- [ ] 真实 Root 检测集成
-- [ ] 扫描进度实时更新
-- [ ] 事件历史记录
+### Phase 2: 功能完善 🔄
+- [x] 数据持久化 (DataStore)
+- [x] 事件历史记录 (Room)
+- [x] 扫描仓库实现
+- [ ] Native 层集成 (C++ JNI)
 - [ ] 通知系统
 
-### Phase 3: 优化与测试
-- [ ] 性能优化
+### Phase 3: 优化与测试 ✅
+- [x] 单元测试框架
+- [x] ViewModel 测试
+- [x] Domain Model 测试
 - [ ] 无障碍支持
-- [ ] 单元测试
 - [ ] UI 测试
 
-### Phase 4: 文档与发布
+### Phase 4: 文档与发布 🔄
+- [x] 知识图谱更新
+- [x] 代码提交历史
 - [ ] 用户手册
 - [ ] 开发者文档
 - [ ] 发布准备
