@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#1B5E20</color>
+    <color name="risk_safe">#00E676</color>
+    <color name="risk_warning">#FFEB3B</color>
+    <color name="risk_danger">#FF9800</color>
+    <color name="risk_critical">#FF1744</color>
+</resources>

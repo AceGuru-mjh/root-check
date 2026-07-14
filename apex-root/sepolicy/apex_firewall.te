@@ -1,0 +1,69 @@
+# APEX-Root Firewall SELinux Policy
+# 修复：原文件使用 apex_app / system_build_prop / proc_version / proc_cmdline
+# 等非标准 type 名，在 AOSP 标准 sepolicy 中不存在，会导致 Magisk
+# sepolicy.rule 应用时报 unknown type 错误。
+# 现改为使用 AOSP 标准类型名。
+
+type apex_firewall, domain;
+type apex_firewall_exec, exec_type, file_type, vendor_file_type;
+
+# APEX-Root domain transition
+init_daemon_domain(apex_firewall)
+
+# Allow access to eBPF sysfs
+allow apex_firewall apex_firewall:capability { sys_admin sys_rawio };
+
+# Allow bpf() syscall
+allow apex_firewall self:bpf { prog_load prog_run map_create map_read map_write };
+
+# Access to /sys/fs/bpf (使用 AOSP 标准 sysfs_bpf type)
+allow apex_firewall sysfs_bpf:dir { read search };
+allow apex_firewall sysfs_bpf:file { read write open };
+
+# Tracepoint access
+allow apex_firewall self:tracepoint { attach };
+
+# Kernel access for syslog
+allow apex_firewall kernel:system { syslog_read };
+
+# Hide mode: mount namespace isolation
+allow apex_firewall self:capability { sys_admin sys_ptrace };
+
+# Access /proc for other processes (self-hide)
+allow apex_firewall self:process { ptrace };
+allow apex_firewall proc:dir { read search };
+allow apex_firewall proc:file { read open getattr };
+
+# Communication with app domain (使用 AOSP 标准 untrusted_app domain)
+allow apex_firewall untrusted_app:unix_stream_socket { connectto sendto };
+allow apex_firewall untrusted_app:fd use;
+# 也允许 untrusted_app_25/27/29 等变体
+allow apex_firewall untrusted_app_25:unix_stream_socket { connectto sendto };
+allow apex_firewall untrusted_app_27:unix_stream_socket { connectto sendto };
+allow apex_firewall untrusted_app_29:unix_stream_socket { connectto sendto };
+allow apex_firewall untrusted_app_25:fd use;
+allow apex_firewall untrusted_app_27:fd use;
+allow apex_firewall untrusted_app_29:fd use;
+
+# Read baseline files (使用 AOSP 标准 type)
+# /proc/version -> proc文件
+allow apex_firewall proc:file { read open getattr };
+# /proc/cmdline -> 同上 proc type
+# /system/build.prop -> system_file type
+allow apex_firewall system_file:file { read open getattr };
+allow apex_firewall system_file:dir { read search };
+
+# Access /data/adb for hide operations
+allow apex_firewall adb_data_file:dir { read search write add_name remove_name };
+allow apex_firewall adb_data_file:file { read write open create unlink getattr setattr };
+
+# Mount operations for self-hide
+allow apex_firewall self:capability sys_admin;
+allow apex_firewall labeledfs:dir { mounton };
+allow apex_firewall proc:dir { mounton };
+
+# Property access for setprop
+allow apex_firewall property_socket:sock_file write;
+allow apex_firewall apex_prop:property_service set;
+# 允许读写 apex.* 属性
+type apex_prop, property_type;

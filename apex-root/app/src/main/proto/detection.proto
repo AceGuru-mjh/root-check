@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package apex.root;
+
+option java_package = "com.apex.root.proto";
+option java_multiple_files = true;
+
+service DetectionService {
+    rpc Execute(DetectionRequest) returns (DetectionResponse);
+    rpc GetInfo(Empty) returns (ServiceInfo);
+}
+
+message Empty {}
+
+message DetectionRequest {
+    string request_id = 1;
+    uint32 level = 2;
+    map<string, bytes> context = 3;
+    map<string, bytes> parameters = 4;
+    bytes nonce = 5;
+    uint64 timestamp = 6;
+}
+
+message DetectionResponse {
+    string request_id = 1;
+    bool success = 2;
+    map<string, bytes> result = 3;
+    float confidence = 4;
+    string description = 5;
+    bytes signature = 6;
+}
+
+message ServiceInfo {
+    string service_id = 1;
+    string name = 2;
+    string version = 3;
+    uint32 weight = 4;
+}

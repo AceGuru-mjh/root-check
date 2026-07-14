@@ -1,0 +1,6 @@
+id=apex-hide-daemon
+name=APEX Hide Daemon
+version=v1.0
+versionCode=1
+author=APEX-Root Team
+description=Standalone root daemon for transparent root hiding. Runs at boot via Magisk/KSU/APatch service.d, provides mount-namespace isolation + LD_PRELOAD libc interception for target apps. Independent of the APEX-Root app — works even when app is not running. Communicates with app via Unix socket at /dev/socket/apex_hide.sock.

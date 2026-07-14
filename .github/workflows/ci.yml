@@ -1,0 +1,184 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apex-root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v3
+      - run: ./gradlew ktlintCheck detekt --no-daemon
+
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apex-root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v3
+      - run: ./gradlew testDebugUnitTest --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: unit-test-reports
+          path: apex-root/app/build/reports/tests/
+
+  # Instrumentation tests run on x86_64 emulator. Note: native lib builds for
+  # arm64-v8a only by default, so on x86_64 emulator the JNI calls will fail
+  # gracefully via NativeLibraryLoader.safeCall() — tests assert "library not
+  # loaded" path rather than actual detection results.
+  instrumentation-test:
+    name: Instrumentation Tests (x86_64 emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apex-root
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [29, 34]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v3
+      - name: Run instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: cd apex-root && ./gradlew connectedDebugAndroidTest --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: instrumentation-reports-${{ matrix.api-level }}
+          path: apex-root/app/build/reports/androidTest/
+
+  build-debug:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apex-root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v3
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup_ndk
+        with:
+          ndk-version: r28b
+          link-to-sdk: true
+      - run: ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: apex-root/app/build/outputs/apk/debug/
+          retention-days: 14
+
+  native-syntax-check:
+    name: Native C++ Syntax Check (no NDK)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apex-root/app/src/main/cpp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install g++ (C++20 capable)
+        run: sudo apt-get update && sudo apt-get install -y g++
+      - name: Create stub JNI headers
+        run: |
+          mkdir -p /tmp/jni_stubs/android /tmp/jni_stubs/sys
+          cat > /tmp/jni_stubs/jni.h <<'EOF'
+          #ifndef JNI_H
+          #define JNI_H
+          #include <cstdint>
+          #include <cstddef>
+          typedef int32_t jint;
+          typedef int64_t jlong;
+          typedef int8_t jbyte;
+          typedef uint8_t jboolean;
+          typedef void* jobject;
+          typedef jobject jstring;
+          typedef jobject jbyteArray;
+          typedef jint jsize;
+          struct JNIEnv_ {
+            jstring (*NewStringUTF)(const char*);
+            jbyte* (*GetByteArrayElements)(jbyteArray, jboolean*);
+            void (*ReleaseByteArrayElements)(jbyteArray, jbyte*, jint);
+            jsize (*GetArrayLength)(jbyteArray);
+            jbyteArray (*NewByteArray)(jsize);
+            void (*SetByteArrayRegion)(jbyteArray, jsize, jsize, const jbyte*);
+            const char* (*GetStringUTFChars)(jstring, jboolean*);
+            void (*ReleaseStringUTFChars)(jstring, const char*);
+          };
+          typedef JNIEnv_ JNIEnv;
+          struct JavaVM {};
+          #define JNI_VERSION_1_6 6
+          #define JNIEXPORT
+          #define JNICALL
+          #define JNI_ABORT 2
+          #endif
+          EOF
+          cat > /tmp/jni_stubs/android/log.h <<'EOF'
+          #ifndef ANDROID_LOG_H
+          #define ANDROID_LOG_H
+          #define ANDROID_LOG_INFO 4
+          #define ANDROID_LOG_ERROR 6
+          static inline int __android_log_print(int, const char*, const char*, ...) { return 0; }
+          #endif
+          EOF
+          cat > /tmp/jni_stubs/sys/system_properties.h <<'EOF'
+          #ifndef SYS_SYSTEM_PROPERTIES_H
+          #define SYS_SYSTEM_PROPERTIES_H
+          static inline int __system_property_get(const char*, char*) { return 0; }
+          #endif
+          EOF
+      - name: Syntax-check modified C++ files
+        run: |
+          set -e
+          for f in native-lib.cpp jni_bridge.cpp detect/layer2_art.cpp detect/layer3_mem.cpp detect/layer6_kernel.cpp detect/layer14_virtualxposed.cpp ebpf/ebpf_manager.cpp; do
+            echo "=== $f ==="
+            g++ -std=c++20 -fsyntax-only \
+              -I/tmp/jni_stubs -I. -Iinclude -Icommon -Ibare_syscall \
+              -Idetect -Iebpf -Icure -Iguard -Igame -Ihid -Inamespace \
+              -Imicro_services -Imicro_services/engine -Itrusted_root \
+              -Ikernel_observer -Iconsensus -Iai_engine -Iupdater \
+              -I../../../../ctrl -I../../../../legacy \
+              -D__aarch64__ \
+              "$f"
+          done

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 通知（Android 13+ 运行时申请） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 网络 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 查询已安装应用（root 框架 / 危险应用检测需要） -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- v1.0.7: 读取手机状态/身份信息 (设备指纹 / IMEI / 序列号) -->
+    <!-- 用于: 设备指纹基线、HWID 检测、设备唯一标识 -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
+    <!-- 存储 / 日志保存（Android 12 及以下） -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+
+    <!-- v1.0.7: Android 13+ 媒体权限 (替代 READ_EXTERNAL_STORAGE) -->
+    <!-- 用于: 导出报告时写入 Documents/Download 目录 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <!-- 所有文件访问（Android 11+，用于把扫描/崩溃日志导出到外部存储任意目录） -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
+    <!-- 前台服务（守护进程 / 实时防护，预留） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- 请求安装包（规则更新 / 自更新预留） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- v1.0.7: 查询设备上其他应用 (Android 11+ Package Visibility) -->
+    <!-- 用于: 检测已安装的 root 框架 / 危险应用 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+        </intent>
+        <package android:name="com.topjohnwu.magisk" />
+        <package android:name="io.github.huskydg.magisk" />
+        <package android:name="me.weishu.kernelsu" />
+        <package android:name="me.bmax.apatch" />
+        <package android:name="org.lsposed.manager" />
+        <package android:name="org.lsposed.lspatch" />
+    </queries>
+
+    <application
+        android:name=".ApexRootApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:requestLegacyExternalStorage="true"
+        android:theme="@style/Theme.ApexRoot">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.ApexRoot">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- v1.1.1: 实时监控前台服务 — 利用 FOREGROUND_SERVICE_SPECIAL_USE 权限 -->
+        <service
+            android:name=".service.GuardMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Root detection monitoring" />
+        </service>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

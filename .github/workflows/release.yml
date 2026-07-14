@@ -1,0 +1,151 @@
+name: Release CI
+
+# 触发条件:
+#   - 推送 v* 标签 → 构建 APK 并发布到 GitHub Releases
+#
+# 如果配置了签名 secrets (APEX_KEYSTORE_BASE64 / APEX_STORE_PASS / APEX_KEY_PASS):
+#   → 构建签名 release APK
+# 否则:
+#   → 构建 debug APK (使用默认 debug 签名,可直接安装)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apex-root
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28b
+          link-to-sdk: true
+
+      - name: Restore keystore from secret
+        if: ${{ vars.HAS_KEYSTORE == 'true' }}
+        env:
+          APEX_KEYSTORE_BASE64: ${{ secrets.APEX_KEYSTORE_BASE64 }}
+        run: |
+          echo "$APEX_KEYSTORE_BASE64" | base64 -d > apex-release.jks
+          if [ ! -s apex-release.jks ]; then
+            echo "::error::keystore decode produced empty file"
+            exit 1
+          fi
+          echo "Keystore restored ($(wc -c < apex-release.jks) bytes)"
+
+      - name: Configure signing credentials
+        if: ${{ vars.HAS_KEYSTORE == 'true' }}
+        env:
+          APEX_STORE_PASS: ${{ secrets.APEX_STORE_PASS }}
+          APEX_KEY_PASS: ${{ secrets.APEX_KEY_PASS }}
+          APEX_KEY_ALIAS: ${{ secrets.APEX_KEY_ALIAS }}
+        run: |
+          cat >> gradle.properties <<EOF
+          APEX_STORE_PASS=$APEX_STORE_PASS
+          APEX_KEY_PASS=$APEX_KEY_PASS
+          APEX_KEY_ALIAS=${APEX_KEY_ALIAS:-root}
+          EOF
+
+      - name: Build signed release APK
+        if: ${{ vars.HAS_KEYSTORE == 'true' }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Build debug APK (no signing secrets)
+        if: ${{ vars.HAS_KEYSTORE != 'true' }}
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Sanitize gradle.properties
+        if: always()
+        run: |
+          if [ -f gradle.properties ]; then
+            sed -i '/APEX_STORE_PASS/d;/APEX_KEY_PASS/d;/APEX_KEY_ALIAS/d' gradle.properties
+          fi
+          rm -f apex-release.jks
+
+      - name: Find and rename APK files
+        id: find_apks
+        run: |
+          echo "##[group]APK files found"
+          find app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+          echo "##[endgroup]"
+          # v1.0.1: 重命名 APK 为 apex-agent-{abi}.apk (去掉 debug 字样)
+          mkdir -p artifacts
+          find app/build/outputs/apk -name "*.apk" | while read apk; do
+            # 提取 ABI: 从路径如 .../arm64-v8a/app-arm64-v8a-debug.apk
+            abi=$(echo "$apk" | grep -oP '(arm64-v8a|armeabi-v7a|x86_64)' | head -1)
+            if [ -z "$abi" ]; then abi="universal"; fi
+            cp "$apk" "artifacts/apex-agent-${abi}.apk"
+            echo "Renamed: $apk -> apex-agent-${abi}.apk"
+          done
+          ls -lh artifacts/
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apex-root-${{ github.ref_name }}
+          path: apex-root/artifacts/*.apk
+          retention-days: 90
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: apex-root-${{ github.ref_name }}
+          path: release-assets/
+
+      - name: List release assets
+        run: ls -lh release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+          tag_name: ${{ github.ref_name }}
+          name: APEX-Root ${{ github.ref_name }}
+          body: |
+            ## APEX-Root ${{ github.ref_name }}
+
+            ### 下载说明
+            - `app-arm64-v8a-debug.apk` — 64位 ARM (主流手机)
+            - `app-armeabi-v7a-debug.apk` — 32位 ARM (老设备)
+            - `app-x86_64-debug.apk` — x86_64 (模拟器)
+
+            选择对应架构的 APK 安装即可。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

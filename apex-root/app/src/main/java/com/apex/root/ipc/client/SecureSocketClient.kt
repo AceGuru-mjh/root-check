@@ -1,0 +1,184 @@
+package com.apex.root.ipc.client
+
+import android.net.LocalSocket
+import android.net.LocalSocketAddress
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import java.io.*
+import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicLong
+import android.util.Log
+
+/**
+ * 修复版 SecureSocketClient
+ *
+ * 修复内容：
+ * 1. 移除 runBlocking — 改为 suspend fun，避免主线程 ANR
+ * 2. 添加自动重连机制（指数退避，最多 5 次）
+ * 3. 正确管理 CoroutineScope 生命周期
+ * 4. 连接断开时自动清理资源
+ */
+class SecureSocketClient(
+    private val socketName: String,
+    private val scope: CoroutineScope,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO
+) {
+    companion object {
+        private const val TAG = "SecureSocketClient"
+        private const val MAX_RECONNECT_ATTEMPTS = 5
+        private const val INITIAL_BACKOFF_MS = 1000L
+    }
+
+    private var socket: LocalSocket? = null
+    private var reader: BufferedReader? = null
+    private var writer: BufferedWriter? = null
+    private val sequenceNumber = AtomicLong(0)
+    private val messageQueue = ConcurrentLinkedQueue<ByteArray>()
+
+    private val clientScope = CoroutineScope(scope.coroutineContext + SupervisorJob())
+    private var readerJob: Job? = null
+    private var isRunning = false
+
+    private val _messages = MutableSharedFlow<ByteArray>(replay = 0, extraBufferCapacity = 64)
+    val messages: SharedFlow<ByteArray> = _messages.asSharedFlow()
+
+    private val _connectionState = MutableStateFlow(false)
+    val connectionState: StateFlow<Boolean> = _connectionState.asStateFlow()
+
+    /**
+     * 连接到 socket（suspend，不在主线程阻塞）
+     */
+    suspend fun connect(): Boolean = withContext(dispatcher) {
+        try {
+            val localSocket = LocalSocket()
+            val address = LocalSocketAddress(socketName, LocalSocketAddress.Namespace.RESERVED)
+            localSocket.connect(address)
+            socket = localSocket
+            reader = BufferedReader(InputStreamReader(localSocket.inputStream))
+            writer = BufferedWriter(OutputStreamWriter(localSocket.outputStream))
+            isRunning = true
+            _connectionState.value = true
+            startReader()
+            Log.i(TAG, "Connected to $socketName")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Connection failed: ${e.message}")
+            _connectionState.value = false
+            false
+        }
+    }
+
+    /**
+     * 自动重连（指数退避）
+     */
+    suspend fun reconnectWithBackoff(): Boolean {
+        var backoff = INITIAL_BACKOFF_MS
+        repeat(MAX_RECONNECT_ATTEMPTS) { attempt ->
+            Log.i(TAG, "Reconnect attempt ${attempt + 1}/$MAX_RECONNECT_ATTEMPTS (backoff=${backoff}ms)")
+            delay(backoff)
+            cleanup()
+            if (connect()) return true
+            backoff *= 2 // 指数退避
+        }
+        Log.e(TAG, "Reconnect failed after $MAX_RECONNECT_ATTEMPTS attempts")
+        return false
+    }
+
+    private fun startReader() {
+        readerJob = clientScope.launch {
+            while (isRunning && isActive) {
+                try {
+                    val line = reader?.readLine() ?: break
+                    val data = decodeHex(line)
+                    _messages.tryEmit(data)
+                } catch (e: IOException) {
+                    Log.e(TAG, "Reader error: ${e.message}")
+                    _connectionState.value = false
+                    break
+                }
+            }
+            // 读取结束 — 尝试自动重连
+            if (isRunning) {
+                Log.w(TAG, "Connection lost, attempting reconnect...")
+                clientScope.launch { reconnectWithBackoff() }
+            }
+        }
+    }
+
+    suspend fun send(data: ByteArray): Boolean = withContext(dispatcher) {
+        try {
+            val seq = sequenceNumber.incrementAndGet()
+            val header = ByteBuffer.allocate(12).putLong(seq).putInt(data.size).array()
+            val payload = header + data
+            writer?.write(encodeHex(payload))
+            writer?.newLine()
+            writer?.flush()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Send error: ${e.message}")
+            _connectionState.value = false
+            false
+        }
+    }
+
+    /**
+     * 断开连接（suspend，不阻塞主线程）
+     */
+    suspend fun disconnect() {
+        isRunning = false
+        readerJob?.cancelAndJoin()
+        cleanup()
+        clientScope.cancel()
+    }
+
+    /**
+     * 非挂起的立即关闭（用于 onCleared 等不能调用 suspend 的场景）。
+     * 同步关闭 socket / reader / writer，并取消 reader job（不等待 join）。
+     */
+    // v1.0.2 P0-2 修复: 提供 closeAndJoin() 让调用方等待协程真正结束
+    fun closeNow() {
+        isRunning = false
+        readerJob?.cancel()
+        cleanup()
+        clientScope.cancel()
+    }
+
+    /**
+     * v1.0.2: 关闭并等待 readerJob 真正结束,避免资源泄漏。
+     * closeNow() 只 cancel 不 join,ViewModel 销毁后协程可能仍在运行。
+     */
+    suspend fun closeAndJoin() {
+        isRunning = false
+        try {
+            readerJob?.cancelAndJoin()
+        } catch (_: Throwable) {}
+        cleanup()
+        clientScope.cancel()
+    }
+
+    private fun cleanup() {
+        try { socket?.close() } catch (_: Exception) {}
+        try { reader?.close() } catch (_: Exception) {}
+        try { writer?.close() } catch (_: Exception) {}
+        socket = null
+        reader = null
+        writer = null
+        _connectionState.value = false
+    }
+
+    private fun encodeHex(data: ByteArray): String =
+        data.joinToString("") { "%02x".format(it) }
+
+    private fun decodeHex(hex: String): ByteArray {
+        // 修复：原 it.toInt(16) 在非法输入时抛 NumberFormatException（RuntimeException），
+        // 逃逸了 startReader 里的 catch(IOException) → reader 协程崩溃。
+        // 改为返回空数组，让上层跳过该帧。
+        if (hex.length % 2 != 0) return ByteArray(0)
+        return try {
+            hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        } catch (_: NumberFormatException) {
+            ByteArray(0)
+        }
+    }
+}
