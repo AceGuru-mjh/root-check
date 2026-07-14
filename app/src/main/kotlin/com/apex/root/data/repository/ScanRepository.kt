@@ -3,6 +3,7 @@ package com.apex.root.data.repository
 import android.content.Context
 import com.apex.root.BuildConfig
 import com.apex.root.data.database.ApexDatabase
+import com.apex.root.data.native.NativeBridge
 import com.apex.root.domain.model.DetectionMethod
 import com.apex.root.domain.model.DetectionLayer
 import com.apex.root.domain.model.RootDetectionResult
@@ -22,8 +23,8 @@ class ScanRepository(private val context: Context) {
     private val database by lazy { ApexDatabase.getDatabase(context) }
     private val guardEventRepository = GuardEventRepository(database.guardEventDao())
     
-    // Native bridge (待实现 C++ 层后启用)
-    // private val nativeBridge = NativeBridge()
+    // Native bridge
+    private val nativeBridge = NativeBridge
     
     private val _scanProgress = MutableStateFlow(0f)
     val scanProgress: StateFlow<Float> = _scanProgress.asStateFlow()
@@ -154,13 +155,62 @@ class ScanRepository(private val context: Context) {
     }
     
     /**
-     * L6: Native Syscall Tests
+     * L6: Native Syscall Tests - 调用 Native 层检测
      */
-    private fun checkLayer6Native(): List<DetectionMethod> {
+    private suspend fun checkLayer6Native(): List<DetectionMethod> {
         val methods = mutableListOf<DetectionMethod>()
         
-        // TODO: 调用 Native Bridge 进行 syscall 测试
-        // if (nativeBridge.isDeviceRooted()) { ... }
+        try {
+            // 调用 Native Bridge 进行 Root 检测
+            val nativeResult = nativeBridge.isDeviceRooted()
+            
+            if (nativeResult.isRooted) {
+                methods.add(
+                    DetectionMethod(
+                        id = "L6_NATIVE_ROOT",
+                        name = "Native Root Detection",
+                        layer = DetectionLayer.L6_NATIVE,
+                        triggered = true,
+                        confidence = nativeResult.confidence,
+                        details = "Native layer detected root (confidence: ${nativeResult.confidence})"
+                    )
+                )
+            }
+            
+            // 检测 Busybox
+            val hasBusybox = nativeBridge.hasBusybox()
+            if (hasBusybox) {
+                methods.add(
+                    DetectionMethod(
+                        id = "L6_BUSYBOX",
+                        name = "Busybox Detection",
+                        layer = DetectionLayer.L6_NATIVE,
+                        triggered = true,
+                        confidence = 0.5f,
+                        details = "Busybox binary found"
+                    )
+                )
+            }
+            
+            // 检测危险应用
+            val dangerousApps = nativeBridge.detectDangerousApps()
+            dangerousApps.forEach { packageName ->
+                methods.add(
+                    DetectionMethod(
+                        id = "L6_DANGEROUS_APP_$packageName",
+                        name = "Dangerous App: $packageName",
+                        layer = DetectionLayer.L6_NATIVE,
+                        triggered = true,
+                        confidence = 0.4f,
+                        details = "Package installed: $packageName"
+                    )
+                )
+            }
+            
+        } catch (e: Exception) {
+            // Native 检测失败，记录但不中断扫描
+            android.util.Log.e("ScanRepository", "Native detection failed: ${e.message}")
+        }
         
         return methods
     }
