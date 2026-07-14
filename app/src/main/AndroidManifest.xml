@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".ApexRootApplication"
@@ -28,6 +29,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
+        <!-- Guard Monitor Service -->
+        <service
+            android:name=".service.GuardMonitorService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         
     </application>
 

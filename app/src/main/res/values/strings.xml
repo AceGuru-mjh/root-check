@@ -36,3 +36,9 @@
     <string name="loading">加载中…</string>
     <string name="no_events">暂无事件</string>
 </resources>
+
+    <!-- Guard Monitor Service -->
+    <string name="guard_monitor_channel_name">守护监控</string>
+    <string name="guard_monitor_channel_desc">持续监控设备 Root 状态</string>
+    <string name="guard_monitor_title">守护监控运行中</string>
+    <string name="guard_monitor_content">正在保护您的设备安全</string>

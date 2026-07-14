@@ -36,3 +36,9 @@
     <string name="loading">Loading…</string>
     <string name="no_events">No events</string>
 </resources>
+
+    <!-- Guard Monitor Service -->
+    <string name="guard_monitor_channel_name">Guard Monitor</string>
+    <string name="guard_monitor_channel_desc">Continuously monitor device Root status</string>
+    <string name="guard_monitor_title">Guard Monitor Running</string>
+    <string name="guard_monitor_content">Protecting your device security</string>
