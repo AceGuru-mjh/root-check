@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">APEX Root</string>
+    
+    <!-- Dashboard -->
+    <string name="dashboard_title">仪表盘</string>
+    <string name="device_summary">设备摘要</string>
+    <string name="quick_scan">快速扫描</string>
+    <string name="start_scan">开始扫描</string>
+    <string name="scanning">扫描中 %d%%</string>
+    <string name="last_scan">上次扫描</string>
+    <string name="risk_overview">风险概览</string>
+    <string name="recent_events">最近事件</string>
+    
+    <!-- Risk Levels -->
+    <string name="risk_none">安全</string>
+    <string name="risk_low">低风险</string>
+    <string name="risk_medium">中等风险</string>
+    <string name="risk_high">高风险</string>
+    <string name="risk_critical">严重风险</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_general">常规设置</string>
+    <string name="settings_detection_layers">检测层</string>
+    <string name="settings_advanced">高级设置</string>
+    <string name="settings_about">关于</string>
+    
+    <!-- Common -->
+    <string name="ok">确定</string>
+    <string name="cancel">取消</string>
+    <string name="close">关闭</string>
+    <string name="enabled">已开启</string>
+    <string name="disabled">已关闭</string>
+    <string name="error">错误</string>
+    <string name="loading">加载中…</string>
+    <string name="no_events">暂无事件</string>
+</resources>

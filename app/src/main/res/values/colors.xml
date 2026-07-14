@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#1976D2</color>
+    <color name="primary_dark">#1565C0</color>
+    <color name="accent">#00897B</color>
+    
+    <!-- Risk Level Colors -->
+    <color name="risk_none">#4CAF50</color>
+    <color name="risk_low">#8BC34A</color>
+    <color name="risk_medium">#FFC107</color>
+    <color name="risk_high">#FF9800</color>
+    <color name="risk_critical">#F44336</color>
+</resources>
