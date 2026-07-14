@@ -239,13 +239,22 @@ class ScanRepository(private val context: Context) {
     
     /**
      * 获取系统属性 (通过 getprop 命令)
+     * v1.0.4 P1 修复: 添加 waitFor 超时 + destroyForcibly 防止进程泄漏
      */
     private fun getSystemProperty(key: String): String? {
+        var process: Process? = null
         return try {
-            val process = Runtime.getRuntime().exec("getprop $key")
+            process = Runtime.getRuntime().exec("getprop $key")
+            val exited = process.waitFor(2000, java.util.concurrent.TimeUnit.MILLISECONDS)
+            if (!exited) {
+                process.destroyForcibly()
+                return null
+            }
             process.inputStream.bufferedReader().use { it.readText().trim() }
         } catch (e: Exception) {
             null
+        } finally {
+            try { process?.destroyForcibly() } catch (_: Throwable) {}
         }
     }
     
