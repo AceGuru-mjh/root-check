@@ -98,3 +98,29 @@ enum class SeverityLevel {
     ALERT,
     CRITICAL
 }
+
+/**
+ * 设置状态数据类
+ */
+data class SettingsState(
+    val darkMode: Boolean = false,
+    val language: String = "zh",
+    val showNotifications: Boolean = true,
+    val autoScanOnStart: Boolean = false,
+    val scanIntervalMinutes: Int = 30,
+    val guardServiceEnabled: Boolean = true,
+    val selfProtectionEnabled: Boolean = true,
+    val loggingEnabled: Boolean = true,
+    val verboseLogging: Boolean = false,
+    val firstLaunch: Boolean = true,
+    val lastScanTimestamp: Long = 0L
+)
+
+/**
+ * 检测层配置
+ */
+data class DetectionLayerConfig(
+    val layer: Int,
+    val enabled: Boolean,
+    val weight: Int
+)
