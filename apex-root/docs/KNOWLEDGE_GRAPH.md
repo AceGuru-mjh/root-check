@@ -2,8 +2,8 @@
 
 > 本文档用于持续开发过程中快速理解项目架构、数据流和模块关系。每次完成一小部分开发后需更新此图谱。
 
-**最后更新时间**: 2024-01-XX (UI 重构启动 - 旧 UI 已删除)  
-**当前阶段**: UI 重构 Phase 0 - 基础设施准备
+**最后更新时间**: 2026-07-14 (v1.0.4 M3 UI 重构完成)  
+**当前阶段**: M3 UI Phase 4 完成 — Dashboard + Settings 可用,待完善其余页面
 
 ---
 
@@ -275,50 +275,74 @@ UpdateViewModel
 
 ---
 
-## 五、UI 层 (待重构)
+## 五、UI 层 (M3 重构进行中)
 
-### 5.1 当前状态
+### 5.1 当前状态 (v1.0.4)
 - **旧 UI 已删除**: Glass/Liquid 风格组件已全部移除
-- **重构目标**: Material Design 3 (M3)
+- **M3 UI 已搭建**: Material Design 3 主题 + 核心组件 + Dashboard + Settings
 - **重构原则**: 高质量优先，速度次要
 
-### 5.2 待重建的屏幕列表
-| 屏幕名称 | 文件 | 优先级 | 备注 |
-|---------|------|--------|------|
-| SplashScreen | SplashScreen.kt | P0 | 启动页 |
-| DashboardScreen | DashboardScreen.kt | P0 | 主仪表板 |
-| SettingsScreen | SettingsScreen.kt | P0 | 设置页 (200+ 配置项需简化) |
-| ReportScreen | ReportScreen.kt | P1 | 检测报告 |
-| AlertScreen | AlertScreen.kt | P1 | 警报展示 |
-| GuardMonitorScreen | GuardMonitorScreen.kt | P1 | 防护监控 |
-| PermissionsScreen | PermissionsScreen.kt | P2 | 权限管理 |
-| WhitelistScreen | WhitelistScreen.kt | P2 | 白名单管理 |
-| HistoryScreen | HistoryScreen.kt | P2 | 历史记录 |
-| UpdateScreen | UpdateScreen.kt | P2 | 更新管理 |
-| AboutScreen | AboutScreen.kt | P3 | 关于页面 |
-| ConfigScreen | ConfigScreen.kt | P3 | 高级配置 |
-| HideModeScreen | HideModeScreen.kt | P3 | 隐藏模式 |
-| LSPosedManagerScreen | LSPosedManagerScreen.kt | P3 | LSPosed 管理 |
-| KernelInfoScreen | KernelInfoScreen.kt | P3 | 内核信息 |
-| FridaConsoleScreen | FridaConsoleScreen.kt | P3 | Frida 控制台 |
-| BaselineComparisonScreen | BaselineComparisonScreen.kt | P3 | 基线对比 |
-| TimingChartScreen | TimingChartScreen.kt | P3 | 时序图表 |
-| GlassLogViewerScreen | GlassLogViewerScreen.kt | P3 | 日志查看 |
-| GlassPermissionGuideScreen | GlassPermissionGuideScreen.kt | P3 | 权限引导 |
-| FeatureTestScreen | FeatureTestScreen.kt | P3 | 功能测试 |
+### 5.2 M3 UI 架构 (v1.0.4)
+```
+MainActivity
+  └─ ApexRootTheme (M3 主题, 支持动态色彩)
+       └─ ApexRootApp (导航入口)
+            └─ NavHost
+                 ├─ "dashboard" → DashboardScreen
+                 │    └─ DashboardViewModel
+                 │         └─ ScanRepository → NativeBridge (JNI)
+                 └─ "settings" → SettingsScreen
+                      └─ SettingsViewModel
+                           └─ SettingsRepository → SettingsDataSource (DataStore)
+```
+
+### 5.3 已完成的 M3 组件
+| 组件 | 文件 | 说明 |
+|------|------|------|
+| Theme | `ui/theme/Theme.kt` | M3 主题 (支持 Android 12+ 动态色彩) |
+| Color | `ui/theme/Color.kt` | M3 色板 (Light/Dark) |
+| Typography | `ui/theme/Typography.kt` | M3 字体 |
+| Shape | `ui/theme/Shape.kt` | M3 形状 |
+| ApexTopAppBar | `ui/components/ApexTopAppBar.kt` | 顶部栏组件 |
+| ApexCard | `ui/components/ApexCard.kt` | 卡片组件 |
+| ApexButton | `ui/components/ApexButton.kt` | 按钮组件 |
+| ApexListItem | `ui/components/ApexListItem.kt` | 列表项组件 |
+
+### 5.4 已完成的页面
+| 页面 | 文件 | 状态 | ViewModel |
+|------|------|------|-----------|
+| Dashboard | `ui/screens/dashboard/DashboardScreen.kt` | ✅ 基础完成 | DashboardViewModel |
+| Settings | `ui/screens/settings/SettingsScreen.kt` | ✅ 基础完成 | SettingsViewModel |
+
+### 5.5 待完善的页面
+| 屏幕名称 | 优先级 | 备注 |
+|---------|--------|------|
+| ScanResultScreen | P0 | 20 层检测结果展示 (LazyColumn) |
+| GuardMonitorScreen | P1 | 实时监控开关 + 告警列表 |
+| AboutScreen | P2 | 版本信息 + GitHub 链接 |
+| PermissionsScreen | P2 | 权限管理 |
+| UpdateScreen | P2 | 更新管理 |
+
+### 5.6 ViewModel 与 Repository 数据流
+```
+DashboardViewModel
+  ├─ ScanRepository
+  │    ├─ NativeBridge (JNI → C++ 20层检测)
+  │    ├─ getSystemProperty() → getprop 命令
+  │    └─ fileExists() → File.exists()
+  ├─ DeviceRepository
+  │    └─ 设备信息 (Build.MODEL / Build.VERSION 等)
+  └─ GuardEventRepository
+       └─ Room Database (GuardEventEntity)
+
+SettingsViewModel
+  └─ SettingsRepository
+       └─ SettingsDataSource
+            └─ DataStore Preferences
+```
 
 ### 5.3 待重建的组件库
 | 组件类型 | 描述 | 优先级 |
-|---------|------|--------|
-| AppNavigation | 导航图定义 | P0 |
-| Theme | M3 主题定义 | P0 |
-| Common Components | 通用组件 (按钮、卡片、列表等) | P0 |
-| Dashboard Components | 仪表板专用组件 | P0 |
-| Settings Components | 设置项组件 | P1 |
-| Report Components | 报告展示组件 | P1 |
-| Alert Components | 警报组件 | P1 |
-
----
 
 ## 六、服务层 (Service Layer)
 
