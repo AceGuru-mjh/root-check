@@ -5,23 +5,19 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.apex.root.core.NativeLibraryLoader
+import com.apex.root.ui.theme.ApexRootTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * v1.0.3: 最小化 MainActivity — 仅作为 Compose 入口。
- * 旧 UI 代码已全部删除,等待新 M3 UI 重写。
- *
- * 保留的业务逻辑:
- *  - enableEdgeToEdge()
- *  - native 库预加载 (IO 线程后台加载 libapex_root.so)
- *  - 全局异常兜底
+ * v1.0.4: M3 UI 入口 — 连接 Qwen 写的 ApexRootApp() Composable。
+ * 保留: enableEdgeToEdge + native 预加载 + 全局异常兜底。
  */
 class MainActivity : ComponentActivity() {
 
@@ -34,9 +30,13 @@ class MainActivity : ComponentActivity() {
         try {
             enableEdgeToEdge()
             setContent {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    // v1.0.3: 占位 — 等待新 M3 UI 重写
-                    Text("Apex Agent v1.0.3 — UI 重构中")
+                ApexRootTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        ApexRootApp()
+                    }
                 }
             }
         } catch (e: Throwable) {
