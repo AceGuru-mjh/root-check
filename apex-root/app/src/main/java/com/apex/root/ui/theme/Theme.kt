@@ -111,7 +111,6 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = TextPrimary,
     surfaceVariant = DeepSurfaceVariant,
     onSurfaceVariant = TextSecondary,
-    surfaceContainer = DeepSurfaceBright,
     
     outline = Color(0xFF4A4A5E),
     outlineVariant = Color(0xFF3A3A4E)
@@ -145,7 +144,6 @@ private val LightColorScheme = lightColorScheme(
     onSurface = LightTextPrimary,
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = LightTextSecondary,
-    surfaceContainer = LightSurfaceContainer,
     
     outline = Color(0xFFC5C5D8),
     outlineVariant = Color(0xFFE0E0F0)

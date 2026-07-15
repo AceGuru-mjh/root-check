@@ -11,6 +11,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import com.apex.root.core.NativeLibraryLoader
+import com.apex.root.ApexRootApp
 import com.apex.root.ui.theme.ApexRootTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

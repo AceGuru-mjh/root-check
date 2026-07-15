@@ -1,4 +1,6 @@
 package com.apex.root.ui.components
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material3.Card
