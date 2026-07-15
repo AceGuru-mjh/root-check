@@ -2,19 +2,19 @@ package com.apex.root.ui.screens.dashboard
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,293 +22,177 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.apex.root.R
-import com.apex.root.domain.model.DeviceInfo
-import com.apex.root.domain.model.GuardEvent
-import com.apex.root.domain.model.RiskLevel
-import com.apex.root.domain.model.RootDetectionResult
-import com.apex.root.ui.components.ApexCard
-import com.apex.root.ui.components.ApexTopAppBar
-import com.apex.root.ui.theme.ApexRootTheme
-import com.apex.root.ui.viewmodel.DashboardAction
-import com.apex.root.ui.viewmodel.DashboardViewModel
+import com.apex.root.viewmodel.trusted.ApexViewModel
 
+/**
+ * M3 Dashboard — v1.0.4
+ * 使用现有 ApexViewModel, LazyColumn 滚动, M3 组件。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     onNavigateToSettings: () -> Unit,
-    modifier: Modifier = Modifier,
-    viewModel: DashboardViewModel = viewModel()
+    viewModel: ApexViewModel = viewModel()
 ) {
-    val state by viewModel.uiState.collectAsState()
-    
-    DashboardContent(
-        state = state,
-        onAction = viewModel::onAction,
-        onNavigateToSettings = onNavigateToSettings,
-        modifier = modifier
-    )
-}
+    val uiState by viewModel.uiState.collectAsState()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DashboardContent(
-    state: DashboardUiState,
-    onAction: (DashboardAction) -> Unit,
-    onNavigateToSettings: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
-    
     Scaffold(
-        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            ApexTopAppBar(
-                title = stringResource(R.string.dashboard_title),
-                subtitle = "${state.deviceInfo?.brand} ${state.deviceInfo?.model}",
+            TopAppBar(
+                title = { Text("Apex Agent") },
                 actions = {
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "设置"
-                        )
+                        Icon(Icons.Default.Settings, contentDescription = "设置")
                     }
                 },
                 scrollBehavior = scrollBehavior
             )
         }
-    ) { paddingValues ->
+    ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                .padding(padding),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // 风险评分卡片
             item {
-                DeviceSummaryCard(deviceInfo = state.deviceInfo)
-            }
-            
-            item {
-                QuickScanSection(
-                    isScanning = state.isScanning,
-                    progress = state.scanProgress,
-                    onStartScan = { onAction(DashboardAction.StartScan) }
-                )
-            }
-            
-            if (state.lastScanResult != null) {
-                item {
-                    LastScanResultCard(result = state.lastScanResult)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text("风险评分", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "${uiState.riskScore}/100",
+                            style = MaterialTheme.typography.displayMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        val riskLabel = when {
+                            uiState.riskScore > 60 -> "高风险"
+                            uiState.riskScore > 30 -> "中等风险"
+                            uiState.riskScore > 10 -> "轻度风险"
+                            else -> "安全"
+                        }
+                        Text(riskLabel, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
-            
-            item {
-                RiskOverviewCard(riskLevel = state.lastScanResult?.riskLevel ?: RiskLevel.NONE)
-            }
-            
-            item {
-                RecentEventsSection(events = state.recentEvents)
-            }
-        }
-    }
-}
 
-@Composable
-private fun DeviceSummaryCard(
-    deviceInfo: DeviceInfo?,
-    modifier: Modifier = Modifier
-) {
-    ApexCard(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.device_summary),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            if (deviceInfo != null) {
-                Text(
-                    text = "${deviceInfo.brand} ${deviceInfo.model}",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = "Android ${deviceInfo.androidVersion} (API ${deviceInfo.sdkInt})",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "安全补丁：${deviceInfo.securityPatchLevel}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Text(
-                    text = stringResource(R.string.loading),
-                    style = MaterialTheme.typography.bodyMedium
-                )
+            // 扫描进度
+            if (uiState.isScanning) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "扫描中... ${uiState.currentLayer}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = { uiState.scanProgress },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
             }
-        }
-    }
-}
 
-@Composable
-private fun QuickScanSection(
-    isScanning: Boolean,
-    progress: Float,
-    onStartScan: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    ApexCard(
-        modifier = modifier.fillMaxWidth(),
-        onClick = if (!isScanning) onStartScan else null
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = if (isScanning) 
-                    stringResource(R.string.scanning, (progress * 100).toInt())
-                else 
-                    stringResource(R.string.start_scan),
-                style = MaterialTheme.typography.titleLarge,
-                color = if (isScanning) 
-                    MaterialTheme.colorScheme.secondary 
-                else 
-                    MaterialTheme.colorScheme.primary
-            )
-            if (isScanning) {
-                Spacer(modifier = Modifier.height(16.dp))
-                LinearProgressIndicator(
-                    progress = progress,
+            // 扫描按钮
+            item {
+                Button(
+                    onClick = { viewModel.runScan() },
+                    enabled = !uiState.isScanning,
                     modifier = Modifier.fillMaxWidth()
-                )
+                ) {
+                    Icon(Icons.Default.Shield, contentDescription = null)
+                    Spacer(Modifier.height(0.dp))
+                    Text(
+                        if (uiState.isScanning) "扫描中..." else "快速检测",
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+
+            // 并行扫描按钮
+            item {
+                Button(
+                    onClick = { viewModel.runParallelScan() },
+                    enabled = !uiState.isScanning,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("并行扫描 (19层并发)")
+                }
+            }
+
+            // 深度扫描按钮
+            item {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { viewModel.runDeepScan() },
+                    enabled = !uiState.isScanning,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("深度检测")
+                }
+            }
+
+            // 检测结果
+            if (uiState.scanResult.isNotEmpty() && uiState.scanResult != "点击扫描开始检测") {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("检测结果", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                uiState.scanResult.take(2000),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 层通过数
+            if (uiState.layersTotal > 0) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "检测层: ${uiState.layersPassed}/${uiState.layersTotal} 通过",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+
+            // Native 库状态
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Native 引擎: ${if (uiState.nativeAvailable) "✅ 已加载" else "❌ 未加载"}",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun LastScanResultCard(
-    result: RootDetectionResult,
-    modifier: Modifier = Modifier
-) {
-    ApexCard(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.last_scan),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = if (result.isRooted) "检测到 Root" else "未检测到 Root",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(
-                text = "置信度：${(result.confidence * 100).toInt()}%",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun RiskOverviewCard(
-    riskLevel: RiskLevel,
-    modifier: Modifier = Modifier
-) {
-    ApexCard(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.risk_overview),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            RiskLevelBadge(riskLevel = riskLevel)
-        }
-    }
-}
-
-@Composable
-private fun RiskLevelBadge(
-    riskLevel: RiskLevel,
-    modifier: Modifier = Modifier
-) {
-    val (label, color) = when (riskLevel) {
-        RiskLevel.NONE -> stringResource(R.string.risk_none) to MaterialTheme.colorScheme.primary
-        RiskLevel.LOW -> stringResource(R.string.risk_low) to MaterialTheme.colorScheme.secondary
-        RiskLevel.MEDIUM -> stringResource(R.string.risk_medium) to MaterialTheme.colorScheme.tertiary
-        RiskLevel.HIGH -> stringResource(R.string.risk_high) to MaterialTheme.colorScheme.error
-        RiskLevel.CRITICAL -> stringResource(R.string.risk_critical) to MaterialTheme.colorScheme.onErrorContainer
-    }
-    
-    AssistChip(
-        onClick = {},
-        enabled = false,
-        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Default.Shield,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(16.dp)
-            )
-        },
-        colors = AssistChipDefaults.assistChipColors(
-            containerColor = color.copy(alpha = 0.1f)
-        ),
-        border = AssistChipDefaults.assistChipBorder(
-            borderColor = color,
-            borderWidth = 1.dp
-        ),
-        modifier = modifier
-    )
-}
-
-@Composable
-private fun RecentEventsSection(
-    events: List<GuardEvent>,
-    modifier: Modifier = Modifier
-) {
-    ApexCard(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.recent_events),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            if (events.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.no_events),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun DashboardScreenPreview() {
-    ApexRootTheme {
-        DashboardScreen(onNavigateToSettings = {})
     }
 }
