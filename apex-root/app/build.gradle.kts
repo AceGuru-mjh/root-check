@@ -6,8 +6,6 @@ plugins {
     id("com.google.protobuf") version "0.9.4"
     id("org.jlleitschuh.gradle.ktlint")
     id("io.gitlab.arturbosch.detekt")
-    // v1.0.4: Room 需要 kapt
-    kotlin("kapt")
 }
 
 ktlint {
@@ -192,12 +190,6 @@ dependencies {
 
     // WorkManager — 周期性更新检查
     implementation("androidx.work:work-runtime-ktx:2.9.0")
-
-    // v1.0.4: M3 UI 重构新增依赖 (Room + DataStore)
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    kapt("androidx.room:room-compiler:2.6.1")
 
     implementation("com.google.protobuf:protobuf-kotlin-lite:3.25.1")
 

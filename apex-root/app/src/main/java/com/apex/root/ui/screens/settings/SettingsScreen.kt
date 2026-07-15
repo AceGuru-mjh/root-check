@@ -2,20 +2,13 @@ package com.apex.root.ui.screens.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,312 +16,120 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
-import com.apex.root.R
-import com.apex.root.ui.components.ApexCard
-import com.apex.root.ui.components.ApexTopAppBar
-import com.apex.root.ui.theme.ApexRootTheme
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.apex.root.viewmodel.SettingsViewModel
 
+/**
+ * M3 Settings — v1.0.4
+ * 使用现有 SettingsViewModel, 精简为核心设置项。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier
+    viewModel: SettingsViewModel = viewModel()
 ) {
-    SettingsContent(
-        state = SettingsUiState(),
-        onAction = {},
-        onNavigateBack = onNavigateBack,
-        modifier = modifier
-    )
-}
+    val settings by viewModel.settings.collectAsState()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SettingsContent(
-    state: SettingsUiState,
-    onAction: (SettingsAction) -> Unit,
-    onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+    val coreSettings = listOf(
+        SettingItem("检测完成通知", "扫描完成后推送通知") { viewModel.updateNotifyScanComplete(it) },
+        SettingItem("风险告警通知", "检测到高风险时推送") { viewModel.updateNotifyRiskFound(it) },
+        SettingItem("防护告警通知", "Guard 实时防护告警") { viewModel.updateNotifyGuardAlert(it) },
+        SettingItem("修复结果通知", "治愈操作完成后通知") { viewModel.updateNotifyCureResult(it) },
+        SettingItem("更新提示通知", "有新版本时通知") { viewModel.updateNotifyUpdateAvailable(it) },
+        SettingItem("自动扫描", "启动应用时自动扫描") { viewModel.updateAutoScan(it) },
+        SettingItem("Guard 防护", "开启实时防护") { viewModel.updateGuardEnabled(it) }
+    )
+
+    val settingStates = listOf(
+        settings.notifyScanComplete,
+        settings.notifyRiskFound,
+        settings.notifyGuardAlert,
+        settings.notifyCureResult,
+        settings.notifyUpdateAvailable,
+        settings.autoScanEnabled,
+        settings.guardEnabled
+    )
+
     Scaffold(
-        modifier = modifier,
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            ApexTopAppBar(
-                title = stringResource(R.string.settings_title),
+            TopAppBar(
+                title = { Text("设置") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "返回"
-                        )
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
-                }
+                },
+                scrollBehavior = scrollBehavior
             )
         }
-    ) { paddingValues ->
+    ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(padding),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
-                GeneralSettingsGroup(
-                    autoScanEnabled = state.autoScanEnabled,
-                    notificationsEnabled = state.notificationsEnabled,
-                    onAutoScanChange = { onAction(SettingsAction.ToggleAutoScan(it)) },
-                    onNotificationsChange = { onAction(SettingsAction.ToggleNotifications(it)) }
-                )
-            }
-            
-            item {
-                DetectionLayersGroup(
-                    enabledLayers = state.enabledLayers,
-                    onLayerToggle = { layer, enabled -> 
-                        onAction(SettingsAction.ToggleLayer(layer, enabled)) 
-                    }
-                )
-            }
-            
-            item {
-                AdvancedSettingsGroup(
-                    sensitivityLevel = state.sensitivityLevel,
-                    protectionMode = state.protectionMode,
-                    onSensitivityChange = { onAction(SettingsAction.SetSensitivity(it)) },
-                    onProtectionModeChange = { onAction(SettingsAction.SetProtectionMode(it)) }
-                )
-            }
-            
-            item {
-                AboutSection()
-            }
-        }
-    }
-}
-
-@Composable
-private fun GeneralSettingsGroup(
-    autoScanEnabled: Boolean,
-    notificationsEnabled: Boolean,
-    onAutoScanChange: (Boolean) -> Unit,
-    onNotificationsChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    ApexCard(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.settings_general),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            SettingsSwitchItem(
-                icon = Icons.Default.Security,
-                title = "自动扫描",
-                subtitle = "启动时自动执行检测",
-                checked = autoScanEnabled,
-                onCheckedChange = onAutoScanChange
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            SettingsSwitchItem(
-                icon = Icons.Default.Tune,
-                title = "通知提醒",
-                subtitle = "发现风险时发送通知",
-                checked = notificationsEnabled,
-                onCheckedChange = onNotificationsChange
-            )
-        }
-    }
-}
-
-@Composable
-private fun DetectionLayersGroup(
-    enabledLayers: Set<String>,
-    onLayerToggle: (String, Boolean) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    ApexCard(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.settings_detection_layers),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            val layers = listOf(
-                "L1" to "系统属性检查",
-                "L4" to "二进制文件检测",
-                "L6" to "Native 层检测",
-                "L8" to "行为分析",
-                "L9" to "高级启发式",
-                "L10" to "AI 检测",
-                "L12" to "深度内核检查"
-            )
-            
-            layers.forEachIndexed { index, (layerId, layerName) ->
-                SettingsSwitchItem(
-                    icon = Icons.Default.Security,
-                    title = "$layerId - $layerName",
-                    checked = enabledLayers.contains(layerId),
-                    onCheckedChange = { onLayerToggle(layerId, it) }
-                )
-                if (index < layers.lastIndex) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AdvancedSettingsGroup(
-    sensitivityLevel: String,
-    protectionMode: String,
-    onSensitivityChange: (String) -> Unit,
-    onProtectionModeChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    ApexCard(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.settings_advanced),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Text(
-                text = "灵敏度：$sensitivityLevel",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "保护模式：$protectionMode",
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-    }
-}
-
-@Composable
-private fun AboutSection(
-    modifier: Modifier = Modifier
-) {
-    ApexCard(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.settings_about),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "APEX Root",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Text(
-                        text = "版本 2.0.0-m3",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsSwitchItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String? = null,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
-            )
-            Column {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge
+                    "通知设置",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
-                if (subtitle != null) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            }
+
+            items(coreSettings.zip(settingStates)) { (item, enabled) ->
+                androidx.compose.material3.Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.foundation.layout.Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(item.title, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                item.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = enabled,
+                            onCheckedChange = { item.onChange(it) }
+                        )
+                    }
                 }
             }
+
+            item {
+                Text(
+                    "版本: ${com.apex.root.BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 24.dp)
+                )
+            }
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange
-        )
     }
 }
 
-data class SettingsUiState(
-    val autoScanEnabled: Boolean = false,
-    val notificationsEnabled: Boolean = true,
-    val enabledLayers: Set<String> = setOf("L1", "L4", "L6"),
-    val sensitivityLevel: String = "标准",
-    val protectionMode: String = "被动"
+private data class SettingItem(
+    val title: String,
+    val subtitle: String,
+    val onChange: (Boolean) -> Unit
 )
-
-sealed interface SettingsAction {
-    data class ToggleAutoScan(val enabled: Boolean) : SettingsAction
-    data class ToggleNotifications(val enabled: Boolean) : SettingsAction
-    data class ToggleLayer(val layerId: String, val enabled: Boolean) : SettingsAction
-    data class SetSensitivity(val level: String) : SettingsAction
-    data class SetProtectionMode(val mode: String) : SettingsAction
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun SettingsScreenPreview() {
-    ApexRootTheme {
-        SettingsScreen(onNavigateBack = {})
-    }
-}
