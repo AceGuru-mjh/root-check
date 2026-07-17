@@ -25,6 +25,9 @@
 #include "detect/layer18_apatch_kpm.h"
 #include "detect/layer19_hide_frameworks.h"
 #include "detect/layer20_modern_hooks.h"
+#include "detect/layer21_play_integrity.h"
+#include "detect/layer22_emulator.h"
+#include "detect/layer24_dhizuku.h"
 #include "detect/selinux_context.h"
 #include "detect/anti_hiding.h"
 #include "namespace/namespace_isolation.h"
@@ -532,6 +535,69 @@ Java_com_apex_root_data_jni_NativeBridge_detectLSPatchNative(JNIEnv*, jobject) {
 JNIEXPORT jboolean JNICALL
 Java_com_apex_root_data_jni_NativeBridge_detectModernHookFrameworksNative(JNIEnv*, jobject) {
     return detectModernHookFrameworks();
+}
+
+// ─── v1.0.5 新增 L21-L24 ───
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectPlayIntegrityTamperingNative(JNIEnv*, jobject) {
+    return detectPlayIntegrityTampering();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectPIFModuleNative(JNIEnv*, jobject) {
+    return detectPIFModule();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectTrickyStoreModuleNative(JNIEnv*, jobject) {
+    return detectTrickyStoreModule();
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_playIntegrityFullScanNative(JNIEnv* env, jobject) {
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return playIntegrityFullScan(b, s);
+    });
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectEmulatorNative(JNIEnv*, jobject) {
+    return detectEmulator();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectQEMUNative(JNIEnv*, jobject) {
+    return detectQEMU();
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_emulatorFullScanNative(JNIEnv* env, jobject) {
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return emulatorFullScan(b, s);
+    });
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectDhizukuNative(JNIEnv*, jobject) {
+    return detectDhizuku();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectShizukuNative(JNIEnv*, jobject) {
+    return detectShizuku();
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_detectStellarNative(JNIEnv*, jobject) {
+    return detectStellar();
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_apex_root_data_jni_NativeBridge_dhizukuFullScanNative(JNIEnv* env, jobject) {
+    return report_to_jstring(env, [](char* b, size_t s) -> int {
+        return dhizukuFullScan(b, s);
+    });
 }
 
 JNIEXPORT jboolean JNICALL
