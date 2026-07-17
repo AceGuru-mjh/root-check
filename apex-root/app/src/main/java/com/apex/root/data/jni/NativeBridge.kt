@@ -243,6 +243,26 @@ object NativeBridge {
         modernHooksFullScanNative()
     }
 
+    // ─── v1.0.5 新增: L21-L24 检测层 ──────────────────
+    /** L21: Play Integrity 伪造检测 (PIF + TrickyStore) */
+    fun detectPlayIntegrityTampering(): Boolean = NativeLibraryLoader.safeCall(false) {
+        detectPlayIntegrityTamperingNative()
+    }
+    fun detectPIFModule(): Boolean = NativeLibraryLoader.safeCall(false) { detectPIFModuleNative() }
+    fun detectTrickyStoreModule(): Boolean = NativeLibraryLoader.safeCall(false) { detectTrickyStoreModuleNative() }
+    fun playIntegrityFullScan(): String = NativeLibraryLoader.safeCall("") { playIntegrityFullScanNative() }
+
+    /** L22: 模拟器检测 (QEMU/Genymotion/BlueStacks/Nox/LDPlayer) */
+    fun detectEmulator(): Boolean = NativeLibraryLoader.safeCall(false) { detectEmulatorNative() }
+    fun detectQEMU(): Boolean = NativeLibraryLoader.safeCall(false) { detectQEMUNative() }
+    fun emulatorFullScan(): String = NativeLibraryLoader.safeCall("") { emulatorFullScanNative() }
+
+    /** L24: Dhizuku/Shizuku/Stellar 特权框架检测 */
+    fun detectDhizuku(): Boolean = NativeLibraryLoader.safeCall(false) { detectDhizukuNative() }
+    fun detectShizuku(): Boolean = NativeLibraryLoader.safeCall(false) { detectShizukuNative() }
+    fun detectStellar(): Boolean = NativeLibraryLoader.safeCall(false) { detectStellarNative() }
+    fun dhizukuFullScan(): String = NativeLibraryLoader.safeCall("") { dhizukuFullScanNative() }
+
     // ─── Hide Mode (隐藏模式控制) ──────────────────────
     // 启动隐藏模式：对除 APEX 外的应用隐藏 root 痕迹
     fun enableHideMode(appUid: Int): Int = NativeLibraryLoader.safeCall(-1) {
@@ -366,6 +386,19 @@ object NativeBridge {
     private external fun detectLSPatchNative(): Boolean
     private external fun detectModernHookFrameworksNative(): Boolean
     private external fun modernHooksFullScanNative(): String
+
+    // v1.0.5 L21-L24 native
+    private external fun detectPlayIntegrityTamperingNative(): Boolean
+    private external fun detectPIFModuleNative(): Boolean
+    private external fun detectTrickyStoreModuleNative(): Boolean
+    private external fun playIntegrityFullScanNative(): String
+    private external fun detectEmulatorNative(): Boolean
+    private external fun detectQEMUNative(): Boolean
+    private external fun emulatorFullScanNative(): String
+    private external fun detectDhizukuNative(): Boolean
+    private external fun detectShizukuNative(): Boolean
+    private external fun detectStellarNative(): Boolean
+    private external fun dhizukuFullScanNative(): String
     private external fun detectFirmwareTamperingNative(): Boolean
     private external fun detectAVBStatusNative(): Boolean
     private external fun detectCustomRecoveryNative(): Boolean
