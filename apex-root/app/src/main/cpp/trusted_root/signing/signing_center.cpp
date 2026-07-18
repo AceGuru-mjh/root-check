@@ -89,7 +89,10 @@ SignedReport finalize_report() {
 
     g_pending_layers.clear();
 
-    persist_report(report);
+    // FIX-CPP P0-C3: 调用 _locked 版本避免重复加锁死锁。
+    // 原实现 finalize_report() 持 g_mutex 后调用 persist_report(),
+    // 后者再次 lock_guard<std::mutex>(g_mutex) → std::mutex 不可重入 → 永久死锁。
+    persist_report_locked(report);
     return report;
 }
 
@@ -102,8 +105,10 @@ std::optional<SignedReport> get_last_report() {
     return g_last_report;
 }
 
-void persist_report(const SignedReport& report) {
-    std::lock_guard<std::mutex> lock(g_mutex);
+// FIX-CPP P0-C3: 不加锁版本，要求调用方已持 g_mutex。
+// finalize_report() 在持锁状态下调用此版本。
+void persist_report_locked(const SignedReport& report) {
+    // NOTE: 调用方必须已持 g_mutex。
     g_last_report = report;
     g_has_last_report = true;
 
@@ -126,6 +131,12 @@ void persist_report(const SignedReport& report) {
             bs_write(fd, report.dilithium_signature.data(), sig_size);
         bs_close(fd);
     }
+}
+
+// FIX-CPP P0-C3: 公开加锁版本，供外部调用方使用。
+void persist_report(const SignedReport& report) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    persist_report_locked(report);
 }
 
 bool signing_center::submit_result(const LayerResult& layer) {

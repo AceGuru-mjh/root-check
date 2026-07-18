@@ -1,11 +1,12 @@
 #include "layer1_prop.h"
 #include "../common/syscall.h"
+#include "../bare_syscall/syscall_bridge.h"
 #include <cstring>
 
 // v1.0.2 P2-1: 提取重复的 open/read/close 逻辑为 read_properties_file 辅助函数
 // 旧实现: check_properties_file / detectMagiskProperty / detectKernelSUProperty /
 // detectAPatchProperty / detectDebugProperty 各自重复 30+ 行 syscall 代码。
-// 新实现: 一个辅助函数读 /dev/__properties__ 到 buf,各检测函数只需调用并搜索。
+// 新实现: 一个辅助函数枚举 /dev/__properties__/ 下子文件并拼接到 buf。
 
 static bool memmem_wrapper(const char* haystack, size_t hlen, const char* needle, size_t nlen) {
     if (!haystack || !needle || nlen > hlen) return false;
@@ -20,35 +21,65 @@ static bool memmem_wrapper(const char* haystack, size_t hlen, const char* needle
 }
 
 /**
- * 读取 /dev/__properties__ 到 buf,返回实际读取字节数。
- * 失败返回 -1。调用者负责保证 buf 足够大。
+ * 枚举 /dev/__properties__/ 目录下的文件并拼接到 buf。
+ * 返回实际填充的总字节数。失败返回 -1。
+ *
+ * FIX-CPP P0-D4: /dev/__properties__ 在 Android 8+ 是目录而非文件。
+ *   原实现直接 openat+read 该路径,read 返回 -EISDIR,函数永远返回 -1,
+ *   导致 detectSuspiciousProperties 在所有现代设备上 100% 漏报。
+ *   现改为 O_DIRECTORY 打开 + getdents64 枚举 + 对每个子文件 openat+read。
+ *
+ * FIX-CPP P0-S10: 所有 inline asm 均补齐 clobber 列表 (x0/x1/x2/x8/memory)。
  */
 static int64_t read_properties_file(char* buf, size_t buf_size) {
-    int64_t fd;
-    #if defined(__aarch64__)
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/dev/__properties__"), "i"(O_RDONLY), "i"(0));
-    #else
-        fd = -1;
-    #endif
-    if (fd < 0) return -1;
+    if (!buf || buf_size == 0) return -1;
 
+    // 打开 /dev/__properties__ 目录
+    int64_t dirfd = bs_openat(AT_FDCWD, "/dev/__properties__",
+                              O_RDONLY | O_DIRECTORY, 0);
+    if (dirfd < 0) return -1;
+
+    size_t total = 0;
+    char dentry_buf[4096];
     int64_t n;
-    #if defined(__aarch64__)
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)buf_size) : "x0", "x1", "x2", "x8");
-    #else
-        n = -1;
-    #endif
 
-    int64_t d;
-    #if defined(__aarch64__)
-    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
-    #else
-        d = -1;
-    #endif
+    // 枚举目录项
+    while ((n = bs_getdents64(dirfd, dentry_buf, sizeof(dentry_buf))) > 0) {
+        size_t pos = 0;
+        while (pos + sizeof(apex_dirent64) <= (size_t)n) {
+            auto* d = reinterpret_cast<apex_dirent64*>(dentry_buf + pos);
+            if (d->d_reclen == 0 || d->d_reclen > (size_t)n - pos) break;
 
-    return n;
+            const char* name = d->d_name;
+            // 跳过 "." 与 ".."
+            if (name[0] == '.' && (name[1] == '\0' ||
+                                   (name[1] == '.' && name[2] == '\0'))) {
+                pos += d->d_reclen;
+                continue;
+            }
+
+            // 使用相对路径 openat(dirfd, name, ...) 读取每个 property 文件
+            int64_t fd = bs_openat(dirfd, name, O_RDONLY, 0);
+            if (fd >= 0) {
+                size_t remaining = buf_size - total;
+                if (remaining > 0) {
+                    int64_t got = bs_read(fd, buf + total, remaining);
+                    if (got > 0) {
+                        total += (size_t)got;
+                    }
+                }
+                bs_close(fd);
+                // 缓冲区满则停止
+                if (total >= buf_size) {
+                    bs_close(dirfd);
+                    return (int64_t)total;
+                }
+            }
+            pos += d->d_reclen;
+        }
+    }
+    bs_close(dirfd);
+    return (int64_t)total;
 }
 
 bool detectSuspiciousProperties() {

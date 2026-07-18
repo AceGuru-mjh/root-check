@@ -36,7 +36,10 @@ bool verify_report(const uint8_t* report, size_t report_len,
 std::optional<SignedReport> get_last_report();
 void submit_layer(const LayerResult& layer);
 SignedReport finalize_report();
+// FIX-CPP P0-C3: persist_report_locked 不加锁，要求调用方已持内部 g_mutex。
+// persist_report 是公开加锁版本。两者拆分以避免 finalize_report() 死锁。
 void persist_report(const SignedReport& report);
+void persist_report_locked(const SignedReport& report);
 
 namespace signing_center {
     bool submit_result(const LayerResult& layer);

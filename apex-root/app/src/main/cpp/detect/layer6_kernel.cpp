@@ -19,7 +19,8 @@ static bool read_file(const char* path, char* buf, size_t size) {
     int64_t fd;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -27,13 +28,13 @@ static bool read_file(const char* path, char* buf, size_t size) {
     int64_t n;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8");
+                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8", "memory");
     #else
         n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
     int64_t d;
     #if defined(__aarch64__)
-    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8", "memory");
     #else
         d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -53,7 +54,8 @@ static bool scan_proc_cmdline(const char* needle) {
     int64_t fd;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc"), "i"(O_DIRECTORY | O_RDONLY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc"), "i"(O_DIRECTORY | O_RDONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -63,13 +65,13 @@ static bool scan_proc_cmdline(const char* needle) {
     int64_t n;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_getdents64), "r"(fd), "r"(dentry_buf), "r"((int64_t)sizeof(dentry_buf)) : "x0", "x1", "x2", "x8");
+                 : "=r"(n) : "i"(__NR_getdents64), "r"(fd), "r"(dentry_buf), "r"((int64_t)sizeof(dentry_buf)) : "x0", "x1", "x2", "x8", "memory");
     #else
         n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
     int64_t d;
     #if defined(__aarch64__)
-    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8", "memory");
     #else
         d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif

@@ -18,6 +18,9 @@ import android.util.Log
  * 2. 添加自动重连机制（指数退避，最多 5 次）
  * 3. 正确管理 CoroutineScope 生命周期
  * 4. 连接断开时自动清理资源
+ * 5. P0-K2 修复 (v1.1.1): reader loop 与 send() 均强制使用 Dispatchers.IO,
+ *    防止调用方 (如 ScanViewModel.viewModelScope, 默认 Dispatchers.Main.immediate)
+ *    把阻塞 I/O 调度到主线程导致 ANR。
  */
 class SecureSocketClient(
     private val socketName: String,
@@ -36,7 +39,10 @@ class SecureSocketClient(
     private val sequenceNumber = AtomicLong(0)
     private val messageQueue = ConcurrentLinkedQueue<ByteArray>()
 
-    private val clientScope = CoroutineScope(scope.coroutineContext + SupervisorJob())
+    // P0-K2 修复 (v1.1.1): clientScope 显式叠加 Dispatchers.IO, 不再继承调用方的 scope.dispatcher。
+    // 之前 clientScope = CoroutineScope(scope.coroutineContext + SupervisorJob()) 会继承
+    // viewModelScope 的 Dispatchers.Main.immediate, 导致 readLine/write 阻塞主线程 → ANR。
+    private val clientScope = CoroutineScope(scope.coroutineContext + SupervisorJob() + Dispatchers.IO)
     private var readerJob: Job? = null
     private var isRunning = false
 
@@ -49,7 +55,8 @@ class SecureSocketClient(
     /**
      * 连接到 socket（suspend，不在主线程阻塞）
      */
-    suspend fun connect(): Boolean = withContext(dispatcher) {
+    suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
+        // P0-K2 修复 (v1.1.1): 与 send() 一致, 强制 IO 调度器。
         try {
             val localSocket = LocalSocket()
             val address = LocalSocketAddress(socketName, LocalSocketAddress.Namespace.RESERVED)
@@ -86,7 +93,8 @@ class SecureSocketClient(
     }
 
     private fun startReader() {
-        readerJob = clientScope.launch {
+        // P0-K2 修复 (v1.1.1): launch 显式指定 Dispatchers.IO, readLine() 是阻塞 I/O 不能跑在 Main。
+        readerJob = clientScope.launch(Dispatchers.IO) {
             while (isRunning && isActive) {
                 try {
                     val line = reader?.readLine() ?: break
@@ -101,12 +109,14 @@ class SecureSocketClient(
             // 读取结束 — 尝试自动重连
             if (isRunning) {
                 Log.w(TAG, "Connection lost, attempting reconnect...")
-                clientScope.launch { reconnectWithBackoff() }
+                clientScope.launch(Dispatchers.IO) { reconnectWithBackoff() }
             }
         }
     }
 
-    suspend fun send(data: ByteArray): Boolean = withContext(dispatcher) {
+    suspend fun send(data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        // P0-K2 修复 (v1.1.1): 强制 Dispatchers.IO, 不再使用构造函数的 dispatcher 参数,
+        // 防止调用方在构造 SecureSocketClient 时传入 Main 调度器导致 write/flush 阻塞主线程。
         try {
             val seq = sequenceNumber.incrementAndGet()
             val header = ByteBuffer.allocate(12).putLong(seq).putInt(data.size).array()

@@ -14,7 +14,10 @@ ktlint {
 }
 
 detekt {
-    config.setFrom(file(".detekt/config.yaml"))
+    // 修复 P1-4: 之前 file(".detekt/config.yaml") 在 :app 模块下解析为
+    // apex-root/app/.detekt/config.yaml, 但实际配置文件在 apex-root/.detekt/。
+    // 使用 rootProject.file() 显式锚定到项目根目录。
+    config.setFrom(rootProject.file(".detekt/config.yaml"))
     buildUponDefaultConfig = true
 }
 
@@ -70,8 +73,9 @@ android {
         applicationId = "com.apex.root"
         minSdk = 29
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.3"
+        // v1.1.1: 统一版本号 (修复 P0-B1)
+        versionCode = 3
+        versionName = "1.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 全架构由 splits.abi 控制，此处不再设置 ndk.abiFilters

@@ -50,7 +50,7 @@ static int64_t sys_perf_event_open(void* attr, int64_t pid, int cpu, int group_f
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
                  : "=r"(ret) : "i"(__NR_perf_event_open), "r"(attr), "r"(pid), "r"(cpu), "r"(group_fd), "r"((int64_t)flags)
-                 : "x0", "x1", "x2", "x3", "x4", "x8");
+                 : "x0", "x1", "x2", "x3", "x4", "x8", "memory");
     #else
         ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -60,9 +60,10 @@ static int64_t sys_perf_event_open(void* attr, int64_t pid, int cpu, int group_f
 static int64_t sys_bpf(int cmd, const void* attr, size_t size) {
     int64_t ret;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 memory clobber。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(ret) : "i"(BPF_SYSCALL), "r"(cmd), "r"(attr), "r"(size)
-                 : "x0", "x1", "x2", "x8");
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif
@@ -72,8 +73,10 @@ static int64_t sys_bpf(int cmd, const void* attr, size_t size) {
 static bool read_file(const char* path, char* buf, size_t size) {
     int64_t fd;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -81,13 +84,13 @@ static bool read_file(const char* path, char* buf, size_t size) {
     int64_t n;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8");
+                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8", "memory");
     #else
         n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
     int64_t d;
     #if defined(__aarch64__)
-    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8","memory");
     #else
         d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -156,7 +159,8 @@ static void close_fd(int64_t fd) {
     if (fd >= 0) {
         int64_t d;
         #if defined(__aarch64__)
-        asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8");
+        // FIX-CPP P0-S10: 补齐 memory clobber。
+        asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8","memory");
         #else
             d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
@@ -176,8 +180,10 @@ static bool write_kprobe_events(const char* cmd, bool enable) {
     const char* path = "/sys/kernel/debug/tracing/kprobe_events";
     int64_t fd;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_WRONLY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_WRONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -185,7 +191,8 @@ static bool write_kprobe_events(const char* cmd, bool enable) {
         int64_t fd2;
         #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                     : "=r"(fd2) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/sys/kernel/tracing/kprobe_events"), "i"(O_WRONLY), "i"(0));
+                     : "=r"(fd2) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/sys/kernel/tracing/kprobe_events"), "i"(O_WRONLY), "i"(0)
+                     : "x0", "x1", "x2", "x8", "memory");
         #else
             fd2 = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
@@ -203,7 +210,8 @@ static bool write_kprobe_events(const char* cmd, bool enable) {
         int64_t n;
         #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                     : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(disable_cmd), "r"((int64_t)strlen(disable_cmd)));
+                     : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(disable_cmd), "r"((int64_t)strlen(disable_cmd))
+                     : "x0", "x1", "x2", "x8", "memory");
         #else
             n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
@@ -213,7 +221,8 @@ static bool write_kprobe_events(const char* cmd, bool enable) {
     int64_t n;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(cmd), "r"((int64_t)strlen(cmd)));
+                 : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(cmd), "r"((int64_t)strlen(cmd))
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -236,14 +245,14 @@ bool attach_kprobe(int prog_fd, const char* symbol) {
     }
 
     // Build kprobe command: p:kprobe_<symbol> <symbol>
+    // FIX-CPP P1-13: 原实现手动拼接 cmd[256] 无边界检查,symbol 长度 ≥ 120 时溢出。
+    //   改用 snprintf 限制写入长度。返回值 < 0 或 ≥ sizeof 表示截断,
+    //   截断时拒绝附加以防写入不完整命令到 kprobe_events。
     char cmd[256];
-    int pos = 0;
-    const char* prefix = "p:kprobe_";
-    for (int i = 0; prefix[i]; i++) cmd[pos++] = prefix[i];
-    for (int i = 0; symbol[i]; i++) cmd[pos++] = symbol[i];
-    cmd[pos++] = ' ';
-    for (int i = 0; symbol[i]; i++) cmd[pos++] = symbol[i];
-    cmd[pos] = '\0';
+    int written = snprintf(cmd, sizeof(cmd), "p:kprobe_%s %s", symbol, symbol);
+    if (written < 0 || (size_t)written >= sizeof(cmd)) {
+        return false; // symbol 太长,拒绝拼接以防缓冲区溢出
+    }
 
     return write_kprobe_events(cmd, true);
 }
@@ -259,18 +268,14 @@ bool attach_tracepoint(int prog_fd, const char* category, const char* event) {
         g_kprobe_count++;
     }
 
+    // FIX-CPP P1-13: 原实现手动拼接 cmd[256] 无边界检查。
+    //   改用 snprintf 限制写入长度。
     char cmd[256];
-    int pos = 0;
-    const char* prefix = "p:tracepoint_";
-    for (int i = 0; prefix[i]; i++) cmd[pos++] = prefix[i];
-    for (int i = 0; category[i]; i++) cmd[pos++] = category[i];
-    cmd[pos++] = '_';
-    for (int i = 0; event[i]; i++) cmd[pos++] = event[i];
-    cmd[pos++] = ' ';
-    for (int i = 0; category[i]; i++) cmd[pos++] = category[i];
-    cmd[pos++] = ':';
-    for (int i = 0; event[i]; i++) cmd[pos++] = event[i];
-    cmd[pos] = '\0';
+    int written = snprintf(cmd, sizeof(cmd),
+        "p:tracepoint_%s_%s %s:%s", category, event, category, event);
+    if (written < 0 || (size_t)written >= sizeof(cmd)) {
+        return false; // 参数太长,拒绝拼接以防缓冲区溢出
+    }
 
     return write_kprobe_events(cmd, true);
 }
@@ -282,22 +287,23 @@ bool detach_program(int prog_fd) {
     for (int i = 0; i < g_kprobe_count; i++) {
         if (prog_fd < 0 || g_kprobes[i].prog_fd == prog_fd) {
             // Build removal command
+            // FIX-CPP P1-13: 原实现手动拼接 remove_cmd[256] 无边界检查。
+            //   改用 snprintf 限制写入长度。
             char remove_cmd[256];
-            int pos = 0;
-            // Only the probe name, prefixed with '-'
-            remove_cmd[pos++] = '-';
-            const char* prefix = "kprobe_";
-            for (int j = 0; prefix[j]; j++) remove_cmd[pos++] = prefix[j];
-            for (int j = 0; g_kprobes[i].symbol[j]; j++)
-                remove_cmd[pos++] = g_kprobes[i].symbol[j];
-            remove_cmd[pos] = '\0';
+            int written = snprintf(remove_cmd, sizeof(remove_cmd),
+                "-kprobe_%s", g_kprobes[i].symbol);
+            if (written < 0 || (size_t)written >= sizeof(remove_cmd)) {
+                continue; // symbol 太长,跳过此项
+            }
 
             int64_t fd;
             #if defined(__aarch64__)
+            // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
             asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                          : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD),
                            "r"("/sys/kernel/debug/tracing/kprobe_events"),
-                           "i"(O_WRONLY), "i"(0));
+                           "i"(O_WRONLY), "i"(0)
+                         : "x0", "x1", "x2", "x8", "memory");
             #else
                 fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
             #endif
@@ -307,7 +313,8 @@ bool detach_program(int prog_fd) {
                 asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                              : "=r"(fd2) : "i"(__NR_openat), "i"(AT_FDCWD),
                                "r"("/sys/kernel/tracing/kprobe_events"),
-                               "i"(O_WRONLY), "i"(0));
+                               "i"(O_WRONLY), "i"(0)
+                             : "x0", "x1", "x2", "x8", "memory");
                 #else
                     fd2 = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
                 #endif
@@ -318,7 +325,8 @@ bool detach_program(int prog_fd) {
             #if defined(__aarch64__)
             asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                          : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(remove_cmd),
-                           "r"((int64_t)strlen(remove_cmd)));
+                           "r"((int64_t)strlen(remove_cmd))
+                         : "x0", "x1", "x2", "x8", "memory");
             #else
                 n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
             #endif
@@ -470,8 +478,10 @@ bool spoof_hardware_id(const char* id_type, const char* fake_value) {
     // Write to /dev/__properties__ to override system property
     int64_t fd;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/dev/__properties__"), "i"(O_WRONLY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/dev/__properties__"), "i"(O_WRONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -517,8 +527,10 @@ bool activate_game_mode() {
 
     int64_t fd;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(comm_path), "i"(O_WRONLY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(comm_path), "i"(O_WRONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -527,7 +539,7 @@ bool activate_game_mode() {
         int64_t n;
         #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                     : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(hidden_name), "r"((int64_t)strlen(hidden_name)) : "x0", "x1", "x2", "x8");
+                     : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(hidden_name), "r"((int64_t)strlen(hidden_name)) : "x0", "x1", "x2", "x8", "memory");
         #else
             n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
@@ -562,8 +574,10 @@ bool deactivate_game_mode() {
 
     int64_t fd;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(comm_path), "i"(O_WRONLY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(comm_path), "i"(O_WRONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -572,7 +586,7 @@ bool deactivate_game_mode() {
         int64_t n;
         #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                     : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(real_name), "r"((int64_t)strlen(real_name)) : "x0", "x1", "x2", "x8");
+                     : "=r"(n) : "i"(__NR_write), "r"(fd), "r"(real_name), "r"((int64_t)strlen(real_name)) : "x0", "x1", "x2", "x8", "memory");
         #else
             n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif

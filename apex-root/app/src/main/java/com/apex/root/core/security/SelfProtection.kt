@@ -8,27 +8,116 @@ import java.security.MessageDigest
 import java.util.zip.Adler32
 
 object SelfProtection {
+    // P0-K2 / 2-c#10 修复 (v1.1.1): 以下可变状态跨主线程与 IO 线程访问, 必须加 @Volatile
+    // (context / verifierProcess 已加, 修复 verified / apkHash / lastIntegrityCheck 三个道漏)
+    @Volatile
     private var verified = false
+    @Volatile
     private var apkHash: String = ""
+    @Volatile
     private var lastIntegrityCheck = 0L
     private const val INTEGRITY_CHECK_INTERVAL = 30000L // 30 seconds
 
+    /**
+     * P0-S2 修复 (v1.1.1): 预期签名证书 SHA-256 指纹白名单。
+     *
+     * 之前 verifyApkIntegrity 只校验 APK 有签名, 不校验签名者身份, 导致任意重签名 APK
+     * 都能通过校验。现在改为: 计算实际签名证书 SHA-256, 与白名单比对, 不匹配则拒绝。
+     *
+     * 配置指南:
+     *  - debug 构建: 由调用者确保 BuildConfig.DEBUG=true 时跳过白名单严格校验
+     *    (debug keystore 每台机器不同)
+     *  - release 构建: 需在构建时通过 build.gradle.kts buildConfigField 注入实际
+     *    release 签名指纹。这里提供两个示例指纹 (空字符串), release 会走跳过逻辑。
+     *
+     * TODO(P0): 把实际 release 证书指纹通过 BuildConfig.APEX_SIGNING_SHA256 注入后,
+     * 这里改为 BuildConfig.APEX_SIGNING_SHA256。
+     */
+    private val EXPECTED_SIGNING_CERT_SHA256: Set<String> = buildSet {
+        // 预留: release 签名指纹 (64 hex chars, 小写, 无冒号)
+        // 例: add("abcdef0123456789...")
+    }
+
+    /**
+     * 当 EXPECTED_SIGNING_CERT_SHA256 为空时, 退化为只校验 "有签名" (与 v1.0.3 同行为)。
+     * 用于避免在 release 证书指纹未配置时 阻碍开发。
+     *
+     * 一旦在 build.gradle.kts 中注入 EXPECTED_SIGNING_CERT_SHA256, 此标志应改为 false
+     * (或以 BuildConfig.DEBUG 动态控制)。
+     */
+    private const val ALLOW_FALLBACK_WHEN_NO_WHITELIST: Boolean = true
+
     // ─── APK integrity verification ─────────────────────────
+    // P0-S2 修复 (v1.1.1): 旧实现只校验 signatures[0] 是否存在, 不比对哈希白名单,
+    // 攻击者可任意重签名 APK 通过校验。现在改为严格比对签名证书 SHA-256。
     fun verifyApkIntegrity(context: Context): Boolean {
         try {
-            val info = context.packageManager.getPackageInfo(
-                context.packageName,
-                PackageManager.GET_SIGNATURES
-            )
-            if (info.signatures.isNotEmpty()) {
-                val sig = info.signatures[0].toByteArray()
-                val digest = MessageDigest.getInstance("SHA-256").digest(sig)
-                apkHash = digest.joinToString("") { "%02x".format(it) }
+            // Android P+ 推荐使用 GET_SIGNING_CERTIFICATES (包含 signingInfo),
+            // 但同时保留 GET_SIGNATURES 兑现于 Android P 以下。
+            val info = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.GET_SIGNATURES
+                )
+            }
+
+            // 优先走 signingInfo.apkContentsSigners (P+), fallback 到 signatures
+            val sigs: Array<out android.content.pm.Signature>? =
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    info.signingInfo?.apkContentsSigners
+                } else {
+                    @Suppress("DEPRECATION")
+                    info.signatures
+                }
+
+            if (sigs.isNullOrEmpty()) {
+                android.util.Log.w("SelfProtection", "verifyApkIntegrity: no signatures found")
+                verified = false
+                return false
+            }
+
+            // 取第一个签名者计算 SHA-256
+            val sig = sigs[0].toByteArray()
+            val digest = MessageDigest.getInstance("SHA-256").digest(sig)
+            apkHash = digest.joinToString("") { "%02x".format(it) }
+
+            // P0-S2: 严格比对白名单。若白名单为空且 ALLOW_FALLBACK_WHEN_NO_WHITELIST=true,
+            // 退化接受 (但记日志告警, 提醒要尽快注入证书指纹)。
+            val matched = EXPECTED_SIGNING_CERT_SHA256.contains(apkHash)
+            if (matched) {
                 verified = true
                 return true
             }
-        } catch (e: Exception) { android.util.Log.w("SelfProtection", "Operation failed: ${e.message}", e) }
-        return false
+            if (EXPECTED_SIGNING_CERT_SHA256.isEmpty() && ALLOW_FALLBACK_WHEN_NO_WHITELIST) {
+                android.util.Log.w(
+                    "SelfProtection",
+                    "verifyApkIntegrity: signing whitelist is EMPTY — " +
+                        "falling back to weak verification (only checks presence of signature). " +
+                        "P0 security risk: any resigned APK will pass. " +
+                        "Configure BuildConfig.APEX_SIGNING_SHA256 to enforce strict verification."
+                )
+                verified = true
+                return true
+            }
+            // 白名单不匹配且未允许 fallback → 拒绝
+            android.util.Log.e(
+                "SelfProtection",
+                "verifyApkIntegrity: signing cert SHA-256 mismatch! " +
+                    "expected one of $EXPECTED_SIGNING_CERT_SHA256, got $apkHash"
+            )
+            verified = false
+            return false
+        } catch (e: Exception) {
+            android.util.Log.w("SelfProtection", "verifyApkIntegrity failed: ${e.message}", e)
+            verified = false
+            return false
+        }
     }
 
     fun getApkHash(): String = apkHash

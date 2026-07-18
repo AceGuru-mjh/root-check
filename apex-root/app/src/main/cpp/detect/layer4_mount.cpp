@@ -6,7 +6,8 @@ static bool read_file_to_buf(const char* path, char* buf, size_t size) {
     int64_t fd;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -14,14 +15,14 @@ static bool read_file_to_buf(const char* path, char* buf, size_t size) {
     int64_t n;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8");
+                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8", "memory");
     #else
         n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
     int64_t dummy;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; svc #0; mov %0, x0"
-                 : "=r"(dummy) : "i"(__NR_close), "r"(fd) : "x0", "x8");
+                 : "=r"(dummy) : "i"(__NR_close), "r"(fd) : "x0", "x8", "memory");
     #else
         dummy = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -63,20 +64,22 @@ bool detectNamespaceIsolation() {
     int64_t self_fd, init_fd;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(self_fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/self/ns/mnt"), "i"(O_RDONLY), "i"(0));
+                 : "=r"(self_fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/self/ns/mnt"), "i"(O_RDONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         self_fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(init_fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/1/ns/mnt"), "i"(O_RDONLY), "i"(0));
+                 : "=r"(init_fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/1/ns/mnt"), "i"(O_RDONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         init_fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
     if (self_fd < 0 || init_fd < 0) {
         #if defined(__aarch64__)
-        if (self_fd >= 0) { int64_t d; asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(self_fd) : "x0","x8"); }
-        if (init_fd >= 0) { int64_t d; asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(init_fd) : "x0","x8"); }
+        if (self_fd >= 0) { int64_t d; asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(self_fd) : "x0","x8", "memory"); }
+        if (init_fd >= 0) { int64_t d; asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(init_fd) : "x0","x8", "memory"); }
         #else
             /* arm32/x64 fallback */ (void)0;
         #endif
@@ -92,21 +95,21 @@ bool detectNamespaceIsolation() {
     // Simpler: just read the link target
     #if defined(__aarch64__)
     asm volatile("mov x8, 89; mov x0, %1; mov x1, %2; mov x2, %3; svc #0; mov %0, x0" // readlinkat
-                 : "=r"(ret) : "i"(AT_FDCWD), "r"("/proc/self/ns/mnt"), "r"(self_link) : "x0", "x8");
+                 : "=r"(ret) : "i"(AT_FDCWD), "r"("/proc/self/ns/mnt"), "r"(self_link) : "x0", "x8", "memory");
     #else
         ret = -1; /* arm32/x64: readlinkat bypass disabled */
     #endif
     int64_t ret2;
     #if defined(__aarch64__)
     asm volatile("mov x8, 89; mov x0, %1; mov x1, %2; mov x2, %3; svc #0; mov %0, x0"
-                 : "=r"(ret2) : "i"(AT_FDCWD), "r"("/proc/1/ns/mnt"), "r"(init_link) : "x0", "x8");
+                 : "=r"(ret2) : "i"(AT_FDCWD), "r"("/proc/1/ns/mnt"), "r"(init_link) : "x0", "x8", "memory");
     #else
         ret2 = -1; /* arm32/x64: readlinkat bypass disabled */
     #endif
 
     #if defined(__aarch64__)
-    if (self_fd >= 0) { int64_t d; asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(self_fd) : "x0","x8"); }
-    if (init_fd >= 0) { int64_t d; asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(init_fd) : "x0","x8"); }
+    if (self_fd >= 0) { int64_t d; asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(self_fd) : "x0","x8", "memory"); }
+    if (init_fd >= 0) { int64_t d; asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(init_fd) : "x0","x8", "memory"); }
     #endif
 
     if (ret <= 0 || ret2 <= 0) return false;

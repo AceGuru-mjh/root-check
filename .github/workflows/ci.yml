@@ -101,7 +101,8 @@ jobs:
         uses: nttld/setup-ndk@v1
         id: setup_ndk
         with:
-          ndk-version: r28b
+          # P0-B2 修复: 与 build.gradle.kts 的 28.2.13676358 对齐 (r28c 是该 NDK 版本对应的 release tag)
+          ndk-version: r28c
           link-to-sdk: true
       - run: ./gradlew assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4

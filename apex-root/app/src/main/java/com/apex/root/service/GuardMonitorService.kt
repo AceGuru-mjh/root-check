@@ -15,7 +15,6 @@ import com.apex.root.core.notification.Notifier
 import com.apex.root.domain.parallel.RealtimeGuardMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -82,7 +81,19 @@ class GuardMonitorService : Service() {
     }
 
     private var guardMonitor: RealtimeGuardMonitor? = null
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // P0-K3/K4 修复 (v1.1.1): serviceScope 改为 var, 允许 stopGuardMonitor 后重建,
+    // 避免在 START_STICKY 重启场景下 scope 已 cancel 导致启动后立即被取消。
+    // 同时 stopGuardMonitor 不再在主线程 runBlocking join, 避免 ANR。
+    private var serviceScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        get() {
+            // 若 scope 已被 cancel (例如上一次 stopGuardMonitor 后), 重新构造一个。
+            // 这不仅修复了 P0-K4 的重启问题, 也保证 onStartCommand 在 START_STICKY
+            // 重启场景下能正确启动新协程。
+            if (!field.isActive) {
+                field = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            }
+            return field
+        }
 
     override fun onCreate() {
         super.onCreate()
@@ -141,18 +152,14 @@ class GuardMonitorService : Service() {
         Log.i(TAG, "Guard monitor started, interval=${intervalMs}ms")
     }
 
-    // v1.0.2 P2-2 修复: scope.cancel() 后用 runBlocking 等待协程结束
-    // 旧实现 cancel() 不 join,协程可能仍在运行访问已销毁资源
+    // P0-K3 修复 (v1.1.1): 不再在主线程 runBlocking join, 避免 ANR。
+    // scope.cancel() 会取消所有子协程, 让它们异步退出; 调用方不需同步等待。
+    // 若需资源真正释放, 后续走 onDestroy() 后由系统回收 (Service 进程退出时)。
     private fun stopGuardMonitor() {
         guardMonitor?.stop()
         guardMonitor = null
+        // 取消所有子协程 (异步退出, 不阻塞主线程)
         serviceScope.cancel()
-        // 等待 scope 内所有协程真正结束
-        try {
-            kotlinx.coroutines.runBlocking {
-                serviceScope.coroutineContext[kotlinx.coroutines.Job]?.join()
-            }
-        } catch (_: Throwable) {}
         Log.i(TAG, "Guard monitor stopped")
     }
 

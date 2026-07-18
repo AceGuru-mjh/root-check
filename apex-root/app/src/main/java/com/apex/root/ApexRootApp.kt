@@ -14,11 +14,15 @@ import com.apex.root.ui.screens.settings.SettingsScreen
 import com.apex.root.ui.theme.ApexRootTheme
 
 /**
- * v1.0.5: M3 UI 根 Composable — 导航入口。
+ * v1.1.1: M3 UI 根 Composable — 导航入口 (原 ApexRootApp, 已重命名避免与 Application 子类冲突)。
  * Dashboard ↔ ScanResult ↔ Settings
+ *
+ * 修复 P0-K1: 之前 `@Composable fun ApexRootApp()` 与 AndroidManifest 的
+ * `android:name=".ApexRootApp"` (期望 Application 子类) 命名冲突, 导致启动崩溃。
+ * 现在 Application 子类为 [ApexRootApplication], 本函数仅负责 Compose 导航。
  */
 @Composable
-fun ApexRootApp() {
+fun ApexRootNavHost() {
     val navController = rememberNavController()
 
     NavHost(

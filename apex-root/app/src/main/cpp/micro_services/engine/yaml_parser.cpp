@@ -1,9 +1,44 @@
 #include "yaml_parser.h"
 #include <sstream>
 #include <algorithm>
+#include <string>
 
 namespace apex {
 namespace engine {
+
+// FIX-CPP P1-5: 安全数值转换助手。原实现 std::stoul("") / std::stoi("")
+//   在 YAML 缺失 key 时会抛 std::invalid_argument,穿过 JNI 边界是 UB
+//   (JVM 通常直接 abort)。这里用 try/catch 包裹,失败时返回默认值。
+static inline uint32_t safe_stoul(const std::string& s, uint32_t def = 0) {
+    if (s.empty()) return def;
+    // 预校验: 只允许数字 (可带前导 + 号)
+    size_t i = 0;
+    if (s[0] == '+' || s[0] == '-') i = 1;
+    if (i == s.size()) return def; // 只有符号
+    for (; i < s.size(); i++) {
+        if (s[i] < '0' || s[i] > '9') return def;
+    }
+    try {
+        return static_cast<uint32_t>(std::stoul(s));
+    } catch (...) {
+        return def;
+    }
+}
+
+static inline int32_t safe_stoi(const std::string& s, int32_t def = 0) {
+    if (s.empty()) return def;
+    size_t i = 0;
+    if (s[0] == '+' || s[0] == '-') i = 1;
+    if (i == s.size()) return def;
+    for (; i < s.size(); i++) {
+        if (s[i] < '0' || s[i] > '9') return def;
+    }
+    try {
+        return std::stoi(s);
+    } catch (...) {
+        return def;
+    }
+}
 
 std::string YamlParser::trim(const std::string& str) {
     size_t start = str.find_first_not_of(" \t\r\n");
@@ -74,7 +109,8 @@ std::optional<Workflow> YamlParser::parse(const std::string& yaml_content) {
         } else if (trimmed.find("description:") == 0) {
             wf.description = get_value(trimmed, "description");
         } else if (trimmed.find("version:") == 0) {
-            wf.version = std::stoul(get_value(trimmed, "version"));
+            // FIX-CPP P1-5: 使用 safe_stoul 避免异常穿过 JNI 边界。
+            wf.version = safe_stoul(get_value(trimmed, "version"));
         } else if (trimmed.find("shuffle:") == 0) {
             wf.shuffle = get_value(trimmed, "shuffle") == "true";
         } else if (trimmed.find("cpu_bind:") == 0) {
@@ -84,12 +120,14 @@ std::optional<Workflow> YamlParser::parse(const std::string& yaml_content) {
                 wf.steps.push_back(current_step);
             }
             current_step = WorkflowStep();
-            current_step.service_id = std::stoul(get_value(trimmed, "service_id"));
+            // FIX-CPP P1-5: 使用 safe_stoul 避免异常穿过 JNI 边界。
+            current_step.service_id = safe_stoul(get_value(trimmed, "service_id"));
             in_step = true;
         } else if (trimmed.find("service_name:") == 0) {
             current_step.service_name = get_value(trimmed, "service_name");
         } else if (trimmed.find("timeout_ms:") == 0) {
-            current_step.timeout_ms = std::stoi(get_value(trimmed, "timeout_ms"));
+            // FIX-CPP P1-5: 使用 safe_stoi 避免异常穿过 JNI 边界。
+            current_step.timeout_ms = safe_stoi(get_value(trimmed, "timeout_ms"));
         } else if (trimmed.find("optional:") == 0) {
             current_step.optional = get_value(trimmed, "optional") == "true";
         } else if (trimmed.find("parameters:") == 0 || trimmed == "parameters:") {

@@ -40,7 +40,8 @@ jobs:
         uses: nttld/setup-ndk@v1
         id: setup_ndk
         with:
-          ndk-version: r28b
+          # P0-B2 修复: 与 build.gradle.kts 的 28.2.13676358 对齐 (r28c 是该 NDK 版本对应的 release tag)
+          ndk-version: r28c
           link-to-sdk: true
 
       - name: Build debug APK
@@ -49,7 +50,8 @@ jobs:
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
-          name: apex-root-debug-v1.0.1
+          # P0-B4 修复: 不再硬编码 v1.0.1, 改用 commit SHA 避免版本号漂移
+          name: apex-root-debug-${{ github.sha }}
           path: apex-root/app/build/outputs/apk/debug/*.apk
           retention-days: 30
           if-no-files-found: error

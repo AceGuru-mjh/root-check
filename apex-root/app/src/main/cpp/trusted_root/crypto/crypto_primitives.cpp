@@ -87,6 +87,8 @@ std::array<uint8_t, 64> sha3_512(const uint8_t* data, size_t len) {
 }
 
 // HMAC-SHA3-512 (RFC 2104 style with SHA3-512)
+// FIX-CPP P0-C2: k 缓冲区扩大到 144 字节，与 ipad/opad 同尺寸。
+// 原实现 uint8_t k[64] 在 key_len ∈ [65,144] 时 memcpy 越界写栈。
 static std::array<uint8_t, 64> hmac_sha3_512(
     const uint8_t* key, size_t key_len,
     const uint8_t* data, size_t data_len) {
@@ -94,7 +96,7 @@ static std::array<uint8_t, 64> hmac_sha3_512(
     uint8_t k_ipad[144];
     uint8_t k_opad[144];
 
-    uint8_t k[64];
+    uint8_t k[144] = {0};
     if (key_len > 144) {
         auto h = sha3_512(key, key_len);
         std::memcpy(k, h.data(), 64);
@@ -156,6 +158,12 @@ static uint8_t aes_mul2(uint8_t x) {
 static uint8_t aes_mul3(uint8_t x) { return aes_mul2(x) ^ x; }
 
 static void aes_key_expand_256(const uint8_t* key, uint8_t rk[15][16]) {
+    // FIX-CPP P0-S8: 标准 Rijndael 轮常量 Rcon。
+    // 原实现用 (i/8 - 1) 作为 round constant，与 FIPS-197 不符，
+    // 导致生成的 round key 非标准 AES-256，加密结果无法被其他实现解密。
+    static const uint8_t RCON[10] = {
+        0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36
+    };
     uint8_t w[60][4];
     for (int i = 0; i < 8; i++) {
         w[i][0] = key[4*i];
@@ -171,7 +179,8 @@ static void aes_key_expand_256(const uint8_t* key, uint8_t rk[15][16]) {
         temp[3] = w[i-1][3];
         if (i % 8 == 0) {
             uint8_t t = temp[0];
-            temp[0] = AES_SBOX[temp[1]] ^ (i/8 - 1);
+            // i/8 范围 [1, 7] (i∈[8,56] 每 8 个一组), RCON 索引 [0, 6] 合法
+            temp[0] = AES_SBOX[temp[1]] ^ RCON[(i/8) - 1];
             temp[1] = AES_SBOX[temp[2]];
             temp[2] = AES_SBOX[temp[3]];
             temp[3] = AES_SBOX[t];
@@ -261,6 +270,16 @@ static void aes256_ctr_crypt(const uint8_t* in, uint8_t* out, size_t len,
 }
 
 // ─── AES-256-GCM (using AES-256-CTR + HMAC-SHA3-512) ─────
+//
+// !! 注意 (FIX-CPP P0-S8 命名澄清) !!
+// 此函数名为 aes256_gcm_encrypt 是历史遗留，实际实现是
+//   AES-256-CTR (计数器模式) + HMAC-SHA3-512 (Encrypt-then-MAC)，
+//   而非标准 AES-GCM (Galois/Counter Mode)。
+//   - 标签长度 32 字节 (GCM 标准为 16 字节)
+//   - 不能与 BoringSSL EVP_aead_aes_256_gcm 互通
+//   - 不提供 GCM 的关联数据 (AAD) 认证
+// 不更改函数签名以避免破坏调用方，请阅读代码时注意此差异。
+//
 // Format: nonce(12) || ciphertext || tag(32)
 std::vector<uint8_t> aes256_gcm_encrypt(const uint8_t* plain, size_t len,
                                          const uint8_t* key, size_t key_len) {
@@ -301,6 +320,9 @@ std::vector<uint8_t> aes256_gcm_encrypt(const uint8_t* plain, size_t len,
     return result;
 }
 
+// !! 注意 (FIX-CPP P0-S8) !! 见 aes256_gcm_encrypt 注释：
+// 此实现是 AES-256-CTR + HMAC-SHA3-512 (Encrypt-then-MAC)，
+// 不是标准 AES-GCM，不能与 EVP_aead_aes_256_gcm 互通。
 std::vector<uint8_t> aes256_gcm_decrypt(const uint8_t* cipher, size_t len,
                                          const uint8_t* key, size_t key_len) {
     std::vector<uint8_t> result;

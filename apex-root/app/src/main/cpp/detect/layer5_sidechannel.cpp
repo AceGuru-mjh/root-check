@@ -33,8 +33,9 @@ static int64_t measure_syscall(int nr) {
     int64_t ret;
     // 修复：nr 是变量，不能用 "i" constraint，改用 "r"
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 memory clobber。
     asm volatile("mov x8, %1; svc #0; mov %0, x0"
-                 : "=r"(ret) : "r"((int64_t)nr) : "x0", "x8");
+                 : "=r"(ret) : "r"((int64_t)nr) : "x0", "x8", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif
@@ -91,10 +92,11 @@ bool detectSyscallResultInconsistency() {
     int flags_dir = O_RDONLY | O_DIRECTORY;
     int flags_ro = O_RDONLY;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 memory clobber。
     asm volatile("mov x8, %[nr]; mov x0, %[dir]; mov x1, %[path]; mov x2, %[flags]; svc #0; mov %[ret], x0"
                  : [ret] "=r"(ret_root_path)
                  : [nr] "i"(__NR_openat), [dir] "i"(AT_FDCWD), [path] "r"("/data/adb"), [flags] "r"((int64_t)flags_dir)
-                 : "x0", "x1", "x2", "x8");
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif
@@ -103,7 +105,7 @@ bool detectSyscallResultInconsistency() {
     asm volatile("mov x8, %[nr]; mov x0, %[dir]; mov x1, %[path]; mov x2, %[flags]; svc #0; mov %[ret], x0"
                  : [ret] "=r"(ret_random_path)
                  : [nr] "i"(__NR_openat), [dir] "i"(AT_FDCWD), [path] "r"("/data/adb/.apex_nonexistent_probe_12345"), [flags] "r"((int64_t)flags_ro)
-                 : "x0", "x1", "x2", "x8");
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif
@@ -112,7 +114,7 @@ bool detectSyscallResultInconsistency() {
     if (ret_root_path >= 0) {
         int64_t d;
         #if defined(__aarch64__)
-        asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(ret_root_path) : "x0","x8");
+        asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(ret_root_path) : "x0","x8", "memory");
         #else
             d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif

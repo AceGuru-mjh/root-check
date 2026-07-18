@@ -105,8 +105,10 @@ static bool compute_file_sha256(const char* path, uint8_t out[32]) {
     char buf[65536];
     int64_t fd;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -117,26 +119,58 @@ static bool compute_file_sha256(const char* path, uint8_t out[32]) {
         0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
     };
     uint64_t total = 0;
+    uint8_t partial[64];
+    size_t partial_len = 0;
     int64_t n;
     while ((n = bs_read(fd, buf, sizeof(buf))) > 0) {
-        total += n;
+        total += (uint64_t)n;
         size_t offset = 0;
-        uint8_t block[64];
+        // 先接上上一轮残余的 partial block
+        if (partial_len > 0) {
+            size_t need = 64 - partial_len;
+            size_t take = std::min((size_t)n, need);
+            std::memcpy(partial + partial_len, buf, take);
+            partial_len += take;
+            offset += take;
+            if (partial_len == 64) {
+                sha256_compress(state, partial);
+                partial_len = 0;
+            }
+        }
+        // 压缩完整 64 字节块
         while (offset + 64 <= (size_t)n) {
-            std::memcpy(block, (uint8_t*)buf + offset, 64);
-            sha256_compress(state, block);
+            sha256_compress(state, (const uint8_t*)buf + offset);
             offset += 64;
         }
+        // 保存尾部不足 64 字节的残余
         if (offset < (size_t)n) {
-            std::memset(block, 0, 64);
-            std::memcpy(block, (uint8_t*)buf + offset, n - offset);
+            size_t rem = (size_t)n - offset;
+            std::memcpy(partial, (const uint8_t*)buf + offset, rem);
+            partial_len = rem;
         }
     }
     bs_close(fd);
 
-    // Finalize
-    uint8_t final[128]{};
-    // ... simplified finalization for guard purposes
+    // FIX-CPP P0-D2: 标准 SHA-256 padding。
+    // 原实现这里仅输出 state (注释 "simplified finalization for guard purposes"),
+    // 完全跳过 padding (0x80 + 零填充 + 8 字节大端序比特长度),
+    // 导致计算的“SHA-256”不是标准 SHA-256,与 sha256sum/openssl 结果都不匹配,
+    // g_integrity_db 存错值,后续 check_system_integrity 比对永远 false。
+    uint8_t final_block[128];
+    size_t final_len = partial_len;
+    std::memcpy(final_block, partial, partial_len);
+    final_block[final_len++] = 0x80;
+    if (final_len > 56) {
+        std::memset(final_block + final_len, 0, 64 - final_len);
+        sha256_compress(state, final_block);
+        final_len = 0;
+    }
+    std::memset(final_block + final_len, 0, 56 - final_len);
+    uint64_t bit_len = total * 8;
+    for (int i = 0; i < 8; i++)
+        final_block[56 + i] = (bit_len >> (56 - i * 8)) & 0xFF;
+    sha256_compress(state, final_block);
+
     for (int i = 0; i < 8; i++) {
         out[i*4]   = (state[i] >> 24) & 0xFF;
         out[i*4+1] = (state[i] >> 16) & 0xFF;
@@ -258,8 +292,10 @@ bool check_process_integrity(const char* whitelist[], int count) {
     // Read /proc entries to enumerate running processes
     int64_t fd;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc"), "i"(O_RDONLY | O_DIRECTORY), "i"(0));
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc"), "i"(O_RDONLY | O_DIRECTORY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -296,8 +332,10 @@ bool check_process_integrity(const char* whitelist[], int count) {
                 snprintf(cmd_path, sizeof(cmd_path), "/proc/%s/cmdline", d->d_name);
                 int64_t cmd_fd;
                 #if defined(__aarch64__)
+                // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
                 asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                             : "=r"(cmd_fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(cmd_path), "i"(O_RDONLY), "i"(0));
+                             : "=r"(cmd_fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(cmd_path), "i"(O_RDONLY), "i"(0)
+                             : "x0", "x1", "x2", "x8", "memory");
                 #else
                     cmd_fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
                 #endif

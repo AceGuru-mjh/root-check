@@ -35,11 +35,17 @@ OqsSignature::OqsSignature() {
     LOGD("OQS %s initialized: pk=%zu sk=%zu sig=%zu",
          OQS_SIG_alg_dilithium_3, pubKeySize, secKeySize, sigSize);
 #else
-    available = true;
-    pubKeySize = 64;
-    secKeySize = 64;
-    sigSize = 64;
-    LOGD("OQS built without liboqs — using HMAC-SHA3-512 fallback");
+    // FIX-CPP P0-C1: 未编译 liboqs 时 available 必须为 false。
+    // 原实现 available=true 且 sign/verify 走 HMAC-SHA3-512 fallback ——
+    // fallback 的 verify 用 public_key 派生 HMAC 密钥,任何人都能伪造签名。
+    // 这样能让上层 (signing_center / downloader) 正确走“无后量子签名”路径,
+    // 而不是误以为签名可用。
+    available = false;
+    pubKeySize = 0;
+    secKeySize = 0;
+    sigSize = 0;
+    LOGE("OQS built without liboqs — post-quantum signature DISABLED "
+         "(fallback removed for security: HMAC fallback was forgeable)");
 #endif
 }
 
@@ -67,14 +73,13 @@ bool OqsSignature::generateKeyPair(std::vector<uint8_t>& publicKey,
     }
     return true;
 #else
-    {
-        auto kp = generate_dilithium_keypair();
-        if (kp.valid) {
-            publicKey = std::move(kp.public_key);
-            privateKey = std::move(kp.secret_key);
-        }
-        return kp.valid;
-    }
+    // FIX-CPP P0-C1: 无 liboqs 时直接拒绝生成密钥对。
+    // 原实现走 HMAC-SHA3-512 fallback,生成的“密钥对”只是随机 64 字节 + 其 SHA3-512 哈希,
+    // 不能作为后量子签名使用。
+    (void)publicKey;
+    (void)privateKey;
+    LOGE("generateKeyPair: liboqs unavailable, refused");
+    return false;
 #endif
 }
 
@@ -97,9 +102,13 @@ std::vector<uint8_t> OqsSignature::sign(const std::vector<uint8_t>& data,
     signature.resize(sigLen);
     return signature;
 #else
+    // FIX-CPP P0-C1: 无 liboqs 时签名直接返回空。
+    // 原实现走 dilithium_sign (HMAC-SHA3-512 fallback),其验证逻辑可被任何
+    // 拥有 public_key 的一方伪造,不提供真实不可抵赖性。
+    (void)data;
     (void)privateKey;
-    return dilithium_sign(data.data(), data.size(),
-        privateKey.data(), privateKey.size());
+    LOGE("sign: liboqs unavailable, refused (fallback removed for security)");
+    return {};
 #endif
 }
 
@@ -116,9 +125,14 @@ bool OqsSignature::verify(const std::vector<uint8_t>& data,
         signature.data(), signature.size(), publicKey.data());
     return status == OQS_SUCCESS;
 #else
-    return dilithium_verify(data.data(), data.size(),
-        signature.data(), signature.size(),
-        publicKey.data(), publicKey.size());
+    // FIX-CPP P0-C1: 无 liboqs 时验证直接返回 false。
+    // 原实现走 dilithium_verify fallback,该 fallback 用 public_key 派生 HMAC 密钥
+    // 来“验证”签名 —— 任何拿到 public_key 的人都能伪造合法签名,完全无效。
+    (void)data;
+    (void)signature;
+    (void)publicKey;
+    LOGE("verify: liboqs unavailable, refused (fallback removed for security)");
+    return false;
 #endif
 }
 

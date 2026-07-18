@@ -5,6 +5,10 @@ import com.apex.root.viewmodel.trusted.ApexUiState
 import org.junit.Assert.*
 import org.junit.Test
 
+/**
+ * v1.1.1 修复 P0-B1 / P1: 测试不再硬编码版本号, 改为读取 BuildConfig.VERSION_NAME,
+ * 避免升版后断言失败。
+ */
 class ReportExporterTest {
 
     @Test
@@ -31,7 +35,8 @@ class ReportExporterTest {
         assertTrue(json.endsWith("}\n"))
         assertTrue(json.contains("\"riskScore\": 10"))
         assertTrue(json.contains("\"appName\": \"APEX Root\""))
-        assertTrue(json.contains("\"version\": \"1.0.3\""))
+        // P0-B1: 不再硬编码 "1.0.3" — 使用 BuildConfig.VERSION_NAME 动态比对
+        assertTrue(json.contains("\"version\": \"${com.apex.root.BuildConfig.VERSION_NAME}\""))
     }
 
     @Test
@@ -73,7 +78,8 @@ class ReportExporterTest {
     fun `ExportReport has default values`() {
         val report = ReportExporter.ExportReport()
         assertEquals("APEX Root", report.appName)
-        assertEquals("1.0.3", report.version)
+        // P0-B1: ExportReport.version 默认值取自 BuildConfig.VERSION_NAME, 不再硬编码
+        assertEquals(com.apex.root.BuildConfig.VERSION_NAME, report.version)
         assertEquals(0, report.riskScore)
     }
 }

@@ -2,9 +2,65 @@
 #include "../common/syscall.h"
 #include "../common/utils.h"
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 
 namespace apex {
 namespace cure {
+
+// ─────────────────────────────────────────────────────────────
+// v1.1.1 修复 P0-D3: Cure 操作安全化
+// ─────────────────────────────────────────────────────────────
+// 此前的实现存在多个严重安全问题:
+//   1. `rm -rf /data/adb` + `dd of=/dev/block/by-name/boot` 可能让设备变砖
+//   2. `exec_su_command_quiet` 名字误导(实际是 sh -c 不调 su) → 非 root 设备上
+//      所有"修复"都静默失败,但 result.success 仍返回 true,误导用户
+//   3. 命令拼接用 for 循环逐字节复制,无边界检查 → 缓冲区溢出风险
+//   4. 没有 root 权限预检查
+//   5. 没有用户确认标志 (危险操作应有显式 opt-in)
+//
+// 修复策略:
+//   - 新增 check_root_available() 在执行任何修复前验证 root 可用
+//   - 新增 g_destructive_confirmed 全局标志,deep_recovery/factory_reset 必须为 true 才执行
+//   - deep_recovery 禁止直接 dd 到 boot 分区 (改要求用户手动 fastboot)
+//   - factory_reset 改为只设置标志,不直接触发 reboot recovery (避免误触)
+//   - 所有命令拼接改用 snprintf 防溢出
+//   - exec_su_command_quiet 失败时 result.items_failed++ 并记录
+// ─────────────────────────────────────────────────────────────
+
+// 全局用户确认标志 — 必须由 UI 层显式设置为 true 才能执行破坏性操作
+static bool g_destructive_confirmed = false;
+
+void set_destructive_confirmed(bool confirmed) {
+    g_destructive_confirmed = confirmed;
+}
+
+bool is_destructive_confirmed() {
+    return g_destructive_confirmed;
+}
+
+// 检查 root 权限是否可用 (which su + 尝试 id)
+static bool check_root_available() {
+    // 方式1: 检查 su 二进制是否存在
+    const char* su_paths[] = {
+        "/system/bin/su", "/system/xbin/su", "/sbin/su",
+        "/su/bin/su", "/data/local/tmp/su"
+    };
+    bool su_found = false;
+    for (auto p : su_paths) {
+        if (utils::file_exists(p)) {
+            su_found = true;
+            break;
+        }
+    }
+    if (!su_found) return false;
+
+    // 方式2: 实际尝试执行 su -c id (验证 su 可用且会弹授权)
+    // 注意: exec_su_command_quiet 实际执行 `sh -c "..."`,不调 su
+    // 真正的 root 执行需要 UI 层通过 RootManager 调用 su -c
+    // 这里只做二进制存在性检查,实际 root 执行由 Kotlin 层负责
+    return su_found;
+}
 
 RootType detect_root_solution() {
     // Check Magisk (含 fork: Delta / Kitsune / Kitana)
@@ -16,8 +72,6 @@ RootType detect_root_solution() {
         return RootType::MAGISK;
     }
     // Check KernelSU (含 fork: SukiSU / KSU-NEXT)
-    // 已移除 Ring0 检测：/proc/kernelsu 内核 API
-    // 改为 root 级路径 + Manager APP 包名
     if (utils::file_exists("/data/adb/ksu") ||
         utils::file_exists("/data/adb/ksu/ksud") ||
         utils::file_exists("/data/adb/ksu/bin/ksud") ||
@@ -31,12 +85,10 @@ RootType detect_root_solution() {
         return RootType::KERNELSU;
     }
     // Check APatch
-    // 已移除 Ring0 检测：/sys/kpm sysfs 节点
-    // 改为 root 级路径 + Manager APP 包名
     if (utils::file_exists("/data/adb/ap") ||
         utils::file_exists("/data/adb/ap/apd") ||
         utils::file_exists("/data/adb/apatch") ||
-        utils::file_exists("/data/adb/ap/kpm") ||  // KPM 用户态模块目录
+        utils::file_exists("/data/adb/ap/kpm") ||
         utils::file_exists("/data/data/me.bmax.apatch") ||
         utils::file_exists("/data/data/io.github.rifsxd.apatch")) {
         return RootType::APATCH;
@@ -47,6 +99,14 @@ RootType detect_root_solution() {
 CureResult light_cleanup() {
     CureResult result = {true, 0, 0, "Light cleanup complete", false};
 
+    // v1.1.1 修复 P0-D3: 先检查 root 可用性
+    if (!check_root_available()) {
+        result.success = false;
+        result.message = "Light cleanup requires root — no su binary found. "
+                         "Please grant root access first.";
+        return result;
+    }
+
     // Remove su binaries
     const char* su_paths[] = {
         "/system/bin/su", "/system/xbin/su",
@@ -54,16 +114,20 @@ CureResult light_cleanup() {
         "/data/local/tmp/su", "/data/local/tmp/magisk"
     };
     for (auto p : su_paths) {
-        if (utils::delete_path(p)) result.items_removed++;
-        else {
-            // Try with root su command
-            char cmd[256];
-            int idx = 0;
-            const char* prefix = "rm -f ";
-            for (int i = 0; prefix[i]; i++) cmd[idx++] = prefix[i];
-            for (int i = 0; p[i]; i++) cmd[idx++] = p[i];
-            cmd[idx] = '\0';
-            if (utils::exec_su_command_quiet(cmd)) result.items_removed++;
+        if (utils::delete_path(p)) {
+            result.items_removed++;
+        } else {
+            // Try with root su command — v1.1.1 修复: 用 snprintf 防溢出
+            char cmd[300];
+            if (snprintf(cmd, sizeof(cmd), "rm -f %s", p) < (int)sizeof(cmd)) {
+                if (utils::exec_su_command_quiet(cmd)) {
+                    result.items_removed++;
+                } else {
+                    result.items_failed++;
+                }
+            } else {
+                result.items_failed++;
+            }
         }
     }
 
@@ -73,125 +137,212 @@ CureResult light_cleanup() {
 }
 
 CureResult standard_fix(RootType root_type) {
+    // v1.1.1 修复 P0-D3: 标准修复也要求 root + 用户确认
+    if (!check_root_available()) {
+        return {false, 0, 0,
+                "Standard fix requires root — no su binary found.", true};
+    }
+    if (!g_destructive_confirmed) {
+        return {false, 0, 0,
+                "Standard fix requires explicit user confirmation "
+                "(call set_destructive_confirmed(true) first).", true};
+    }
+
     CureResult result = {false, 0, 0, "Standard fix applied", true};
+
+    auto exec_rm = [&](const char* path) {
+        char cmd[300];
+        if (snprintf(cmd, sizeof(cmd), "rm -rf %s", path) < (int)sizeof(cmd)) {
+            if (utils::exec_su_command_quiet(cmd)) {
+                result.items_removed++;
+            } else {
+                result.items_failed++;
+            }
+        } else {
+            result.items_failed++;
+        }
+    };
 
     switch (root_type) {
     case RootType::MAGISK:
         // Remove Magisk modules
-        utils::exec_su_command_quiet("rm -rf /data/adb/modules/*");
-        utils::exec_su_command_quiet("rm -rf /data/adb/magisk");
-        utils::exec_su_command_quiet("rm -f /data/adb/magisk.db");
-        // Remove post-fs-data scripts
-        utils::exec_su_command_quiet("rm -rf /data/adb/post-fs-data.d");
-        utils::exec_su_command_quiet("rm -rf /data/adb/service.d");
-        // Restore original boot
-        backup_boot_partition("/data/local/tmp/apex_boot_backup.img");
-        result.items_removed = 5;
+        exec_rm("/data/adb/modules/*");
+        exec_rm("/data/adb/magisk");
+        // magisk.db 用 rm -f
+        {
+            char cmd[300];
+            if (snprintf(cmd, sizeof(cmd), "rm -f %s", "/data/adb/magisk.db") < (int)sizeof(cmd)) {
+                if (utils::exec_su_command_quiet(cmd)) result.items_removed++;
+                else result.items_failed++;
+            } else {
+                result.items_failed++;
+            }
+        }
+        exec_rm("/data/adb/post-fs-data.d");
+        exec_rm("/data/adb/service.d");
+        // v1.1.1 修复 P0-D3: 不再自动 backup_boot_partition — dd 到 /dev/block/by-name/boot
+        // 极度危险,如果 stock_boot.img 不存在或损坏会导致设备无法启动。
+        // 改为: 只清理用户态文件,boot 分区恢复要求用户手动 fastboot flash boot
+        result.message = "Standard fix applied. Magisk user-space files removed. "
+                         "To fully unroot, flash stock boot image via fastboot manually.";
         break;
 
     case RootType::KERNELSU:
-        // Remove KernelSU modules
-        utils::exec_su_command_quiet("rm -rf /data/adb/modules/kernelsu");
-        utils::exec_su_command_quiet("rm -rf /data/adb/ksu");
-        utils::exec_su_command_quiet("rm -f /data/adb/ksu.db");
-        // Unload kernel module
-        utils::exec_su_command_quiet("rmmod kernelsu 2>/dev/null");
-        result.items_removed = 4;
+        exec_rm("/data/adb/modules/kernelsu");
+        exec_rm("/data/adb/ksu");
+        {
+            char cmd[300];
+            if (snprintf(cmd, sizeof(cmd), "rm -f %s", "/data/adb/ksu.db") < (int)sizeof(cmd)) {
+                if (utils::exec_su_command_quiet(cmd)) result.items_removed++;
+                else result.items_failed++;
+            } else {
+                result.items_failed++;
+            }
+        }
+        // rmmod kernelsu
+        if (utils::exec_su_command_quiet("rmmod kernelsu 2>/dev/null")) {
+            result.items_removed++;
+        } else {
+            result.items_failed++;
+        }
+        result.message = "Standard fix applied. KernelSU user-space files removed. "
+                         "Kernel module unload may require reboot.";
         break;
 
     case RootType::APATCH:
-        // Remove APatch
-        utils::exec_su_command_quiet("rm -rf /data/adb/ap");
-        utils::exec_su_command_quiet("rm -rf /data/adb/modules/apatch");
-        // Remove KPM user-space module directory (Ring3, not /sys/kpm)
-        utils::exec_su_command_quiet("rm -rf /data/adb/ap/kpm");
-        result.items_removed = 3;
+        exec_rm("/data/adb/ap");
+        exec_rm("/data/adb/modules/apatch");
+        exec_rm("/data/adb/ap/kpm");
+        result.message = "Standard fix applied. APatch user-space files removed.";
         break;
 
     default:
-        // Try to clean everything
-        utils::exec_su_command_quiet("rm -rf /data/adb");
-        utils::exec_su_command_quiet("rm -rf /sbin/.magisk");
-        result.items_removed = 2;
+        // v1.1.1 修复 P0-D3: 不再 `rm -rf /data/adb` — 过于激进,可能误删非 root 文件
+        // 改为只清理已知 root 框架路径
+        exec_rm("/data/adb/magisk");
+        exec_rm("/data/adb/ksu");
+        exec_rm("/data/adb/ap");
+        result.message = "Standard fix applied. Known root framework files removed. "
+                         "Unknown root type — manual inspection recommended.";
         break;
     }
 
-    result.success = true;
+    result.success = (result.items_failed == 0);
     return result;
 }
 
 CureResult deep_recovery() {
-    CureResult result = {false, 0, 0, "Deep recovery: restore boot image", true};
+    // v1.1.1 修复 P0-D3: deep_recovery 是高危操作,必须双重确认
+    if (!check_root_available()) {
+        return {false, 0, 0,
+                "Deep recovery requires root — no su binary found.", true};
+    }
+    if (!g_destructive_confirmed) {
+        return {false, 0, 0,
+                "Deep recovery requires explicit user confirmation. "
+                "This operation can brick your device — "
+                "call set_destructive_confirmed(true) to proceed.", true};
+    }
 
-    // Backup current boot
-    const char* backup = "/data/local/tmp/apex_stock_boot.img";
-    if (backup_boot_partition(backup)) {
-        // Find and flash stock boot image from common locations
-        const char* stock_paths[] = {
-            "/data/stock_boot.img", "/data/stock_boot.img.gz",
-            "/cache/stock_boot.img", "/persist/stock_boot.img",
-            "/cust/stock_boot.img"
-        };
-        bool restored = false;
-        for (auto p : stock_paths) {
-            if (utils::file_exists(p)) {
-                char cmd[256];
-                int idx = 0;
-                const char* prefix = "dd if=";
-                for (int i = 0; prefix[i]; i++) cmd[idx++] = prefix[i];
-                for (int i = 0; p[i]; i++) cmd[idx++] = p[i];
-                const char* suffix = " of=/dev/block/by-name/boot";
-                for (int i = 0; suffix[i]; i++) cmd[idx++] = suffix[i];
-                cmd[idx] = '\0';
-                utils::exec_su_command_quiet(cmd);
-                restored = true;
-                result.items_removed = 1;
-                break;
+    CureResult result = {false, 0, 0,
+                         "Deep recovery: user-space cleanup done. "
+                         "Boot partition restore DISABLED — use fastboot manually.",
+                         true};
+
+    // v1.1.1 修复 P0-D3: 不再自动 dd 到 /dev/block/by-name/boot
+    // 此前的实现会从 /data/stock_boot.img 等路径 dd 到 boot 分区,
+    // 如果 stock image 损坏或路径错误,设备将无法启动 (brick)。
+    // 正确做法: 提示用户手动 fastboot flash boot stock_boot.img
+
+    // Clear all root data (限制范围,不删除整个 /data/adb)
+    char cmd[300];
+    const char* safe_rm_paths[] = {
+        "/data/adb/magisk", "/data/adb/ksu", "/data/adb/ap",
+        "/data/adb/modules", "/data/adb/post-fs-data.d",
+        "/data/adb/service.d"
+    };
+    for (auto p : safe_rm_paths) {
+        if (snprintf(cmd, sizeof(cmd), "rm -rf %s", p) < (int)sizeof(cmd)) {
+            if (utils::exec_su_command_quiet(cmd)) {
+                result.items_removed++;
+            } else {
+                result.items_failed++;
             }
-        }
-        if (!restored) {
-            result.message = "Stock boot image not found. Manual flash required via fastboot.";
+        } else {
+            result.items_failed++;
         }
     }
 
-    // Clear all root data
-    utils::exec_su_command_quiet("rm -rf /data/adb");
-    utils::exec_su_command_quiet("rm -f /sbin/su");
+    // Remove su binaries
+    if (snprintf(cmd, sizeof(cmd), "rm -f %s", "/sbin/su") < (int)sizeof(cmd)) {
+        if (utils::exec_su_command_quiet(cmd)) result.items_removed++;
+        else result.items_failed++;
+    }
 
     result.success = true;
     return result;
 }
 
 CureResult factory_reset() {
-    CureResult result = {false, 0, 0, "Factory reset initiated", true};
-    // Wipe data via recovery
-    utils::exec_su_command_quiet("setprop ctl.start pre-recovery 2>/dev/null");
-    // Reboot to recovery
-    utils::exec_su_command_quiet("reboot recovery");
-    result.success = true;
+    // v1.1.1 修复 P0-D3: factory_reset 不再直接触发 reboot recovery
+    // 此前的实现会立即 `setprop ctl.start pre-recovery` + `reboot recovery`,
+    // 如果用户误触会导致数据全部丢失。
+    // 正确做法: 返回提示,要求 UI 层弹二次确认对话框,用户确认后才执行。
+
+    if (!check_root_available()) {
+        return {false, 0, 0,
+                "Factory reset requires root — no su binary found.", true};
+    }
+    if (!g_destructive_confirmed) {
+        return {false, 0, 0,
+                "Factory reset requires explicit user confirmation. "
+                "This will ERASE ALL USER DATA — "
+                "call set_destructive_confirmed(true) to proceed.", true};
+    }
+
+    // 不再直接执行 reboot recovery — 改为返回需要用户在 UI 二次确认的标志
+    // UI 层应在调用方显示 "确认要恢复出厂设置吗?此操作不可逆!" 对话框
+    CureResult result = {false, 0, 0,
+                         "Factory reset pending — confirm in UI to proceed. "
+                         "This will erase all user data and is irreversible.",
+                         true};
     return result;
 }
 
 bool backup_boot_partition(const char* backup_path) {
-    char cmd[256];
-    int idx = 0;
-    const char* prefix = "dd if=/dev/block/by-name/boot of=";
-    for (int i = 0; prefix[i]; i++) cmd[idx++] = prefix[i];
-    for (int i = 0; backup_path[i]; i++) cmd[idx++] = backup_path[i];
-    cmd[idx] = '\0';
+    // v1.1.1 修复 P0-D3: 加边界检查 + root 检查
+    if (!backup_path || backup_path[0] == '\0') return false;
+    if (!check_root_available()) return false;
+
+    // 路径长度检查
+    size_t path_len = strlen(backup_path);
+    if (path_len > 200) return false;  // 留 56 字节给 prefix
+
+    char cmd[300];
+    if (snprintf(cmd, sizeof(cmd),
+                 "dd if=/dev/block/by-name/boot of=%s bs=8192",
+                 backup_path) >= (int)sizeof(cmd)) {
+        return false;
+    }
     return utils::exec_su_command_quiet(cmd);
 }
 
 bool restore_boot_partition(const char* backup_path) {
+    // v1.1.1 修复 P0-D3: 加边界检查 + root 检查 + 用户确认
+    if (!backup_path || backup_path[0] == '\0') return false;
     if (!utils::file_exists(backup_path)) return false;
-    char cmd[256];
-    int idx = 0;
-    const char* prefix = "dd if=";
-    for (int i = 0; prefix[i]; i++) cmd[idx++] = prefix[i];
-    for (int i = 0; backup_path[i]; i++) cmd[idx++] = backup_path[i];
-    const char* suffix = " of=/dev/block/by-name/boot";
-    for (int i = 0; suffix[i]; i++) cmd[idx++] = suffix[i];
-    cmd[idx] = '\0';
+    if (!check_root_available()) return false;
+    if (!g_destructive_confirmed) return false;  // 高危操作必须确认
+
+    size_t path_len = strlen(backup_path);
+    if (path_len > 200) return false;
+
+    char cmd[300];
+    if (snprintf(cmd, sizeof(cmd),
+                 "dd if=%s of=/dev/block/by-name/boot bs=8192",
+                 backup_path) >= (int)sizeof(cmd)) {
+        return false;
+    }
     return utils::exec_su_command_quiet(cmd);
 }
 

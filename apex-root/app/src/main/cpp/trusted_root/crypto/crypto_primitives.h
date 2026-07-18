@@ -14,6 +14,10 @@ namespace crypto {
 std::array<uint8_t, 64> sha3_512(const uint8_t* data, size_t len);
 
 // AES-256-GCM (software)
+// !! 注意 (FIX-CPP P0-S8) !! 函数名保留为 aes256_gcm_* 以避免破坏调用方，
+// 但实际实现是 AES-256-CTR + HMAC-SHA3-512 (Encrypt-then-MAC)，
+// 不是标准 AES-GCM，不能与 BoringSSL EVP_aead_aes_256_gcm 互通。
+// 详见 .cpp 文件中的注释。
 std::vector<uint8_t> aes256_gcm_encrypt(const uint8_t* plain, size_t len,
                                          const uint8_t* key, size_t key_len);
 std::vector<uint8_t> aes256_gcm_decrypt(const uint8_t* cipher, size_t len,

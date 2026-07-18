@@ -96,20 +96,11 @@ bool download_rules(UpdateManifest& manifest, RulePackage& pkg) {
         // Fall back to bundled rules asset
         fd = static_cast<int>(bs_openat(-100, "/data/rules/bundled", 0, 0));
         if (fd < 0) {
-            // Generate minimal default rules
-            pkg.version = manifest.latest_version;
-            pkg.data.resize(128);
-            const char* default_rules = "APEX-RULES v1\n# Default detection rules\n";
-            std::memcpy(pkg.data.data(), default_rules, strlen(default_rules));
-
-            // Create a self-signed signature for verification
-            auto keypair = crypto::generate_dilithium_keypair();
-            if (keypair.valid) {
-                pkg.signature = crypto::dilithium_sign(
-                    pkg.data.data(), pkg.data.size(),
-                    keypair.secret_key.data(), keypair.secret_key.size());
-            }
-            return true;
+            // FIX-CPP P0-C6: 原实现在 URL 与本地 bundled 都打不开时,
+            //   会自己生成默认规则并用临时生成的密钥对自签名 (line 106-111),
+            //   绕过 verify_package 的签名验证。现在直接返回 false。
+            //   调用方 (apply_rules) 必须检查返回值,拒绝写入未验证的规则包。
+            return false;
         }
     }
 
@@ -122,14 +113,14 @@ bool download_rules(UpdateManifest& manifest, RulePackage& pkg) {
     pkg.data.assign(buf, buf + n);
 
     // Read accompanying signature file
+    // FIX-CPP P1-7: 原实现手动拼接 sig_path[512] 无边界检查,
+    //   download_url 长度 ≥ 508 时栈溢出。改用 snprintf。
     char sig_path[512];
-    int slen = 0;
-    for (int i = 0; manifest.download_url[i]; i++)
-        sig_path[slen++] = manifest.download_url[i];
-    const char* sig_suffix = ".sig";
-    for (int i = 0; sig_suffix[i]; i++)
-        sig_path[slen++] = sig_suffix[i];
-    sig_path[slen] = '\0';
+    int written = snprintf(sig_path, sizeof(sig_path), "%s.sig", manifest.download_url.c_str());
+    if (written < 0 || (size_t)written >= sizeof(sig_path)) {
+        // URL 太长,sig_path 被截断。拒绝继续以防读到错误的签名文件。
+        return false;
+    }
 
     int sig_fd = static_cast<int>(bs_openat(-100, sig_path, 0, 0));
     if (sig_fd >= 0) {
@@ -157,14 +148,26 @@ bool verify_package(const RulePackage& pkg, const uint8_t* public_key, size_t ke
             std::vector<uint8_t>(public_key, public_key + key_len));
     }
 
+    // FIX-CPP P0-C6: 原实现在 root_key 为空时返回 true ("no key = trust on first use"),
+    //   这意味着任何未配置公钥的环境都会信任任意包。改为返回 false:
+    //   没有配置可信公钥时,拒绝验证通过。
     auto root_key = get_root_public_key();
-    if (root_key.empty()) return true; // no key = trust on first use
+    if (root_key.empty()) return false;
 
     return oqs.verify(pkg.data, pkg.signature, root_key);
 }
 
 bool apply_rules(const RulePackage& pkg) {
     if (pkg.data.empty()) return false;
+
+    // FIX-CPP P0-C6: 在写入前必须验证 pkg 的签名。
+    //   原实现完全不调用 verify_package,直接写入 /data/rules/current,
+    //   导致 download_rules 的自签名 fallback 路径能绕过验证。
+    //   现改为: 验证失败时拒绝写入,返回 false。
+    //   (public_key 为 nullptr 时使用内置 root_key 验证。)
+    if (!verify_package(pkg, nullptr, 0)) {
+        return false;
+    }
 
     // Backup current rules before overwriting
     int old_fd = static_cast<int>(bs_openat(-100, "/data/rules/current", 0, 0));

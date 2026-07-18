@@ -159,6 +159,11 @@ target_compile_options(apex_root PRIVATE
     -fstack-protector-strong
     -ffunction-sections
     -fdata-sections
+    # FIX-CPP P2-1: 启用编译器警告 (不加 -Werror 避免现有警告阻断构建)。
+    #   后续应清理现有警告后再加上 -Werror。
+    -Wall
+    -Wextra
+    -Wno-unused-parameter
 )
 
 # ─── 20 micro-service plugins (individual .so files) ─────

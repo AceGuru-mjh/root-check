@@ -14,10 +14,11 @@ static int g_seccomp_pipe[2] = {-1, -1};
 static int do_fork() {
     int64_t pid;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 memory clobber。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(pid) : "i"(__NR_clone),
                    "i"(CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWIPC),
-                   "i"(0), "i"(0) : "x0", "x1", "x2", "x8");
+                   "i"(0), "i"(0) : "x0", "x1", "x2", "x8", "memory");
     #else
         pid = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -32,8 +33,9 @@ int create_isolated_environment(const char* sandbox_name) {
         int64_t p[2];
         // Use pipe2 syscall (__NR_pipe2 = 291 on aarch64)
         #if defined(__aarch64__)
+        // FIX-CPP P0-S10: 补齐 memory clobber (mov x0/x8 可能在别处被使用)。
         asm volatile("mov x8, 291; mov x0, %1; svc #0; mov %0, x0"
-                     : "=r"(p[0]) : "r"(0) : "x0", "x8");
+                     : "=r"(p[0]) : "r"(0) : "x0", "x8", "memory");
         #else
             /* arm32/x64 fallback */ (void)0;
         #endif
@@ -44,10 +46,11 @@ int create_isolated_environment(const char* sandbox_name) {
     // Allocate shared flag: mmap MAP_SHARED | MAP_ANONYMOUS
     int64_t seccomp_flag = 0;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 memory clobber。
     asm volatile("mov x8, 222; mov x0, %1; mov x1, %2; mov x2, %3; mov x3, %4; mov x4, -1; mov x5, 0; svc #0; mov %0, x0"
                  : "=r"(seccomp_flag)
                  : "r"(0LL), "r"(8LL), "r"(3), "r"(0x20)
-                 : "x0", "x1", "x2", "x8", "x4", "x5");
+                 : "x0", "x1", "x2", "x8", "x4", "x5", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif
@@ -61,16 +64,17 @@ int create_isolated_environment(const char* sandbox_name) {
         // Mount a new procfs
         unsigned long mount_flags_rec = MS_REC | MS_SLAVE;
         #if defined(__aarch64__)
+        // FIX-CPP P0-S10: 补齐 memory clobber。
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
                      : "=r"(ret) : "i"(__NR_mount), "r"("proc"), "r"("/proc"), "r"("proc"), "r"(mount_flags_rec), "r"(nullptr)
-                     : "x0", "x1", "x2", "x3", "x4", "x8");
+                     : "x0", "x1", "x2", "x3", "x4", "x8", "memory");
         #else
             ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
         #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
                      : "=r"(ret) : "i"(__NR_mount), "r"("proc"), "r"("/proc"), "r"("proc"), "i"(0), "r"(nullptr)
-                     : "x0", "x1", "x2", "x3", "x4", "x8");
+                     : "x0", "x1", "x2", "x3", "x4", "x8", "memory");
         #else
             ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
@@ -79,7 +83,7 @@ int create_isolated_environment(const char* sandbox_name) {
         const char* host = "android-sandbox";
         #if defined(__aarch64__)
         asm volatile("mov x8, 170; mov x0, %0; mov x1, %1; svc #0"
-                     : : "r"(host), "r"(10LL) : "x0", "x8");
+                     : : "r"(host), "r"(10LL) : "x0", "x8", "memory");
         #else
             /* arm32/x64 fallback */ (void)0;
         #endif
@@ -87,7 +91,7 @@ int create_isolated_environment(const char* sandbox_name) {
         // Set NO_NEW_PRIVS (required before seccomp)
         #if defined(__aarch64__)
         asm volatile("mov x8, %0; mov x0, %1; mov x1, %2; mov x2, %3; svc #0"
-                     : : "i"(__NR_prctl), "i"(PR_SET_NO_NEW_PRIVS), "i"(1), "i"(0) : "x0", "x8");
+                     : : "i"(__NR_prctl), "i"(PR_SET_NO_NEW_PRIVS), "i"(1), "i"(0) : "x0", "x8", "memory");
         #else
             /* arm32/x64 fallback */ (void)0;
         #endif
@@ -95,7 +99,7 @@ int create_isolated_environment(const char* sandbox_name) {
         // Signal parent we're ready
         #if defined(__aarch64__)
         asm volatile("mov x8, %0; mov x0, %1; mov x1, %2; svc #0"
-                     : : "i"(__NR_kill), "i"(0), "i"(10) : "x0", "x8"); // SIGUSR1
+                     : : "i"(__NR_kill), "i"(0), "i"(10) : "x0", "x8", "memory"); // SIGUSR1
         #endif
 
         // Wait for seccomp flag from parent (flag_ptr declared outside arch guard for scope)
@@ -103,7 +107,7 @@ int create_isolated_environment(const char* sandbox_name) {
         for (int i = 0; i < 100 && *flag_ptr == 0; i++) {
             #if defined(__aarch64__)
             asm volatile("mov x8, %0; mov x0, %1; svc #0"
-                         : : "i"(__NR_nanosleep), "r"(10000000LL) : "x0", "x8"); // 10ms
+                         : : "i"(__NR_nanosleep), "r"(10000000LL) : "x0", "x8", "memory"); // 10ms
             #else
                 /* arm32/x64 fallback */ (void)0;
             #endif
@@ -118,7 +122,7 @@ int create_isolated_environment(const char* sandbox_name) {
         while (true) {
             #if defined(__aarch64__)
             asm volatile("mov x8, %0; mov x0, %1; svc #0"
-                         : : "i"(__NR_nanosleep), "r"(1000000000LL) : "x0", "x8");
+                         : : "i"(__NR_nanosleep), "r"(1000000000LL) : "x0", "x8", "memory");
             #else
                 /* arm32/x64 fallback */ (void)0;
             #endif
@@ -137,7 +141,7 @@ bool destroy_isolated_environment(int pid) {
     int64_t ret;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_kill), "r"(pid), "i"(SIGKILL) : "x0", "x8");
+                 : "=r"(ret) : "i"(__NR_kill), "r"(pid), "i"(SIGKILL) : "x0", "x8", "memory");
     #else
         ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -157,7 +161,7 @@ bool run_in_environment(int pid, const char* cmd) {
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(nsfd)
                  : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0)
-                 : "x0", "x1", "x2", "x8");
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif
@@ -167,14 +171,14 @@ bool run_in_environment(int pid, const char* cmd) {
     int64_t ret;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                 : "=r"(ret) : "i"(__NR_setns), "r"(nsfd), "i"(0) : "x0", "x8");
+                 : "=r"(ret) : "i"(__NR_setns), "r"(nsfd), "i"(0) : "x0", "x8", "memory");
     #else
         ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
 
     #if defined(__aarch64__)
     asm volatile("mov x8, %0; mov x0, %1; svc #0"
-                 : : "i"(__NR_close), "r"(nsfd) : "x0", "x8");
+                 : : "i"(__NR_close), "r"(nsfd) : "x0", "x8", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif
@@ -186,7 +190,7 @@ bool run_in_environment(int pid, const char* cmd) {
     const char* envp[] = {"PATH=/sbin:/system/bin:/system/xbin", "TERM=vt100", nullptr};
     #if defined(__aarch64__)
     asm volatile("mov x8, 221; mov x0, %0; mov x1, %1; mov x2, %2; svc #0"
-                 : : "r"("/system/bin/sh"), "r"(argv), "r"(envp) : "x0", "x1", "x2", "x8");
+                 : : "r"("/system/bin/sh"), "r"(argv), "r"(envp) : "x0", "x1", "x2", "x8", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif
@@ -204,9 +208,11 @@ bool apply_seccomp_bpf(int pid) {
 
     int64_t mem_fd;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                  : "=r"(mem_fd)
-                 : "i"(__NR_openat), "i"(AT_FDCWD), "r"(mem_path), "i"(O_RDWR), "i"(0));
+                 : "i"(__NR_openat), "i"(AT_FDCWD), "r"(mem_path), "i"(O_RDWR), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif
@@ -215,8 +221,9 @@ bool apply_seccomp_bpf(int pid) {
         // Attach and send SIGUSR2 to trigger seccomp in signal handler
         int64_t pt_ret;
         #if defined(__aarch64__)
+        // FIX-CPP P0-S10: 补齐 memory clobber。
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                     : "=r"(pt_ret) : "i"(__NR_ptrace), "i"(0), "r"(pid), "r"(0), "r"(0) : "x0", "x8");
+                     : "=r"(pt_ret) : "i"(__NR_ptrace), "i"(0), "r"(pid), "r"(0), "r"(0) : "x0", "x8", "memory");
         #else
             pt_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
@@ -227,7 +234,7 @@ bool apply_seccomp_bpf(int pid) {
         int64_t kill_ret;
         #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                     : "=r"(kill_ret) : "i"(__NR_kill), "r"(pid), "i"(SIGUSR2) : "x0", "x8");
+                     : "=r"(kill_ret) : "i"(__NR_kill), "r"(pid), "i"(SIGUSR2) : "x0", "x8", "memory");
         #else
             kill_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
@@ -235,7 +242,7 @@ bool apply_seccomp_bpf(int pid) {
         // Detach
         #if defined(__aarch64__)
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; svc #0; mov %0, x0"
-                     : "=r"(pt_ret) : "i"(__NR_ptrace), "i"(0x4200), "r"(pid), "r"(0), "r"(0) : "x0", "x8");
+                     : "=r"(pt_ret) : "i"(__NR_ptrace), "i"(0x4200), "r"(pid), "r"(0), "r"(0) : "x0", "x8", "memory");
         #else
             pt_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
@@ -253,8 +260,9 @@ bool apply_seccomp_bpf(int pid) {
     // Use ptrace to attach and make the child call seccomp
     int64_t pt_ret;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 memory clobber。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(pt_ret) : "i"(__NR_ptrace), "i"(0), "r"(pid), "r"(0), "r"(0) : "x0", "x8");
+                 : "=r"(pt_ret) : "i"(__NR_ptrace), "i"(0), "r"(pid), "r"(0), "r"(0) : "x0", "x8", "memory");
     #else
         pt_ret = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
@@ -264,7 +272,7 @@ bool apply_seccomp_bpf(int pid) {
     int64_t status;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(status) : "i"(__NR_wait4), "r"(pid), "r"(0), "i"(__WALL), "r"(0) : "x0", "x8");
+                 : "=r"(status) : "i"(__NR_wait4), "r"(pid), "r"(0), "i"(__WALL), "r"(0) : "x0", "x8", "memory");
     #else
         status = -1; /* __NR_wait4 not mapped */
     #endif
@@ -276,8 +284,9 @@ bool apply_seccomp_bpf(int pid) {
     // If we reach here, the seccomp was not applied. Return true since the
     // child already has NO_NEW_PRIVS + namespace isolation as baseline.
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 memory clobber。
     asm volatile("mov x8, %0; mov x0, %1; svc #0"
-                 : : "i"(__NR_ptrace), "i"(0x4200), "r"(pid), "r"(0), "r"(0) : "x0", "x8"); // PTRACE_DETACH
+                 : : "i"(__NR_ptrace), "i"(0x4200), "r"(pid), "r"(0), "r"(0) : "x0", "x8", "memory"); // PTRACE_DETACH
 
     #else
         /* arm32/x64 fallback */ (void)0;
@@ -303,14 +312,15 @@ bool mount_pure_system(const char* sandbox_root) {
         int64_t fd;
         int open_flags = O_RDONLY | O_CREAT | O_CLOEXEC;
         #if defined(__aarch64__)
+        // FIX-CPP P0-S10: 补齐 memory clobber。
         asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
                      : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "r"(open_flags), "i"(0755)
-                     : "x0", "x1", "x2", "x8");
+                     : "x0", "x1", "x2", "x8", "memory");
         #else
             fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
         #endif
         #if defined(__aarch64__)
-        if (fd >= 0) asm volatile("mov x8, %0; mov x0, %1; svc #0" : : "i"(__NR_close), "r"(fd) : "x0", "x8");
+        if (fd >= 0) asm volatile("mov x8, %0; mov x0, %1; svc #0" : : "i"(__NR_close), "r"(fd) : "x0", "x8", "memory");
         #else
             /* arm32/x64 fallback */ (void)0;
         #endif
@@ -326,10 +336,11 @@ bool mount_pure_system(const char* sandbox_root) {
 
     int64_t ret;
     #if defined(__aarch64__)
+    // FIX-CPP P0-S10: 补齐 memory clobber。
     asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; mov x3, %5; mov x4, %6; svc #0; mov %0, x0"
                  : "=r"(ret)
                  : "i"(__NR_mount), "r"("overlay"), "r"(sandbox_root), "r"("overlay"), "i"(0), "r"(opts)
-                 : "x0", "x1", "x2", "x8");
+                 : "x0", "x1", "x2", "x3", "x4", "x8", "memory");
     #else
         /* arm32/x64 fallback */ (void)0;
     #endif

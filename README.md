@@ -16,11 +16,11 @@
 [![Android](https://img.shields.io/badge/Android-10%2B-3DDC84?logo=android&logoColor=white)]()
 [![API](https://img.shields.io/badge/API-29%2B-critical)]()
 [![Arch](https://img.shields.io/badge/Arch-ARM64-blueviolet?logo=arm&logoColor=white)]()
-[![Kotlin](https://img.shields.io/badge/Kotlin-1.9-7F52FF?logo=kotlin&logoColor=white)]()
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?logo=kotlin&logoColor=white)]()
 [![Compose](https://img.shields.io/badge/Compose-Material3-7F52FF?logo=jetpackcompose&logoColor=white)]()
 [![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)]()
 [![NDK](https://img.shields.io/badge/NDK-28.2-FF6F00?logo=androidndk&logoColor=white)]()
-[![License](https://img.shields.io/badge/License-Proprietary-red)]()
+[![License](https://img.shields.io/badge/License-GPL--3.0-blue)]()
 [![Version](https://img.shields.io/badge/Version-1.1.1-00D4AA)]()
 
 <p>
@@ -168,7 +168,7 @@
 
 #### 方式一：下载 APK（推荐）
 
-1. 前往 [Releases 页面](../../releases) 下载最新 `APEX-Root-v1.0.0.apk`
+1. 前往 [Releases 页面](../../releases) 下载最新 `apex-agent-arm64-v8a.apk`
 2. 在设备上启用"未知来源应用安装"
 3. 安装 APK
 4. 授予 root 权限（需 Magisk / KernelSU / APatch）
@@ -240,7 +240,7 @@ apex-root/
 ├── app/                          # 主应用
 │   └── src/main/
 │       ├── java/com/apex/root/
-│       │   ├── ui/compose/       # Compose UI (16 个 Screen)
+│       │   ├── ui/compose/       # Compose UI (3 Screens: Dashboard / ScanResult / Settings)
 │       │   ├── viewmodel/        # MVVM ViewModel
 │       │   ├── data/             # 数据层 + JNI 桥接
 │       │   ├── core/             # 核心服务
@@ -308,11 +308,11 @@ apex-root/
 
 | 版本 | 日期 | 主要变更 |
 |------|------|----------|
-| v1.0.0 | 2026-06 | 16 层检测 + 3 模式隐藏 + 后量子签名 + UI 重构 |
-| v1.0.6 | 2026-07 | Ring0 移除 + 13 个 native 崩溃修复 + 安全加固 |
-| v1.0.9 | 2026-07 | UI 滑动/通知闪退/权限修复 |
-| v1.1.0 | 2026-07 | P0 高危修复 (getdents64/guard_alert/release.yml/su阻塞/IPC OOM/keystore) |
 | v1.1.1 | 2026-07 | P1 中危修复 + 20 层检测 + 并行引擎 + 交叉验证 + 实时监控 + 权限利用 |
+| v1.1.0 | 2026-07 | P0 高危修复 (getdents64/guard_alert/release.yml/su阻塞/IPC OOM/keystore) |
+| v1.0.9 | 2026-07 | UI 滑动/通知闪退/权限修复 |
+| v1.0.6 | 2026-07 | Ring0 移除 + 13 个 native 崩溃修复 + 安全加固 |
+| v1.0.0 | 2026-06 | 16 层检测 + 3 模式隐藏 + 后量子签名 + UI 重构 |
 | v0.9.0 | 2026-01 | 初始版本 |
 
 ---
@@ -442,7 +442,7 @@ Scoring is based on three core principles:
 
 #### Option 1: Download APK (Recommended)
 
-1. Go to [Releases page](../../releases) and download `APEX-Root-v1.0.0.apk`
+1. Go to [Releases page](../../releases) and download `apex-agent-arm64-v8a.apk`
 2. Enable "Install unknown apps" on your device
 3. Install the APK
 4. Grant root access (requires Magisk / KernelSU / APatch)
@@ -509,7 +509,7 @@ apex-root/
 ├── app/                          # Main application
 │   └── src/main/
 │       ├── java/com/apex/root/
-│       │   ├── ui/compose/       # Compose UI (16 Screens)
+│       │   ├── ui/compose/       # Compose UI (3 Screens: Dashboard / ScanResult / Settings)
 │       │   ├── viewmodel/        # MVVM ViewModel
 │       │   ├── data/             # Data layer + JNI bridge
 │       │   ├── core/             # Core services
@@ -577,8 +577,10 @@ This application uses the following open-source components:
 
 | Version | Date | Major Changes |
 |---------|------|---------------|
+| v1.1.1 | 2026-07 | P1 fixes + 20-layer detection + parallel engine + cross-validation + realtime guard + permission utilization |
+| v1.1.0 | 2026-07 | P0 critical fixes (getdents64/guard_alert/release.yml/su-blocking/IPC OOM/keystore) |
 | v1.0.0 | 2026-06 | 16-layer detection + 3-mode hiding + post-quantum signing + UI overhaul |
-| v1.0.0 | 2026-01 | Initial release |
+| v0.9.0 | 2026-01 | Initial release |
 
 ---
 
@@ -587,3 +589,15 @@ This application uses the following open-source components:
 **⭐ If this project helps you, please give it a Star ⭐**
 
 </div>
+
+---
+
+## 📄 License
+
+本项目采用 **GPL-3.0** 许可证。详见 [LICENSE](./LICENSE)。
+
+任何基于本项目的派生作品必须以 GPL-3.0 或兼容许可证开源。商业化使用、闭源派生均不被允许。
+
+This project is licensed under the **GNU General Public License v3.0**. See [LICENSE](./LICENSE) for details.
+
+All derivative works must be released under GPL-3.0 or a compatible license. Commercial use and closed-source forks are not permitted.

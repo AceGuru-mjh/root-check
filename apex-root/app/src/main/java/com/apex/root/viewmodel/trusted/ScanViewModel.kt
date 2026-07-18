@@ -96,7 +96,10 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
                 taskId = UUID.randomUUID().toString(),
                 level = level,
                 enabledServices = listOf("*"),
-                nonce = ByteArray(32) { (it % 256).toByte() },
+                // P0-S4 修复 (v1.1.1): 之前 nonce = ByteArray(32) { (it % 256).toByte() }
+                // 生成 [0,1,2,...,31] 完全可预测, 重放攻击可绕过 nonce 防御。
+                // 改用 SecureRandom 生成密码学安全的随机 nonce。
+                nonce = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) },
                 timestamp = System.currentTimeMillis()
             )
 
