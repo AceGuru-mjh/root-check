@@ -1,6 +1,7 @@
 package com.apex.root
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import com.apex.root.core.NativeLibraryLoader
 import com.apex.root.core.notification.Notifier
@@ -21,6 +22,8 @@ import kotlinx.coroutines.launch
  *  - 创建通知通道 (Notifier.createChannels)
  *  - 后台预热 native 库 (NativeLibraryLoader.ensureLoaded)
  *  - 提供 applicationScope 给非 ViewModel 生命周期使用 (替代 GlobalScope 反模式)
+ *  - 提供 [appContext] 全局 application context (FIX-D1: 供 PackageDetector 等
+ *    无 Context 入口的检测器使用)
  */
 class ApexRootApplication : Application() {
 
@@ -32,6 +35,18 @@ class ApexRootApplication : Application() {
 
         @JvmStatic
         fun get(): ApexRootApplication = instance
+
+        /**
+         * 全局 application context。在 [onCreate] 中赋值。
+         *
+         * FIX-D1: 供 PackageDetector / Shizuku 检测等无 Context 入口的检测器使用,
+         * 避免在 Repository / NativeBridge 中到处传递 Context。访问时机需在
+         * Application.onCreate 完成之后;若在极早期 (ContentProvider 初始化阶段)
+         * 访问会抛 UninitializedPropertyAccessException,调用方需自行捕获回退。
+         */
+        @JvmStatic
+        val appContext: Context
+            get() = instance.applicationContext
     }
 
     /**

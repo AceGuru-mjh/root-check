@@ -16,34 +16,40 @@
 // ═══════════════════════════════════════════════════════════
 
 static int64_t get_ns() {
-    int64_t ts[2];
+    int64_t ts[2] = {0, 0};  // v1.1.1 修复 P0-C5: 初始化避免非 aarch64 分支返回未初始化值 (UB)
     // 修复：无 output operand 时，input 从 %0 开始
     #if defined(__aarch64__)
     asm volatile("mov x8, %0; mov x0, %1; mov x1, %2; svc #0"
                  : : "i"(__NR_clock_gettime), "i"(1), "r"(ts)
                  : "x0", "x1", "x8", "memory");
     #else
-        /* arm32/x64 fallback */ (void)0;
+        /* arm32/x64 fallback: clock_gettime 未实现,返回 0 */
     #endif
     return ts[0] * 1000000000LL + ts[1];
 }
 
 static int64_t measure_syscall(int nr) {
     int64_t start = get_ns();
-    int64_t ret;
+    int64_t ret = -1;  // v1.1.1 修复 P0-C5: 初始化避免非 aarch64 分支 UB
     // 修复：nr 是变量，不能用 "i" constraint，改用 "r"
     #if defined(__aarch64__)
     // FIX-CPP P0-S10: 补齐 memory clobber。
     asm volatile("mov x8, %1; svc #0; mov %0, x0"
                  : "=r"(ret) : "r"((int64_t)nr) : "x0", "x8", "memory");
     #else
-        /* arm32/x64 fallback */ (void)0;
+        /* arm32/x64 fallback: syscall 返回 -1,measure_syscall 返回 0 (end-start 都为 0) */
+        (void)nr;
     #endif
     int64_t end = get_ns();
     return end - start;
 }
 
 bool detectSyscallTimingAnomaly() {
+    // v1.1.1 修复 P0-C5: 非 aarch64 平台 syscall 检测不可靠,直接返回 false
+    // 避免基于未初始化值做判断导致 UB 或误报
+    #if !defined(__aarch64__)
+    return false;
+    #else
     // Measure several syscalls. Hooked syscalls take significantly longer.
     int64_t baseline = measure_syscall(__NR_getpid);
     int64_t open_at = measure_syscall(__NR_openat);
@@ -56,6 +62,7 @@ bool detectSyscallTimingAnomaly() {
 
     if (open_at > baseline * 10 && read_ts > baseline * 10) return true;
     return false;
+    #endif
 }
 
 bool detectCacheTimingAnomaly() {

@@ -1,6 +1,7 @@
 package com.apex.root.data.repository
 
 import com.apex.root.data.DetectionCache
+import com.apex.root.data.PackageDetector
 import com.apex.root.data.jni.NativeBridge
 import com.apex.root.domain.model.CureLevel
 import com.apex.root.domain.model.CureResult
@@ -34,9 +35,30 @@ class RootDetectRepositoryImpl : com.apex.root.domain.repository.IRootDetectRepo
             }
         }
 
-        val details = NativeBridge.runQuickScan()
-        val isRooted = NativeBridge.isDeviceRooted()
-        val riskScore = NativeBridge.getRiskScore()
+        var details = NativeBridge.runQuickScan()
+        var isRooted = NativeBridge.isDeviceRooted()
+        var riskScore = NativeBridge.getRiskScore()
+
+        // FIX-D1 (P0): 补充 PackageManager 检测。
+        // native 层的 L8/L9/L10/L24 路径检测在普通 app 上下文 (无 root + SELinux) 下
+        // 100% 返回 EACCES,导致检测失效。这里通过 PackageManager.getInstalledPackages
+        // 检测已安装的 root 框架 manager app (Magisk/KernelSU/APatch/Shizuku/Xposed),
+        // 是对 native 路径检测的可靠补充。
+        val pkgResult = runCatching { PackageDetector.detect() }
+            .getOrNull()
+            ?: PackageDetector.DetectionResult(
+                magisk = false, kernelsu = false, apatch = false,
+                shizuku = false, xposed = false, detectedPackages = emptyList()
+            )
+
+        if (pkgResult.anyDetected) {
+            // 任一框架命中即视为已 root (PackageManager 检测可靠,优先级高于 native 路径检测)
+            isRooted = true
+            // 风险分至少提升到 DANGER 区间 (50) 以反映真实状态
+            if (riskScore < 50) riskScore = 50
+            val section = buildPackageManagerSection(pkgResult)
+            details = if (details.isEmpty()) section else "$details\n$section"
+        }
 
         // 修复：native 库未加载时 details 为空字符串，原代码会缓存空结果，
         // 之后 5 秒内重复扫描都返回缓存的空字符串，用户看到的是"风险分: 0"假象。
@@ -60,6 +82,25 @@ class RootDetectRepositoryImpl : com.apex.root.domain.repository.IRootDetectRepo
             details = details,
             riskScore = riskScore
         )
+    }
+
+    /**
+     * FIX-D1: 把 PackageManager 检测命中结果格式化为追加到 details 末尾的段落。
+     * 仅在检测到至少一个 root 框架时才会被调用。
+     */
+    private fun buildPackageManagerSection(
+        result: PackageDetector.DetectionResult
+    ): String {
+        val sb = StringBuilder()
+        sb.appendLine()
+        sb.appendLine("=== PackageManager 检测 (补充 native 路径检测在 SELinux 下失效) ===")
+        sb.appendLine("检测到已安装 root/特权框架: ${result.detectedPackages.joinToString(", ")}")
+        if (result.magisk) sb.appendLine("  - L8  Magisk: 命中")
+        if (result.kernelsu) sb.appendLine("  - L9  KernelSU/SukiSU: 命中")
+        if (result.apatch) sb.appendLine("  - L10 APatch: 命中")
+        if (result.xposed) sb.appendLine("  - L11 Xposed/LSPosed: 命中")
+        if (result.shizuku) sb.appendLine("  - L24 Shizuku/Dhizuku: 命中")
+        return sb.toString().trimEnd()
     }
 
     override fun detectRootType(): RootType = RootType.fromValue(NativeCure.detectRootType())

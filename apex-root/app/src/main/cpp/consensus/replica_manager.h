@@ -6,6 +6,33 @@
 #include <array>
 #include <vector>
 
+// ─────────────────────────────────────────────────────────────
+// P0-D6 注释 (v1.1.1): 本模块为实验性死代码 (experimental / dead code)
+// ----------------------------------------------------------------
+// 当前状态:
+//   - CMakeLists.txt 仍编译 consensus/*.cpp, 符号被链接进 libapex_root.so
+//   - 但没有任何 JNI 入口暴露这些函数给 Kotlin 层
+//   - 也没有任何 native 主流程 (runQuickScan / service_engine::execute_scan) 调用它们
+//   - 因此 replica_manager 的代码在运行时永远不会被执行
+//
+// 原始设计意图 (未实现):
+//   - 三副本共识 (Replica A/B/C) 跨命名空间运行, 用后量子签名互验检测结果
+//   - Replica B/C 通过 fork + unshare(CLONE_NEWPID|CLONE_NEWNS) 创建
+//
+// 为何停用:
+//   1. P0-C4: namespace_isolation.cpp 实现错误 (pipe2/mmap/ptrace/mkdir 全部
+//      用错), 依赖它的 start_replica() 不可能成功
+//   2. P0-C5: 非 aarch64 平台 syscall 失效, fork 路径走不通
+//   3. 在 JVM 进程内 fork 长生命周期的子进程会触发 Android LowMemoryKiller
+//      并破坏 Zygote 的进程模型
+//
+// 重启计划: v1.2.0 将通过独立的 trusted_daemon (root 进程, 非 JVM 子进程)
+// 重新实现三副本共识, 并通过 binder/socket 暴露给 app。
+//
+// 本头文件保留供未来重写时参考。**当前不要在 native-lib.cpp 中添加任何
+// 调用本模块的 JNI 入口** — 这样会激活有 bug 的代码路径。
+// ─────────────────────────────────────────────────────────────
+
 namespace apex {
 namespace consensus {
 

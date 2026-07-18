@@ -5,6 +5,18 @@ import com.apex.root.core.NativeLibraryLoader
 /**
  * JNI 桥接层 — 所有 native 方法调用都通过 NativeLibraryLoader 安全保护。
  * 避免 UnsatisfiedLinkError 直接崩溃。
+ *
+ * 架构诚实化说明 (v1.1.1):
+ *   - 微服务 (micro_services): 实验性功能。通过 [initMicroServices] 触发
+ *     service_engine::initialize(), 在 [ApexViewModel.checkNativeAvailability]
+ *     中于 setPluginsDir 后调用。即便所有 plugin dlopen 失败, 主扫描仍走
+ *     [runQuickScanNative] 传统路径, 不影响功能。
+ *   - 共识 (consensus/replica_manager): **未通过任何 JNI 暴露**, 是死代码。
+ *     详见 native-lib.cpp 顶部 P0-D6 注释与 consensus/replica_manager.h 顶部
+ *     注释。三副本共识将在 v1.2.0 通过独立 root daemon 重新实现。
+ *   - 命名空间隔离 (namespace_isolation): 已重写为安全 stub (P0-C4 修复),
+ *     非 root 设备 [com.apex.root.island.NativeIsland.createIsolatedEnv] 始终
+ *     返回 -1。详见 namespace/namespace_isolation.cpp 顶部注释。
  */
 object NativeBridge {
 
@@ -64,10 +76,29 @@ object NativeBridge {
 
     /**
      * P1-1 修复: 设置微服务插件目录 (nativeLibraryDir + "/plugins")。
-     * 必须在沙箱启动 / service_engine::initialize() 之前调用。
+     * 必须在 [initMicroServices] / service_engine::initialize() 之前调用。
      */
     fun setPluginsDir(path: String) = NativeLibraryLoader.safeRun {
         setPluginsDirNative(path)
+    }
+
+    /**
+     * P0-D5 修复 (v1.1.1): 触发微服务引擎初始化。
+     *
+     * 此前 service_engine::initialize() 从未被任何 JNI 调用, 导致 20 个 plugin.so
+     * (ms001 ~ ms020) 虽然编译并打包到 apk, 但运行时永远没被 dlopen, 整个微服务
+     * 架构是死代码。本方法接入后, 由 [ApexViewModel.checkNativeAvailability] 在
+     * native 库加载成功且 [setPluginsDir] 调用完毕后执行。
+     *
+     * 注意: 微服务架构为实验性功能。service_engine::initialize() 内部对每个
+     * plugin 的 dlopen 失败都有容错, 且恒返回 true (即便全部 plugin 加载失败,
+     * 主扫描仍走 runQuickScanNative 的传统路径, 不会崩溃)。本方法的返回值仅
+     * 用于日志展示, 不影响主流程。
+     *
+     * @return true 表示 initialize() 已执行 (无论 plugin 是否真正加载成功)
+     */
+    fun initMicroServices(): Boolean = NativeLibraryLoader.safeCall(false) {
+        initMicroServicesNative()
     }
 
     fun detectSELinuxPolicyMod(): Boolean = NativeLibraryLoader.safeCall(false) {
@@ -339,6 +370,10 @@ object NativeBridge {
     private external fun detectSELinuxContextJumpNative(): Boolean
     private external fun getEbpfCapabilityReportNative(): String
     private external fun setPluginsDirNative(path: String)
+    // P0-D5 修复 (v1.1.1): 微服务引擎初始化 — 由 initMicroServices() 调用。
+    // 注意: 微服务架构为实验性功能, 当前 service_engine::initialize() 恒返回 true,
+    // 个别 plugin dlopen 失败会被内部容错吞掉, 仅记录 native 日志。
+    private external fun initMicroServicesNative(): Boolean
     private external fun detectSELinuxPolicyModNative(): Boolean
     private external fun selinuxFullScanNative(): String
     private external fun detectShamikoNative(): Boolean

@@ -206,6 +206,20 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                 }.onFailure { e ->
                     Log.w("ApexViewModel", "Failed to set plugins dir: ${e.message}")
                 }
+
+                // P0-D5 修复 (v1.1.1): 接入微服务引擎初始化。
+                // 此前 service_engine::initialize() 从未被调用, 20 个 plugin.so
+                // (ms001~ms020) 永远没被 dlopen, 整个微服务架构是死代码。
+                // 必须在 setPluginsDir 之后执行, 否则 initialize() 仍会用默认
+                // 相对路径 "plugins" (无效)。
+                // 注意: 微服务架构为实验性功能, 返回值仅用于日志, 不影响主扫描
+                // (主扫描始终走 runQuickScanNative 传统路径)。
+                runCatching {
+                    val ok = NativeBridge.initMicroServices()
+                    Log.i("ApexViewModel", "initMicroServices: ok=$ok (experimental)")
+                }.onFailure { e ->
+                    Log.w("ApexViewModel", "initMicroServices failed: ${e.message}")
+                }
             }
         }
     }

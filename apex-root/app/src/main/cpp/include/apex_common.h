@@ -46,6 +46,30 @@ enum class ErrorCode : int32_t {
     TIMEOUT = -7
 };
 
+// v1.1.1 修复 P0-C5: 架构支持检测
+// ─────────────────────────────────────────────────────────────
+// detect/ 层的 inline asm (svc #0) 仅在 __aarch64__ 下实现,
+// armeabi-v7a / x86_64 APK 上所有 syscall 返回 -1, 检测函数返回 false,
+// 导致用户得到"设备安全"的错误结论。
+//
+// 本宏供 native-lib.cpp 在 runQuickScan / isDeviceRooted 入口处检测,
+// 非 aarch64 时在结果中明确标注"架构不支持",而非静默返回 false。
+// ─────────────────────────────────────────────────────────────
+#if defined(__aarch64__)
+    constexpr bool ARCH_SUPPORTED = true;
+    constexpr const char* ARCH_NAME = "arm64-v8a (aarch64)";
+#else
+    constexpr bool ARCH_SUPPORTED = false;
+    constexpr const char* ARCH_NAME =
+        #if defined(__arm__)
+            "armeabi-v7a (arm32) — syscall 检测不支持";
+        #elif defined(__x86_64__)
+            "x86_64 — syscall 检测不支持";
+        #else
+            "unknown — syscall 检测不支持";
+        #endif
+#endif
+
 } // namespace apex
 
 #endif // APEX_ROOT_COMMON_H

@@ -42,6 +42,17 @@
 #include "hid/hwid_spoof.h"
 #include "micro_services/engine/service_engine.h"
 
+// P0-D6 注释 (v1.1.1): consensus/replica_manager 是实验性死代码 — 当前未通过
+// 任何 JNI 暴露给 Kotlin 层, 也未在主扫描流程中被调用。
+// 原始设计 (replica_manager.cpp::start_replica) 在 JVM 进程内 fork 子进程作为
+// Replica B/C, 但这与 P0-C5 (非 aarch64 syscall 失效) 和 P0-C4 (namespace_isolation
+// 实现错误) 叠加, 实际无法运行。CMakeLists.txt 仍编译该模块 (consensus/*.cpp),
+// 但 .text 节中的符号只是被链接进 .so, 没有任何执行路径。
+//
+// 本文件不引入 consensus/replica_manager.h, 也不添加任何 JNI 入口 — 真正的
+// 三副本共识将在 v1.2.0 通过独立 root daemon (而不是 JVM 子进程) 重新实现。
+// 详见 worklog.md P0-D6 与 consensus/replica_manager.h 文件顶部注释。
+
 #define LOG_TAG "APEX-NATIVE"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -83,6 +94,16 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
 JNIEXPORT jstring JNICALL
 Java_com_apex_root_data_jni_NativeBridge_runQuickScanNative(JNIEnv* env, jobject) {
     std::string result = "=== APEX-Root Scan Result ===\n\n";
+
+    // v1.1.1 修复 P0-C5: 非 aarch64 平台明确标注,而非静默返回 false 误报"设备安全"
+    if (!apex::ARCH_SUPPORTED) {
+        result += "⚠️ 架构不支持: " + std::string(apex::ARCH_NAME) + "\n";
+        result += "检测层的 inline asm (svc #0) 仅在 arm64-v8a (aarch64) 下实现。\n";
+        result += "当前 APK 架构的 syscall 全部返回 -1, 检测结果不可靠。\n";
+        result += "建议安装 arm64-v8a 版本的 APK (绝大多数真实 Android 设备为 arm64)。\n";
+        result += "\n结论: ❓ 检测不可用 (架构不支持)\n";
+        return env->NewStringUTF(result.c_str());
+    }
 
     bool l1 = detectSuspiciousProperties();
     bool l2 = detectArtInjection();
@@ -174,6 +195,13 @@ Java_com_apex_root_data_jni_NativeBridge_isDeviceRootedNative(JNIEnv*, jobject) 
 
 // ─────────────────────────────────────────────────────────────
 // APEX-Island: Namespace isolation
+// ----------------------------------------------------------------
+// P0-C4 修复 (v1.1.1): namespace_isolation.cpp 已重写为安全 stub。
+// create_isolated_environment 始终返回 -1, destroy_isolated_environment
+// 始终返回 false, 因此下面的 JNI 入口在普通 app 上下文 (uid != 0) 下
+// 只会得到失败的返回值, 不会真正创建隔离环境。真正的 namespace 隔离
+// 将在 v1.2.0 通过 trusted_daemon 重新实现。详见
+// namespace/namespace_isolation.cpp 文件顶部注释。
 // ─────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL
@@ -796,6 +824,44 @@ Java_com_apex_root_data_jni_NativeBridge_setPluginsDirNative(JNIEnv* env, jobjec
     }
     apex::engine::service_engine::set_plugins_dir(cpath);
     env->ReleaseStringUTFChars(path, cpath);
+}
+
+// ─────────────────────────────────────────────────────────────
+// P0-D5 修复 (v1.1.1): 微服务引擎初始化接入主流程
+// ----------------------------------------------------------------
+// 此前 service_engine::initialize() 从未被任何 JNI 调用, 导致 20 个 plugin.so
+// (ms001 ~ ms020) 虽然编译并打包到 apk, 但运行时永远没被 dlopen, 整个微服务
+// 架构是死代码。
+//
+// 本 JNI 入口由 NativeBridge.initMicroServices() 调用, 在 ApexViewModel
+// 的 checkNativeAvailability() 中于 setPluginsDir 之后执行。
+//
+// 注意: 微服务架构为实验性功能。service_engine::initialize() 内部对每个
+// plugin 的 dlopen 失败都有容错 (失败的 plugin 不会被注册, 但不阻断其他
+// plugin), 且函数本身恒返回 true。Kotlin 层返回值仅用于日志, 不影响主流程
+// (即便所有 plugin 都加载失败, 主扫描仍走 runQuickScanNative 的传统路径)。
+// try/catch 是防御性的 — 当前实现不抛异常, 但 dlopen / mutex / 文件操作
+// 在异常环境下 (例如 OOM) 可能抛 std::bad_alloc, 此处捕获以避免崩溃。
+// ─────────────────────────────────────────────────────────────
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_root_data_jni_NativeBridge_initMicroServicesNative(JNIEnv*, jobject) {
+    try {
+        bool ok = apex::engine::service_engine::initialize();
+        if (ok) {
+            LOGI("initMicroServicesNative: service_engine::initialize() returned true "
+                 "(engine marked initialized; individual plugin load failures are logged separately)");
+        } else {
+            LOGE("initMicroServicesNative: service_engine::initialize() returned false");
+        }
+        return ok ? JNI_TRUE : JNI_FALSE;
+    } catch (const std::exception& e) {
+        LOGE("initMicroServicesNative: service_engine::initialize threw: %s", e.what());
+        return JNI_FALSE;
+    } catch (...) {
+        LOGE("initMicroServicesNative: service_engine::initialize threw unknown exception");
+        return JNI_FALSE;
+    }
 }
 
 JNIEXPORT jboolean JNICALL
