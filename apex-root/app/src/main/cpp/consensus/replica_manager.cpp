@@ -11,7 +11,12 @@
 namespace apex {
 namespace consensus {
 
-static std::mutex g_mutex;
+// FIX-P1-CPP (v1.1.2): g_mutex 改为 recursive_mutex, 因为 monitor_replicas 持锁后
+// 会调用 start_replica/stop_replica, 后者也持同一锁 (P1-C8)。原死锁风险:
+// monitor_replicas 无锁访问 g_running/g_replicas/g_replica_pids/g_last_heartbeat
+// (data race), 加锁后调用 start_replica 会与自身重入互锁。recursive_mutex 允许
+// 同一线程重入, 解决重入问题 (consensus 是死代码, 性能损耗可接受)。
+static std::recursive_mutex g_mutex;
 static ReplicaStatus g_replicas[3];
 static bool g_running[3] = {false, false, false};
 static int g_replica_pids[3] = {-1, -1, -1};
@@ -58,7 +63,7 @@ bool init_replica_keys() {
 }
 
 std::vector<uint8_t> get_replica_public_key(ReplicaRole role) {
-    std::lock_guard<std::mutex> lock(g_mutex);
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
     return g_replica_pub[static_cast<int>(role)];
 }
 
@@ -79,7 +84,7 @@ bool verify_vote_signature(const SignedVote& vote) {
 }
 
 bool start_replica(ReplicaRole role, bool with_isolation) {
-    std::lock_guard<std::mutex> lock(g_mutex);
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
     int idx = static_cast<int>(role);
     if (g_running[idx]) return true;
 
@@ -151,7 +156,7 @@ bool start_replica(ReplicaRole role) {
 }
 
 bool stop_replica(ReplicaRole role) {
-    std::lock_guard<std::mutex> lock(g_mutex);
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
     int idx = static_cast<int>(role);
     if (!g_running[idx]) return true;
 
@@ -163,7 +168,7 @@ bool stop_replica(ReplicaRole role) {
 }
 
 ReplicaStatus get_status(ReplicaRole role) {
-    std::lock_guard<std::mutex> lock(g_mutex);
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
     int idx = static_cast<int>(role);
     ReplicaStatus s = g_replicas[idx];
     s.heartbeat_ns = g_last_heartbeat[idx];
@@ -171,6 +176,10 @@ ReplicaStatus get_status(ReplicaRole role) {
 }
 
 bool monitor_replicas() {
+    // FIX-P1-CPP (v1.1.2): 持锁以避免 data race (P1-C8)。原代码无锁访问
+    // g_running/g_replicas/g_replica_pids/g_last_heartbeat。由于本函数内部调用
+    // start_replica (同样持锁), g_mutex 已改为 recursive_mutex 避免重入死锁。
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
     bool all_ok = true;
     uint64_t now = bs_clock_ns();
 
@@ -218,7 +227,7 @@ bool restart_failed_replica(ReplicaRole role) {
 
 // Submit a vote (with optional signature verification)
 bool submit_vote(const uint8_t* result_hash, ReplicaRole from) {
-    std::lock_guard<std::mutex> lock(g_mutex);
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
     int from_idx = static_cast<int>(from);
 
     int slot = -1;
@@ -266,7 +275,7 @@ bool submit_signed_vote(const SignedVote& vote) {
 
 // Check if consensus has been reached (≥2 of 3 replicas agree)
 bool has_consensus(const uint8_t* result_hash) {
-    std::lock_guard<std::mutex> lock(g_mutex);
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
     for (int i = 0; i < g_vote_count; i++) {
         if (std::memcmp(g_votes[i].hash, result_hash, 64) == 0) {
             if (g_votes[i].finalized) return true;
@@ -290,7 +299,7 @@ bool has_consensus(const uint8_t* result_hash) {
 
 // Get consensus count for a result hash
 int get_consensus_count(const uint8_t* result_hash) {
-    std::lock_guard<std::mutex> lock(g_mutex);
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
     for (int i = 0; i < g_vote_count; i++) {
         if (std::memcmp(g_votes[i].hash, result_hash, 64) == 0) {
             return g_votes[i].count;

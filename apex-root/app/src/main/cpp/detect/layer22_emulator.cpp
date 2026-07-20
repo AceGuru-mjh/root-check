@@ -42,11 +42,18 @@ static bool read_file(const char* path, char* buf, size_t size) {
 
 // ─── QEMU 检测 ────────────────────────────────────────────
 bool detectQEMU() {
+    // FIX-P1-DETECT D7: 原 qemu_paths 只列 32 位 libc_malloc_debug_qemu.so,
+    // 64 位设备上该路径不存在 → 漏报。补齐 lib64 + 常见模拟器路径。
+    // 另: typo /data/data.com.microvirt (应为 /data/data/com.microvirt) 在
+    // detectNoxOrLDPlayer 里修复。
     static const char* qemu_paths[] = {
         "/dev/qemu_pipe",
         "/dev/socket/qemud",
         "/system/lib/libc_malloc_debug_qemu.so",
+        "/system/lib64/libc_malloc_debug_qemu.so",   // FIX-P1-DETECT D7: 64-bit path
         "/sys/qemu_trace",
+        "/dev/binfmt_misc/qemu",                       // registered binfmt
+        "/system/bin/qemu-props",                      // qemu-props service
         nullptr
     };
     for (auto p = qemu_paths; *p; ++p) {
@@ -58,15 +65,19 @@ bool detectQEMU() {
         if (strstr(buf, "QEMU") || strstr(buf, "qemu")) return true;
         if (strstr(buf, "goldfish") || strstr(buf, "ranchu")) return true;
     }
+    // goldfish 字符设备也是强信号 (QEMU goldfish platform)
+    if (check_access("/dev/socket/goldfish") == 0) return true;
     return false;
 }
 
 // ─── Genymotion 检测 ──────────────────────────────────────
 bool detectGenymotion() {
+    // FIX-P1-DETECT D7: 补齐 64 位 libc_malloc_debug_qemu.so 路径。
     static const char* geny_paths[] = {
         "/dev/socket/genyd",
         "/dev/socket/baseband_genyd",
         "/system/lib/libc_malloc_debug_qemu.so",
+        "/system/lib64/libc_malloc_debug_qemu.so",   // FIX-P1-DETECT D7: 64-bit path
         nullptr
     };
     for (auto p = geny_paths; *p; ++p) {
@@ -106,7 +117,9 @@ bool detectNoxOrLDPlayer() {
         "/data/data/com.ldmnq", 
         "/system/bin/ldnemu",
         // MEmu
-        "/data/data.com.microvirt",
+        // FIX-P1-DETECT D7: typo 修复 "/data/data.com.microvirt" → "/data/data/com.microvirt"
+        // (原路径斜杠后多点号, 永远不会存在该路径 → MEmu 漏报)
+        "/data/data/com.microvirt",
         "/system/bin/memu",
         nullptr
     };

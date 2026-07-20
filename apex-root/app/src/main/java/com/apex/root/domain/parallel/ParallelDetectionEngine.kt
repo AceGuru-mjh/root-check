@@ -36,6 +36,9 @@ data class LayerResult(
 
 /**
  * 一次完整并行扫描的结果。
+ *
+ * @param quickScanText P1-D9 修复: 本次扫描缓存的 [NativeBridge.runQuickScan] 原始文本,
+ *        供 [CrossValidator] 等下游消费者复用,避免再次触发 native 全量扫描。
  */
 data class ParallelScanResult(
     val layers: List<LayerResult>,
@@ -43,7 +46,8 @@ data class ParallelScanResult(
     val totalLatencyMs: Long,
     val detectedCount: Int,
     val totalLayers: Int,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val quickScanText: String = ""
 ) {
     /** 风险等级 (与现有 RiskLevel 兼容) */
     val riskLevel: String get() = when {
@@ -71,12 +75,26 @@ data class ParallelScanResult(
  *
  * 同时通过 [progress] StateFlow 实时暴露扫描进度,UI 可显示
  * "L3/20 完成" 之类的进度条。
+ *
+ * P1-D9 修复 (v1.1.2): 此前 [parseLayerFromQuickScan] 每次调用都会触发
+ * 一次 [NativeBridge.runQuickScan],7 个走 parser 的层会让一次扫描触发
+ * 7+ 次全量 native 扫描,反而比串行更慢。现已重构为: 进入 [scanParallel]
+ * 时先调用一次 runQuickScan 缓存为 `quickScanResult`,所有 parser 与 FP
+ * 规则共用该字符串,不再重复调用 native。
+ *
+ * P1-D10 修复 (v1.1.2): 此前 L21/L22/L24 (PlayIntegrity / 模拟器 / 特权
+ * 框架) 没有进 [ParallelDetectionEngine],只通过 runQuickScanNative 在
+ * native 输出。现已加入 layerDefs,与 native 输出 "L21 PlayIntegrity:" /
+ * "L22 模拟器:" / "L24 特权框架:" 行格式对齐,参与 risk score 计算。
+ * 兼容 P1-C1: 若 native 后续将 L24 重编号为 L23 (输出 "L23 特权框架"),
+ * [parsePrivilegedFrameworkFromQuickScan] 同时接受两种标签。
  */
 class ParallelDetectionEngine {
 
     companion object {
         private const val TAG = "ParallelEngine"
-        const val TOTAL_LAYERS = 19  // L1-L12 + L14-L20 (跳过 L13)
+        // P1-D10: 加入 L21/L22/L24,总数从 19 → 22 (仍跳过 L13 / L23 占位)
+        const val TOTAL_LAYERS = 22
     }
 
     private val _progress = MutableStateFlow(0)
@@ -95,30 +113,39 @@ class ParallelDetectionEngine {
      * 使用了 NativeLibraryLoader 的 synchronized 块,确保 JNI 调用安全。
      * 但 native 层本身不应依赖任何全局可变状态 (绝大多数 detect 函数
      * 都是纯读取 /proc 或 /data/adb,线程安全)。
+     *
+     * P1-D9: lambda 接收已缓存的 [quickScanResult] 字符串,所有需要
+     * 从 quickScan 文本解析的层共用这一份,不再各自触发 native。
      */
     private data class LayerDef(
         val id: Int,
         val name: String,
         val weight: Int,
-        val detector: () -> Boolean
+        val detector: (String) -> Boolean
     )
 
     // v1.0.2 P0-3 修复: 每层调用独立的检测逻辑,不再重复调用 isDeviceRooted()
     // 对于有独立 JNI 函数的层,直接调用;对于没有独立函数的层,从 quickScan 文本解析。
     // 这样每层的结果是独立的,不会因为一个层检测到 root 就让 7 个层同时报红。
+    //
+    // P1-D9 (v1.1.2): parseLayerFromQuickScan 现接收 quickScanResult 参数,
+    // 由 scanParallel 一次性获取并传入,避免 N 次全量 native 扫描。
+    //
+    // P1-D10 (v1.1.2): 新增 L21/L22/L24 三层 (从 quickScan 文本解析),
+    // 与 native-lib.cpp::runQuickScanNative 的输出行格式对齐。
     private val layerDefs = listOf(
-        LayerDef(1, "L1 系统属性", 10) { parseLayerFromQuickScan("L1 系统属性") },
+        LayerDef(1, "L1 系统属性", 10) { parseLayerFromQuickScan("L1 系统属性", it) },
         LayerDef(2, "L2 ART 注入", 12) { NativeBridge.detectXposedFramework() || NativeBridge.detectFrida() },
         LayerDef(3, "L3 内存特征", 8) { NativeBridge.fullMemoryFingerprint() != 0 },
-        LayerDef(4, "L4 挂载检查", 12) { parseLayerFromQuickScan("L4 挂载检查") },
+        LayerDef(4, "L4 挂载检查", 12) { parseLayerFromQuickScan("L4 挂载检查", it) },
         LayerDef(5, "L5 侧信道", 8) { NativeBridge.detectSyscallResultInconsistency() },
-        LayerDef(6, "L6 Root 守护", 12) { parseLayerFromQuickScan("L6 Root守护") },
+        LayerDef(6, "L6 Root 守护", 12) { parseLayerFromQuickScan("L6 Root守护", it) },
         LayerDef(7, "L7 Boot 状态", 8) { NativeBridge.detectAVBStatus() || NativeBridge.detectCustomRecovery() },
-        LayerDef(8, "L8 Magisk", 10) { parseLayerFromQuickScan("L8 Magisk") },
-        LayerDef(9, "L9 KernelSU", 10) { parseLayerFromQuickScan("L9 KernelSU") },
-        LayerDef(10, "L10 APatch", 10) { parseLayerFromQuickScan("L10 APatch") },
+        LayerDef(8, "L8 Magisk", 10) { parseLayerFromQuickScan("L8 Magisk", it) },
+        LayerDef(9, "L9 KernelSU", 10) { parseLayerFromQuickScan("L9 KernelSU", it) },
+        LayerDef(10, "L10 APatch", 10) { parseLayerFromQuickScan("L10 APatch", it) },
         LayerDef(11, "L11 Hook 框架", 8) { NativeBridge.detectFrida() || NativeBridge.detectXposedFramework() },
-        LayerDef(12, "L12 自定义 ROM", 5) { parseLayerFromQuickScan("L12 自定义ROM") },
+        LayerDef(12, "L12 自定义 ROM", 5) { parseLayerFromQuickScan("L12 自定义ROM", it) },
         LayerDef(14, "L14 虚拟框架", 6) { NativeBridge.detectVirtualXposed() },
         LayerDef(15, "L15 危险应用", 6) {
             NativeBridge.detectGameGuardian() || NativeBridge.detectCheatEngine() ||
@@ -139,14 +166,56 @@ class ParallelDetectionEngine {
             NativeBridge.detectZygiskAssistant() || NativeBridge.detectPersistentScripts() ||
             NativeBridge.detectHideMyApplist() || NativeBridge.detectStorageIsolation()
         },
-        LayerDef(20, "L20 现代 Hook", 9) { NativeBridge.detectModernHookFrameworks() }
+        LayerDef(20, "L20 现代 Hook", 9) { NativeBridge.detectModernHookFrameworks() },
+        // P1-D10 (v1.1.2): 新增 L21/L22/L23 — 从 quickScan 文本解析,
+        // 与 native-lib.cpp 输出行 "L21 PlayIntegrity:" / "L22 模拟器:" /
+        // "L23 特权框架:" 对齐 (P1-C1 已把原 L24 重编号为 L23)。
+        LayerDef(21, "L21 Play Integrity", 8) { parseLayerFromQuickScan("L21 PlayIntegrity", it) },
+        LayerDef(22, "L22 模拟器", 8) { parseLayerFromQuickScan("L22 模拟器", it) },
+        // L23: Dhizuku/Shizuku/Stellar 特权框架 (P1-C1 重编号后)
+        LayerDef(23, "L23 特权框架", 7) { parsePrivilegedFrameworkFromQuickScan(it) }
     )
 
-    // v1.0.2: 从 quickScan 文本解析单层结果 (用于缺乏独立 JNI 函数的层)
-    private fun parseLayerFromQuickScan(layerPrefix: String): Boolean {
-        val scan = NativeBridge.runQuickScan()
-        val line = scan.lines().find { it.contains(layerPrefix) } ?: return false
+    /**
+     * 从已缓存的 [quickScanResult] 文本中解析指定层是否检测到异常。
+     *
+     * P1-D9 修复: 不再调用 [NativeBridge.runQuickScan],由调用方
+     * 在 [scanParallel] / [scanSingleLayer] / [scanSubset] 入口处一次性
+     * 获取 quickScan 结果并传入。
+     *
+     * @param layerPrefix 行前缀 (如 "L1 系统属性"),会与每一行做 contains 匹配
+     * @param quickScanResult 已缓存的 quickScan 输出
+     */
+    private fun parseLayerFromQuickScan(layerPrefix: String, quickScanResult: String): Boolean {
+        if (quickScanResult.isEmpty()) return false
+        val line = quickScanResult.lines().find { it.contains(layerPrefix) } ?: return false
         return line.contains("❌")
+    }
+
+    /**
+     * P1-D10 + P1-C1 兼容: 解析特权框架层。
+     *
+     * 当前 native (native-lib.cpp:159) 输出 "L24 特权框架: ...";
+     * 若 P1-C1 完成重编号,native 会改为 "L23 特权框架: ..."。
+     * 本函数同时接受两种标签,避免与并行 agent 冲突。
+     */
+    private fun parsePrivilegedFrameworkFromQuickScan(quickScanResult: String): Boolean {
+        if (quickScanResult.isEmpty()) return false
+        val line = quickScanResult.lines().find {
+            it.contains("L23 特权框架") || it.contains("L24 特权框架")
+        } ?: return false
+        return line.contains("❌")
+    }
+
+    /**
+     * 整个扫描生命周期内只调用一次 [NativeBridge.runQuickScan] 的辅助方法。
+     * 由 [scanParallel] / [scanSingleLayer] / [scanSubset] 在入口处调用。
+     */
+    private fun fetchQuickScanOnce(): String = runCatching {
+        NativeBridge.runQuickScan()
+    }.getOrElse { e ->
+        Log.w(TAG, "runQuickScan failed, parsers will return false: ${e.message}")
+        ""
     }
 
     /**
@@ -157,6 +226,11 @@ class ParallelDetectionEngine {
     suspend fun scanParallel(): ParallelScanResult = coroutineScope {
         _isScanning.value = true
         _progress.value = 0
+
+        // P1-D9 修复: 整个并行扫描只调用一次 NativeBridge.runQuickScan(),
+        // 结果通过闭包传递给所有走 parser 的层 (L1/L4/L6/L8/L9/L10/L12/
+        // L21/L22/L24),避免此前 10+ 次重复全量 native 扫描。
+        val quickScanResult = fetchQuickScanOnce()
 
         val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val results = mutableListOf<LayerResult>()
@@ -170,7 +244,7 @@ class ParallelDetectionEngine {
                     var detected = false
                     val latency = measureTimeMillis {
                         detected = try {
-                            def.detector()
+                            def.detector(quickScanResult)
                         } catch (e: Throwable) {
                             Log.w(TAG, "[${def.name}] detector threw: ${e.message}")
                             false  // 检测失败视为未检测到,不崩溃
@@ -211,7 +285,8 @@ class ParallelDetectionEngine {
             totalRiskScore = totalRisk,
             totalLatencyMs = totalTimeMs,
             detectedCount = detectedCount,
-            totalLayers = TOTAL_LAYERS
+            totalLayers = TOTAL_LAYERS,
+            quickScanText = quickScanResult
         )
     }
 
@@ -220,9 +295,11 @@ class ParallelDetectionEngine {
      */
     suspend fun scanSingleLayer(layerId: Int): LayerResult? = withContext(Dispatchers.Default) {
         val def = layerDefs.find { it.id == layerId } ?: return@withContext null
+        // P1-D9 修复: 单层扫描也复用一次 quickScan 结果,而非在 detector 内重复调用
+        val quickScanResult = fetchQuickScanOnce()
         var detected = false
         val latency = measureTimeMillis {
-            detected = try { def.detector() } catch (e: Throwable) {
+            detected = try { def.detector(quickScanResult) } catch (e: Throwable) {
                 Log.w(TAG, "[${def.name}] single-layer scan threw: ${e.message}")
                 false
             }
@@ -235,6 +312,8 @@ class ParallelDetectionEngine {
      */
     suspend fun scanSubset(layerIds: Collection<Int>): List<LayerResult> = coroutineScope {
         val defs = layerDefs.filter { it.id in layerIds }
+        // P1-D9 修复: 整个 subset 扫描只调用一次 quickScan,结果共享给所有 parser 层
+        val quickScanResult = fetchQuickScanOnce()
         val completed = java.util.concurrent.atomic.AtomicInteger(0)
         val total = defs.size
         _progress.value = 0
@@ -248,7 +327,7 @@ class ParallelDetectionEngine {
                 _currentLayer.value = def.name
                 var detected = false
                 val latency = measureTimeMillis {
-                    detected = try { def.detector() } catch (_: Throwable) { false }
+                    detected = try { def.detector(quickScanResult) } catch (_: Throwable) { false }
                 }
                 val r = LayerResult(def.id, def.name, detected, def.weight, latency)
                 synchronized(resultsLock) { results.add(r) }

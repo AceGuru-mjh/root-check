@@ -27,11 +27,11 @@
 #include "detect/layer20_modern_hooks.h"
 #include "detect/layer21_play_integrity.h"
 #include "detect/layer22_emulator.h"
-// P0-D10 注释 (v1.1.1): L23 预留未实现, detect/ 目录下编号从 layer22_emulator 直接
-// 跳到 layer24_dhizuku。历史上 L23 曾计划用于"高级反调试 / 系统调用拦截检测",
-// 因与 layer5_sidechannel 重叠未落地。如要补齐, 需重命名 layer24_dhizuku.* →
-// layer23_dhizuku.* 并同步 CMakeLists.txt + JNI 函数命名 — 工作量较大, 暂不进行。
-#include "detect/layer24_dhizuku.h"
+// FIX-P1-CPP (v1.1.2): L23 已从 layer24_dhizuku 重命名为 layer23_dhiziku,
+// 补齐了 detect/ 目录编号 (layer1-layer22 + layer23)。历史上 L23 曾计划用于
+// "高级反调试 / 系统调用拦截检测", 因与 layer5_sidechannel 重叠未落地,
+// 实际将原 layer24_dhizuku (Dhizuku/Shizuku/Stellar 特权框架检测) 重新编号为 L23。
+#include "detect/layer23_dhizuku.h"
 #include "detect/selinux_context.h"
 #include "detect/anti_hiding.h"
 #include "namespace/namespace_isolation.h"
@@ -129,11 +129,11 @@ Java_com_apex_root_data_jni_NativeBridge_runQuickScanNative(JNIEnv* env, jobject
                detectAPatchComponents() || detectKernelPatchProject();
     bool l19 = detectModernHideFrameworks();
     bool l20 = detectModernHookFrameworks();
-    // v1.1.1 修复 P0-D9: L21-L24 接入主扫描流程 (此前只声明在 NativeBridge.kt 但未接入 runQuickScan)
-    // L23 预留未实现 (详见 native-lib.cpp 顶部 include 注释)
+    // v1.1.1 修复 P0-D9: L21-L23 接入主扫描流程 (此前只声明在 NativeBridge.kt 但未接入 runQuickScan)
+    // FIX-P1-CPP (v1.1.2): L23 已从 layer24_dhizuku 重命名为 layer23_dhiziku (Dhizuku/Shizuku/Stellar 特权框架)
     bool l21 = detectPlayIntegrityTampering() || detectPIFModule() || detectTrickyStoreModule();
     bool l22 = detectEmulator();
-    bool l24 = detectDhizuku() || detectShizuku() || detectStellar();
+    bool l23 = detectDhizuku() || detectShizuku() || detectStellar();
 
     result += "L1 系统属性:     " + std::string(l1 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L2 ART注入:      " + std::string(l2 ? "❌ 异常" : "✅ 正常") + "\n";
@@ -156,13 +156,13 @@ Java_com_apex_root_data_jni_NativeBridge_runQuickScanNative(JNIEnv* env, jobject
     result += "L20 现代Hook:    " + std::string(l20 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L21 PlayIntegrity:" + std::string(l21 ? "❌ 异常" : "✅ 正常") + "\n";
     result += "L22 模拟器:      " + std::string(l22 ? "❌ 异常" : "✅ 正常") + "\n";
-    result += "L24 特权框架:    " + std::string(l24 ? "❌ 异常" : "✅ 正常") + "\n";
+    result += "L23 特权框架:    " + std::string(l23 ? "❌ 异常" : "✅ 正常") + "\n";
 
     int risk_count = (l1?1:0)+(l2?1:0)+(l3?1:0)+(l4?1:0)+(l5?1:0)+(l6?1:0)+(l7?1:0)+
                      (l8?1:0)+(l9?1:0)+(l10?1:0)+(l11?1:0)+(l12?1:0)+
                      (l14?1:0)+(l15?1:0)+(l16?1:0)+
                      (l17?1:0)+(l18?1:0)+(l19?1:0)+(l20?1:0)+
-                     (l21?1:0)+(l22?1:0)+(l24?1:0);
+                     (l21?1:0)+(l22?1:0)+(l23?1:0);
     result += "\n风险指标: " + std::to_string(risk_count) + "/22\n";
     if (risk_count == 0) result += "结论: ✅ 设备安全\n";
     else if (risk_count <= 4) result += "结论: ⚠️ 轻度风险\n";
@@ -186,7 +186,8 @@ Java_com_apex_root_data_jni_NativeBridge_isDeviceRootedNative(JNIEnv*, jobject) 
            detectAPatchComponents() || detectKernelPatchProject() ||
            detectModernHideFrameworks() ||
            detectModernHookFrameworks() ||
-           // v1.1.1 修复 P0-D9: L21-L24 接入 root 判定 (此前 isDeviceRooted 漏检这三层)
+           // v1.1.1 修复 P0-D9: L21-L23 接入 root 判定 (此前 isDeviceRooted 漏检这三层)
+           // FIX-P1-CPP (v1.1.2): L23 = Dhizuku/Shizuku/Stellar 特权框架检测
            detectPlayIntegrityTampering() || detectPIFModule() ||
            detectTrickyStoreModule() ||
            detectEmulator() ||
@@ -583,7 +584,7 @@ Java_com_apex_root_data_jni_NativeBridge_detectModernHookFrameworksNative(JNIEnv
     return detectModernHookFrameworks();
 }
 
-// ─── v1.0.5 新增 L21-L24 ───
+// ─── v1.0.5 新增 L21-L23 (FIX-P1-CPP: 原 L24 已重编号为 L23) ───
 
 JNIEXPORT jboolean JNICALL
 Java_com_apex_root_data_jni_NativeBridge_detectPlayIntegrityTamperingNative(JNIEnv*, jobject) {

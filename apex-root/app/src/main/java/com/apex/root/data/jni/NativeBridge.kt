@@ -274,11 +274,11 @@ object NativeBridge {
         modernHooksFullScanNative()
     }
 
-    // ─── v1.0.5 新增: L21-L24 检测层 ──────────────────
-    // P0-D10 注释 (v1.1.1): detect/ 目录下编号从 L22_emulator 直接跳到 L24_dhizuku,
-    // L23 预留未实现 (历史上曾计划用于 "高级反调试 / 系统调用拦截检测", 但因
-    // 与 L5_sidechannel 重叠未落地)。如要补齐编号, 需重命名 L24→L23 并同步
-    // CMakeLists.txt + native-lib.cpp 的 JNI 函数命名 — 工作量较大, 暂不进行。
+    // ─── v1.0.5 新增: L21-L23 检测层 ──────────────────
+    // FIX-P1-CPP (v1.1.2): 原层号 L24_dhizuku 已重命名为 L23_dhiziku,
+    // 补齐 detect/ 目录编号 (layer1-layer22 + layer23)。历史上 L23 曾计划用于
+    // "高级反调试 / 系统调用拦截检测", 但因与 L5_sidechannel 重叠未落地, 实际
+    // 将原 L24 (Dhizuku/Shizuku/Stellar 特权框架检测) 重新编号为 L23。
     // 当前 ParallelDetectionEngine.TOTAL_LAYERS 已体现该情况 (跳过 L23)。
     /** L21: Play Integrity 伪造检测 (PIF + TrickyStore) */
     fun detectPlayIntegrityTampering(): Boolean = NativeLibraryLoader.safeCall(false) {
@@ -293,8 +293,7 @@ object NativeBridge {
     fun detectQEMU(): Boolean = NativeLibraryLoader.safeCall(false) { detectQEMUNative() }
     fun emulatorFullScan(): String = NativeLibraryLoader.safeCall("") { emulatorFullScanNative() }
 
-    // L23 预留未实现 — 见上方 P0-D10 注释
-    /** L24: Dhizuku/Shizuku/Stellar 特权框架检测 */
+    // L23: Dhizuku/Shizuku/Stellar 特权框架检测 (FIX-P1-CPP: 原 L24 已重编号为 L23)
     fun detectDhizuku(): Boolean = NativeLibraryLoader.safeCall(false) { detectDhizukuNative() }
     fun detectShizuku(): Boolean = NativeLibraryLoader.safeCall(false) { detectShizukuNative() }
     fun detectStellar(): Boolean = NativeLibraryLoader.safeCall(false) { detectStellarNative() }
@@ -428,7 +427,7 @@ object NativeBridge {
     private external fun detectModernHookFrameworksNative(): Boolean
     private external fun modernHooksFullScanNative(): String
 
-    // v1.0.5 L21-L24 native
+    // v1.0.5 L21-L23 native (FIX-P1-CPP: 原 L24 已重编号为 L23)
     private external fun detectPlayIntegrityTamperingNative(): Boolean
     private external fun detectPIFModuleNative(): Boolean
     private external fun detectTrickyStoreModuleNative(): Boolean

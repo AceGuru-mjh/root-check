@@ -9,7 +9,7 @@ import android.util.Log
 /**
  * v1.1.1 修复 P0-D1: PackageManager 检测辅助类
  *
- * 此前的 L8/L9/L10/L21/L24 检测在 native cpp 中直接访问 `/data/adb/*` 和
+ * 此前的 L8/L9/L10/L21/L23 检测在 native cpp 中直接访问 `/data/adb/*` 和
  * `/data/data/<other_package>/*` 路径,但在普通 app 上下文(无 root、SELinux 限制)下
  * 这些路径永远 EACCES,导致检测 100% 失效。
  *
@@ -24,7 +24,7 @@ import android.util.Log
  *  - L9  KernelSU   : me.weishu.kernelsu (+ rifsxd forks / SukiSU)
  *  - L10 APatch     : me.bmax.apatch (+ rifsxd fork)
  *  - L11 Xposed     : org.lsposed.manager / lspatch / xposed installer
- *  - L24 Shizuku    : moe.shizuku.privileged.api / com.osiris0.dhizuku
+ *  - L23 Shizuku    : moe.shizuku.privileged.api / com.osiris0.dhizuku
  *
  * 注意: L21 (Play Integrity Bypass / TrickyStore / PIF) 通常作为 Magisk/KernelSU 模块
  * 存在,无独立 APK 包名,故不在此处检测,仍由 native 层的模块文件扫描负责。
@@ -54,7 +54,7 @@ object PackageDetector {
         "io.github.rifsxd.apatch"          // rifsxd fork
     )
 
-    // ─── L24 Shizuku / Dhizuku ───────────────────────────────
+    // ─── L23 Shizuku / Dhizuku ───────────────────────────────
     private val SHIZUKU_PACKAGES = setOf(
         "moe.shizuku.privileged.api",      // Shizuku 官方
         "com.osiris0.dhizuku"              // Dhizuku

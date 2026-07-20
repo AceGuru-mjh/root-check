@@ -2,6 +2,7 @@
 #include "bare_syscall/syscall_bridge.h"
 #include "dirent_compat.h"
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <random>
 #include <dlfcn.h>
@@ -15,7 +16,11 @@ namespace apex {
 namespace engine {
 
 static const int MAX_SERVICES = 256;
-static ServicePlugin g_plugins[MAX_SERVICES];
+// FIX-P1-CPP (v1.1.2): g_plugins 改为 shared_ptr 数组, 解决 execute_scan 持锁外
+// 调用 plugin->execute() 的 UAF 风险 (P1-C4)。execute_scan 在持锁期间拷贝需要的
+// shared_ptr 到局部 vector, 释放锁后遍历局部 vector — 即使另一线程调用
+// unregister_service 重置槽位, 局部 shared_ptr 仍延长插件生命周期。
+static std::shared_ptr<ServicePlugin> g_plugins[MAX_SERVICES];
 static int g_plugin_count = 0;
 static std::mutex g_engine_mutex;
 static bool g_initialized = false;
@@ -113,7 +118,9 @@ bool initialize() {
 bool register_service(const ServicePlugin& plugin) {
     std::lock_guard<std::mutex> lock(g_engine_mutex);
     if (g_plugin_count >= MAX_SERVICES) return false;
-    g_plugins[g_plugin_count] = plugin;
+    // FIX-P1-CPP (v1.1.2): 用 shared_ptr 托管插件生命周期, execute_scan 可安全
+    // 在锁外拷贝 shared_ptr 延长插件存活。
+    g_plugins[g_plugin_count] = std::make_shared<ServicePlugin>(plugin);
     g_plugin_loaded[g_plugin_count] = true;
     g_plugin_count++;
     return true;
@@ -122,8 +129,13 @@ bool register_service(const ServicePlugin& plugin) {
 bool unregister_service(uint32_t service_id) {
     std::lock_guard<std::mutex> lock(g_engine_mutex);
     for (int i = 0; i < g_plugin_count; i++) {
-        if (g_plugins[i].id == service_id) {
-            if (g_plugins[i].cleanup) g_plugins[i].cleanup();
+        if (g_plugins[i] && g_plugins[i]->id == service_id) {
+            // FIX-P1-CPP: cleanup 在持锁状态下调用 (与原行为一致), 但在 reset()
+            // 之前调用。若有其他线程正在 execute_scan 中持有同一 shared_ptr 的
+            // 局部拷贝, 该拷贝仍存活, UAF 不会发生 (cleanup 不释放插件内存, 只是
+            // 调用插件自定义析构逻辑 — 由插件作者保证 cleanup 不破坏 *this)。
+            if (g_plugins[i]->cleanup) g_plugins[i]->cleanup();
+            g_plugins[i].reset();
             g_plugin_loaded[i] = false;
             return true;
         }
@@ -134,8 +146,8 @@ bool unregister_service(uint32_t service_id) {
 std::optional<ServicePlugin> get_service(uint32_t service_id) {
     std::lock_guard<std::mutex> lock(g_engine_mutex);
     for (int i = 0; i < g_plugin_count; i++) {
-        if (g_plugins[i].id == service_id && g_plugin_loaded[i]) {
-            return g_plugins[i];
+        if (g_plugins[i] && g_plugins[i]->id == service_id && g_plugin_loaded[i]) {
+            return *g_plugins[i];
         }
     }
     return std::nullopt;
@@ -150,17 +162,24 @@ ScanReport execute_scan(const ScanConfig& config) {
 
     uint64_t start_time = bs_clock_ns();
 
-    // Build execution order
-    int indices[MAX_SERVICES];
-    int count = 0;
+    // FIX-P1-CPP (v1.1.2): 持锁期间拷贝需要的 shared_ptr 到局部 vector, 释放锁后
+    // 遍历局部 vector — 即使另一线程调用 unregister_service, 局部 shared_ptr 仍
+    // 延长插件生命周期, 避免 UAF (原代码取裸指针 &g_plugins[idx] 在锁外调用
+    // plugin->execute() 是 UAF 风险)。
+    std::vector<std::shared_ptr<ServicePlugin>> selected;
+    selected.reserve(MAX_SERVICES);
     {
         std::lock_guard<std::mutex> lock(g_engine_mutex);
         for (int i = 0; i < g_plugin_count; i++) {
-            if (g_plugin_loaded[i]) {
-                indices[count++] = i;
+            if (g_plugin_loaded[i] && g_plugins[i]) {
+                selected.push_back(g_plugins[i]);
             }
         }
     }
+    int count = (int)selected.size();
+    // indices[k] = k, 后续 shuffle_services 会打乱顺序
+    int indices[MAX_SERVICES];
+    for (int k = 0; k < count; k++) indices[k] = k;
 
     // Determine subset based on scan level
     int subset = count;
@@ -195,7 +214,8 @@ ScanReport execute_scan(const ScanConfig& config) {
 
         // Execute service
         ServiceResult result;
-        ServicePlugin* plugin = &g_plugins[idx];
+        // FIX-P1-CPP: 通过 shared_ptr 访问插件, 局部拷贝保证插件存活到本次 execute 结束。
+        auto& plugin = selected[idx];
         if (plugin->init && !plugin->init()) {
             result.success = false;
             result.confidence = 0;
@@ -229,9 +249,10 @@ ScanReport execute_scan(const ScanConfig& config) {
 void shutdown() {
     std::lock_guard<std::mutex> lock(g_engine_mutex);
     for (int i = 0; i < g_plugin_count; i++) {
-        if (g_plugin_loaded[i] && g_plugins[i].cleanup) {
-            g_plugins[i].cleanup();
+        if (g_plugin_loaded[i] && g_plugins[i] && g_plugins[i]->cleanup) {
+            g_plugins[i]->cleanup();
         }
+        g_plugins[i].reset();
     }
     g_plugin_count = 0;
     g_initialized = false;

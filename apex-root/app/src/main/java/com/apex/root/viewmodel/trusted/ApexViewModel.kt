@@ -415,7 +415,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
     // ═══════════════════════════════════════════════════════════
 
     /**
-     * 并行扫描 — 使用 ParallelDetectionEngine 并发执行 19 层检测,
+     * 并行扫描 — 使用 ParallelDetectionEngine 并发执行 22 层检测,
      * 然后通过 CrossValidator 进行交叉验证与误报抑制。
      *
      * 比传统 [runScan] 快 3-4 倍,且提供置信度评分与 root 类型推断。
@@ -432,7 +432,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                     validationResult = null
                 )
             }
-            addLog(LogType.INFO, "开始并行扫描 (19 层并发检测)...")
+            addLog(LogType.INFO, "开始并行扫描 (22 层并发检测)...")
             try {
                 // 阶段 1: 并行执行所有检测层
                 val scanResult = parallelEngine.scanParallel()
@@ -440,8 +440,10 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
                     "风险分 ${scanResult.totalRiskScore}, 耗时 ${scanResult.totalLatencyMs}ms")
 
                 // 阶段 2: 交叉验证
+                // P1-D12 修复: 复用 ParallelDetectionEngine 已缓存的 quickScan 文本,
+                // 避免在 CrossValidator FP 规则中再次触发 NativeBridge.runQuickScan()
                 _uiState.update { it.copy(currentLayer = "交叉验证") }
-                val validation = CrossValidator.validate(scanResult)
+                val validation = CrossValidator.validate(scanResult, scanResult.quickScanText)
                 addLog(LogType.INFO, "交叉验证: 置信度 ${validation.confidence}%, 推断 root 类型: ${validation.inferredRootType}")
                 if (validation.isHighConfidence) {
                     addLog(LogType.WARN, "高置信度检测到 ${validation.inferredRootType} — ${validation.conclusion}")
@@ -670,7 +672,7 @@ class ApexViewModel(application: Application) : AndroidViewModel(application) {
         val sb = StringBuilder()
         sb.appendLine("=== APEX 并行扫描结果 (v1.2.0) ===")
         sb.appendLine()
-        sb.appendLine("扫描耗时: ${scanResult.totalLatencyMs}ms (19 层并发)")
+        sb.appendLine("扫描耗时: ${scanResult.totalLatencyMs}ms (22 层并发)")
         sb.appendLine("风险评分: ${scanResult.totalRiskScore}/100 (${scanResult.riskLevel})")
         sb.appendLine("检测到异常的层: ${scanResult.detectedCount}/${scanResult.totalLayers}")
         sb.appendLine()

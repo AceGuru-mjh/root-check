@@ -1,10 +1,10 @@
-#ifndef APEX_ROOT_LAYER24_DHIZUKU_H
-#define APEX_ROOT_LAYER24_DHIZUKU_H
+#ifndef APEX_ROOT_LAYER23_DHIZUKU_H
+#define APEX_ROOT_LAYER23_DHIZUKU_H
 
 #include <cstddef>
 
 // ═══════════════════════════════════════════════════════════
-//  第二十四层 · Dhizuku / 设备所有者特权框架检测 (root 级)
+//  第二十三层 · Dhizuku / 设备所有者特权框架检测 (root 级)
 // ----------------------------------------------------------------
 //  Dhizuku 是 Shizuku 的替代,利用 Android 设备所有者
 //  (Device Owner) 权限提供系统级 API 访问。无需 root 或 ADB。

@@ -1,9 +1,9 @@
-#include "layer24_dhizuku.h"
+#include "layer23_dhizuku.h"
 #include "../common/syscall.h"
 #include <cstring>
 
 // ═══════════════════════════════════════════════════════════
-//  第二十四层 · Dhizuku / 特权框架检测
+//  第二十三层 · Dhizuku / 特权框架检测
 // ═══════════════════════════════════════════════════════════
 
 static int64_t check_access(const char* path) {
@@ -68,9 +68,9 @@ int dhizukuFullScan(char* out_report, size_t out_size) {
         while (*s && pos < (int)out_size - 1) out_report[pos++] = *s++;
     };
 
-    if (detectDhizuku()) { append("[L24] Dhizuku (Device Owner privilege framework) detected\n"); findings++; }
-    if (detectShizuku()) { append("[L24] Shizuku detected\n"); findings++; }
-    if (detectStellar()) { append("[L24] Stellar (Shizuku fork) detected\n"); findings++; }
+    if (detectDhizuku()) { append("[L23] Dhizuku (Device Owner privilege framework) detected\n"); findings++; }
+    if (detectShizuku()) { append("[L23] Shizuku detected\n"); findings++; }
+    if (detectStellar()) { append("[L23] Stellar (Shizuku fork) detected\n"); findings++; }
 
     if (pos < (int)out_size) out_report[pos] = '\0';
     return findings;

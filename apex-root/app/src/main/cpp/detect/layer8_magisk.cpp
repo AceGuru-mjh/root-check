@@ -44,75 +44,92 @@ bool detectMagiskDaemon() {
     #endif
     if (fd < 0) return false;
 
-    // Scan /proc for magiskd
-    char dentry_buf[4096];
-    int64_t n;
-    #if defined(__aarch64__)
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_getdents64), "r"(fd), "r"(dentry_buf), "r"((int64_t)sizeof(dentry_buf)) : "x0", "x1", "x2", "x8", "memory");
-    #else
-        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
+    // FIX-P1-DETECT D5: 单次 getdents64 只读 4KB, /proc 下进程数 200-500 个,
+    // 4KB 大概覆盖前 30-50 个 pid (低 pid, kthreadd/system_server/zygote)。
+    // magiskd/ksud/apd/sukid pid 通常 >500, 永远不在第一页。改为:
+    //   (1) 缓冲区 4KB → 32KB
+    //   (2) 循环调用 getdents64 直到返回 0 (读完整个目录)
+    // 同时扩充 cmdline 匹配: ksud (KernelSU) / apd (APatch) / sukid (SukiSU)
+    char dentry_buf[32768];
+    bool found = false;
+
+    while (true) {
+        int64_t n;
+        #if defined(__aarch64__)
+        asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                     : "=r"(n) : "i"(__NR_getdents64), "r"(fd), "r"(dentry_buf), "r"((int64_t)sizeof(dentry_buf)) : "x0", "x1", "x2", "x8", "memory");
+        #else
+            n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
+        #endif
+        if (n <= 0) break;  // EOF or error → stop loop
+
+        // Parse dirent64 entries for pid directories
+        // For each pid, check cmdline
+        struct linux_dirent64 {
+            uint64_t d_ino;
+            int64_t d_off;
+            unsigned short d_reclen;
+            unsigned char d_type;
+            char d_name[];
+        };
+
+        size_t pos = 0;
+        while (pos + sizeof(linux_dirent64) <= (size_t)n) {
+            auto* dirent = (linux_dirent64*)(dentry_buf + pos);
+            // P0-1 修复: 校验 d_reclen 防止无限循环和越界读取
+            if (dirent->d_reclen == 0 || dirent->d_reclen > (size_t)n - pos) {
+                break;
+            }
+            if (dirent->d_type == 4) { // DT_DIR
+                // Check if name is all digits (pid)
+                const char* name_end = (const char*)dirent + dirent->d_reclen;
+                bool all_digits = true;
+                bool any_char = false;
+                for (const char* c = dirent->d_name; c < name_end && *c; c++) {
+                    any_char = true;
+                    if (*c < '0' || *c > '9') {
+                        all_digits = false; break;
+                    }
+                }
+                if (any_char && all_digits) {
+                    char cmdline_path[64];
+                    // Build /proc/<pid>/cmdline — 带边界检查
+                    int idx = 0;
+                    const char* pfx = "/proc/";
+                    for (int i = 0; pfx[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = pfx[i];
+                    for (int i = 0; dirent->d_name[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = dirent->d_name[i];
+                    const char* sfx = "/cmdline";
+                    for (int i = 0; sfx[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = sfx[i];
+                    cmdline_path[idx] = '\0';
+
+                    read_file_to_buf(cmdline_path, buf, sizeof(buf));
+                    // 扩充：检测所有 root daemon 家族
+                    // magiskd / magisk / magisk32 / magisk64 / kitana / delta / kitsune
+                    // ksud (KernelSU) / apd (APatch) / sukid (SukiSU)
+                    if (strstr(buf, "magiskd") || strstr(buf, "magisk") ||
+                        strstr(buf, "kitana") || strstr(buf, "kitsune") ||
+                        strstr(buf, "magisk-delta") || strstr(buf, "magisk-fork") ||
+                        strstr(buf, "ksud") || strstr(buf, "apd") ||
+                        strstr(buf, "sukid")) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            pos += dirent->d_reclen;
+        }
+        if (found) break;
+    }
+
+    // Close fd (deferred until after the getdents64 loop completes)
     int64_t d;
     #if defined(__aarch64__)
     asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8","memory");
     #else
         d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
     #endif
-    if (n <= 0) return false;
-
-    // Parse dirent64 entries for pid directories
-    // For each pid, check cmdline
-    struct linux_dirent64 {
-        uint64_t d_ino;
-        int64_t d_off;
-        unsigned short d_reclen;
-        unsigned char d_type;
-        char d_name[];
-    };
-
-    size_t pos = 0;
-    while (pos + sizeof(linux_dirent64) <= (size_t)n) {
-        auto* dirent = (linux_dirent64*)(dentry_buf + pos);
-        // P0-1 修复: 校验 d_reclen 防止无限循环和越界读取
-        if (dirent->d_reclen == 0 || dirent->d_reclen > (size_t)n - pos) {
-            break;
-        }
-        if (dirent->d_type == 4) { // DT_DIR
-            // Check if name is all digits (pid)
-            const char* name_end = (const char*)dirent + dirent->d_reclen;
-            bool all_digits = true;
-            bool any_char = false;
-            for (const char* c = dirent->d_name; c < name_end && *c; c++) {
-                any_char = true;
-                if (*c < '0' || *c > '9') {
-                    all_digits = false; break;
-                }
-            }
-            if (any_char && all_digits) {
-                char cmdline_path[64];
-                // Build /proc/<pid>/cmdline — 带边界检查
-                int idx = 0;
-                const char* pfx = "/proc/";
-                for (int i = 0; pfx[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = pfx[i];
-                for (int i = 0; dirent->d_name[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = dirent->d_name[i];
-                const char* sfx = "/cmdline";
-                for (int i = 0; sfx[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = sfx[i];
-                cmdline_path[idx] = '\0';
-
-                read_file_to_buf(cmdline_path, buf, sizeof(buf));
-                // 扩充：检测所有 Magisk 家族 daemon
-                // magiskd / magisk / magisk32 / magisk64 / kitana / delta / kitsune
-                if (strstr(buf, "magiskd") || strstr(buf, "magisk") ||
-                    strstr(buf, "kitana") || strstr(buf, "kitsune") ||
-                    strstr(buf, "magisk-delta") || strstr(buf, "magisk-fork")) {
-                    return true;
-                }
-            }
-        }
-        pos += dirent->d_reclen;
-    }
-    return false;
+    (void)d;
+    return found;
 }
 
 bool detectMagiskModules() {
@@ -219,8 +236,13 @@ bool detectZygiskInjection() {
     if (strstr(buf, "lsposed")) return true;
     if (strstr(buf, "riru")) return true;
 
-    // Check for memfd created by ZygiskNext
-    if (strstr(buf, "/memfd:")) return true;
+    // FIX-P1-DETECT D6: 原代码 `if (strstr(buf, "/memfd:")) return true;` 会
+    // 误报所有 /memfd: — ART AOT 编译、MediaCodec、WebView 等系统组件都用
+    // memfd, 干净设备 100% 触发。改为只匹配 Zygisk 家族特有的 memfd 名。
+    if (strstr(buf, "memfd:zygisk")) return true;
+    if (strstr(buf, "memfd:riru")) return true;
+    if (strstr(buf, "memfd:zygisknext")) return true;
+    if (strstr(buf, "memfd:rezygisk")) return true;
     if (strstr(buf, "anon_inode:dmabuf")) {
         // Check for Zygisk-specific dmabuf
     }

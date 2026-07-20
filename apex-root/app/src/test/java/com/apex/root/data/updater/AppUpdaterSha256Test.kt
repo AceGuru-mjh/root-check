@@ -1,5 +1,6 @@
 package com.apex.root.data.updater
 
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -10,6 +11,10 @@ import java.lang.reflect.Method
  *
  * 测试从 release notes 中提取 SHA-256 哈希的正则表达式,
  * 这是 APK 完整性校验的唯一防线,正则 bug 会让攻击者绕过验证。
+ *
+ * P1-K2 修复 (v1.1.2): 原实现使用 org.mockito.Mockito,但项目
+ * build.gradle.kts 只声明了 io.mockk:mockk 依赖 (Mockito 未声明),
+ * 导致测试编译失败。改为 mockk (与项目其他测试框架一致)。
  */
 class AppUpdaterSha256Test {
 
@@ -21,7 +26,8 @@ class AppUpdaterSha256Test {
             android.content.Context::class.java
         )
         constructor.isAccessible = true
-        val appUpdater = constructor.newInstance(org.mockito.Mockito.mock(android.content.Context::class.java))
+        // P1-K2: 用 mockk 替代 Mockito.mock — 项目只声明了 mockk 依赖
+        val appUpdater = constructor.newInstance(mockk<android.content.Context>())
         return method.invoke(appUpdater, releaseBody) as String?
     }
 

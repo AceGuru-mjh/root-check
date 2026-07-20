@@ -2,6 +2,7 @@
 #include "../common/syscall.h"
 #include <cstring>
 #include <fcntl.h>
+#include <utility>  // std::swap (FIX-P1-DETECT D3)
 
 // ═══════════════════════════════════════════════════════════
 //  第五层 · 侧信道时延检测（root 级 / 用户态）
@@ -44,16 +45,40 @@ static int64_t measure_syscall(int nr) {
     return end - start;
 }
 
+// FIX-P1-DETECT D3: 单次 syscall 采样方差巨大 (CPU 调度/缓存/中断都会引起 μs
+// 级抖动), 导致 detectSyscallTimingAnomaly 在负载高时永远报异常、空闲时永远
+// 报正常, 结果不可信。改为采样 5 次取中位数, 显著降低单点噪声。
+// 仅在 __aarch64__ 分支内生效 (非 aarch64 已在 P0-C5 修复中 return false)。
+#if defined(__aarch64__)
+static int64_t measure_syscall_median(int nr, int samples = 5) {
+    if (samples <= 0) samples = 1;
+    if (samples > 16) samples = 16;  // sanity cap
+    int64_t times[16];
+    for (int i = 0; i < samples; i++) {
+        times[i] = measure_syscall(nr);
+    }
+    // Simple O(n^2) sort — fine for n=5. Avoids qsort + comparator overhead.
+    for (int i = 0; i < samples - 1; i++) {
+        for (int j = i + 1; j < samples; j++) {
+            if (times[i] > times[j]) std::swap(times[i], times[j]);
+        }
+    }
+    return times[samples / 2];
+}
+#endif
+
 bool detectSyscallTimingAnomaly() {
     // v1.1.1 修复 P0-C5: 非 aarch64 平台 syscall 检测不可靠,直接返回 false
     // 避免基于未初始化值做判断导致 UB 或误报
     #if !defined(__aarch64__)
     return false;
     #else
-    // Measure several syscalls. Hooked syscalls take significantly longer.
-    int64_t baseline = measure_syscall(__NR_getpid);
-    int64_t open_at = measure_syscall(__NR_openat);
-    int64_t read_ts = measure_syscall(__NR_read);
+    // FIX-P1-DETECT D3: 改用多次采样取中位数, 降低单点方差。
+    // Hooked syscalls take significantly longer; median of 5 samples filters
+    // out transient scheduler/cache noise that single-sample measurement suffers.
+    int64_t baseline = measure_syscall_median(__NR_getpid);
+    int64_t open_at  = measure_syscall_median(__NR_openat);
+    int64_t read_ts  = measure_syscall_median(__NR_read);
 
     // If read/openat are way slower than getpid, likely hooked
     // Normal: all within 2x of baseline

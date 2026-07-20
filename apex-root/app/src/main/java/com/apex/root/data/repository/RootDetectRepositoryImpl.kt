@@ -40,7 +40,7 @@ class RootDetectRepositoryImpl : com.apex.root.domain.repository.IRootDetectRepo
         var riskScore = NativeBridge.getRiskScore()
 
         // FIX-D1 (P0): 补充 PackageManager 检测。
-        // native 层的 L8/L9/L10/L24 路径检测在普通 app 上下文 (无 root + SELinux) 下
+        // native 层的 L8/L9/L10/L23 路径检测在普通 app 上下文 (无 root + SELinux) 下
         // 100% 返回 EACCES,导致检测失效。这里通过 PackageManager.getInstalledPackages
         // 检测已安装的 root 框架 manager app (Magisk/KernelSU/APatch/Shizuku/Xposed),
         // 是对 native 路径检测的可靠补充。
@@ -99,7 +99,7 @@ class RootDetectRepositoryImpl : com.apex.root.domain.repository.IRootDetectRepo
         if (result.kernelsu) sb.appendLine("  - L9  KernelSU/SukiSU: 命中")
         if (result.apatch) sb.appendLine("  - L10 APatch: 命中")
         if (result.xposed) sb.appendLine("  - L11 Xposed/LSPosed: 命中")
-        if (result.shizuku) sb.appendLine("  - L24 Shizuku/Dhizuku: 命中")
+        if (result.shizuku) sb.appendLine("  - L23 Shizuku/Dhizuku: 命中")
         return sb.toString().trimEnd()
     }
 

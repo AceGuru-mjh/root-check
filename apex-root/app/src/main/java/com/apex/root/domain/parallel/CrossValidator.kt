@@ -97,11 +97,15 @@ object CrossValidator {
 
     /**
      * 已知的误报场景 — 这些情况下的单层检测应被降权。
+     *
+     * P1-D12 修复 (v1.1.2): [condition] 现接收 [quickScanResult] 字符串,
+     * 由 [validate] 调用方在入口处一次性获取并传入,避免每条 FP 规则
+     * 各自再次调用 [NativeBridge.runQuickScan] 触发 N 次全量 native 扫描。
      */
     data class FalsePositiveRule(
         val name: String,
         val appliesToLayer: Int,
-        val condition: () -> Boolean,
+        val condition: (String) -> Boolean,
         val confidencePenalty: Int
     )
 
@@ -109,8 +113,9 @@ object CrossValidator {
         FalsePositiveRule(
             name = "Android Studio Layout Inspector 注入",
             appliesToLayer = 11,
-            condition = {
+            condition = { _ ->
                 // 检测是否在 emulator 或 developer mode 下运行
+                // (不需要 quickScan 文本,签名仍统一为 (String) -> Boolean)
                 runCatching {
                     android.os.Build.FINGERPRINT.contains("generic", ignoreCase = true) ||
                     android.os.Build.MODEL.contains("emulator", ignoreCase = true) ||
@@ -122,13 +127,13 @@ object CrossValidator {
         FalsePositiveRule(
             name = "Compose 多 OAT 文件",
             appliesToLayer = 2,
-            condition = {
+            condition = { quickScanResult ->
                 // Compose 应用通常有 30+ OAT 文件,但这不一定代表 hook
+                // P1-D12: 复用调用方传入的 quickScanResult,不再重新调用 native
                 runCatching {
-                    val s = NativeBridge.runQuickScan()
-                    s.contains("L2 ART注入:      ❌ 异常") &&
-                    !s.contains("L3 内存特征:     ❌ 异常") &&
-                    !s.contains("L11 Hook框架:    ❌ 异常")
+                    quickScanResult.contains("L2 ART注入:      ❌ 异常") &&
+                    !quickScanResult.contains("L3 内存特征:     ❌ 异常") &&
+                    !quickScanResult.contains("L11 Hook框架:    ❌ 异常")
                 }.getOrDefault(false)
             },
             confidencePenalty = 25
@@ -138,11 +143,23 @@ object CrossValidator {
     /**
      * 对一次扫描结果应用交叉验证规则,返回增强后的结果。
      *
+     * P1-D12 修复 (v1.1.2): 新增可选参数 [quickScanResult],由调用方在
+     * 入口处一次性获取并传入,供 FP 规则复用,避免重复触发 native 扫描。
+     * 若未显式传入,则回退到 [ParallelScanResult.quickScanText]
+     * (由 ParallelDetectionEngine 在扫描时缓存)。
+     *
      * @param baseResult 原始并行扫描结果
+     * @param quickScanResult 已缓存的 [NativeBridge.runQuickScan] 输出 (可选)
      * @return 包含置信度评分与 root type 推断的增强结果
      */
-    fun validate(baseResult: ParallelScanResult): ValidationResult {
+    fun validate(
+        baseResult: ParallelScanResult,
+        quickScanResult: String? = null
+    ): ValidationResult {
         val detectedLayerIds = baseResult.layers.filter { it.detected }.map { it.layerId }.toSet()
+
+        // P1-D12: 优先使用显式传入的 quickScanResult,否则回退到 baseResult 中缓存的文本
+        val scanText = quickScanResult ?: baseResult.quickScanText
 
         // 应用验证规则
         val matchedRules = rules.filter { rule ->
@@ -150,9 +167,9 @@ object CrossValidator {
             rule.confirmLayers.any { it in detectedLayerIds }
         }
 
-        // 应用误报规则
+        // 应用误报规则 (P1-D12: 复用 scanText,不再在 condition 内调用 native)
         val matchedFPRules = falsePositiveRules.filter { rule ->
-            rule.appliesToLayer in detectedLayerIds && rule.condition()
+            rule.appliesToLayer in detectedLayerIds && rule.condition(scanText)
         }
 
         // 计算置信度

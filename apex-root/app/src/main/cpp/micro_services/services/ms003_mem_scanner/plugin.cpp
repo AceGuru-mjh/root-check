@@ -36,7 +36,9 @@ extern "C" apex::engine::ServiceResult execute(const apex::engine::ScanConfig& c
     while (line < end) {
         char* nl = line;
         while (nl < end && *nl != '\n') nl++;
-        *nl = '\0';
+        // FIX-P1-CPP (v1.1.2): nl == end (buffer 末尾无换行) 时不要写 '\0' 越界
+        // (与 detect/layer3_mem.cpp:125 已修复模式一致)。
+        if (nl < end) *nl = '\0';
 
         // Look for "rwx" or anonymous executable mappings
         char* perms = line;

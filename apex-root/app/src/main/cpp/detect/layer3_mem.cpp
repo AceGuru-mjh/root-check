@@ -2,6 +2,50 @@
 #include "../common/syscall.h"
 #include <cstring>
 #include <cstdint>
+#include <string>
+
+// ─── Dynamic /proc/self/maps reader ────────────────────────
+// FIX-P1-DETECT D1: 原 read_maps 用 64KB 静态缓冲 + 单次 read, 在 Compose
+// app 上 /proc/self/maps 普遍 >100KB, 后段被截断导致 Magisk/Zygisk/Frida
+// 路径若排在末尾会全部漏报。改为循环 read 直到 EOF, 4MB 上限防恶意构造。
+static bool read_maps_full(std::string& out) {
+    out.clear();
+    out.reserve(262144);
+
+    int64_t fd;
+    #if defined(__aarch64__)
+    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/self/maps"), "i"(O_RDONLY), "i"(0)
+                 : "x0", "x1", "x2", "x8", "memory");
+    #else
+        fd = -1; /* non-aarch64: bare-syscall path disabled */
+    #endif
+    if (fd < 0) return false;
+
+    char chunk[16384];
+    while (true) {
+        int64_t n;
+        #if defined(__aarch64__)
+        asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
+                     : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(chunk), "r"((int64_t)sizeof(chunk))
+                     : "x0", "x1", "x2", "x8", "memory");
+        #else
+            n = -1;
+        #endif
+        if (n <= 0) break;
+        out.append(chunk, (size_t)n);
+        if (out.size() > 4 * 1024 * 1024) break;  // 4MB sanity cap
+    }
+
+    int64_t d;
+    #if defined(__aarch64__)
+    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8","memory");
+    #else
+        d = -1;
+    #endif
+
+    return !out.empty();
+}
 
 // ─── Memory fingerprint database ───────────────────────────
 
@@ -72,68 +116,107 @@ static const MemSignature MEMORY_SIGNATURES[] = {
 
 #define NUM_SIGNATURES (sizeof(MEMORY_SIGNATURES) / sizeof(MEMORY_SIGNATURES[0]))
 
-// ─── Read /proc/self/maps via raw syscall ──────────────────
-
-static bool read_maps(char* buf, size_t size, size_t* out_len) {
-    int64_t fd;
-    #if defined(__aarch64__)
-    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/self/maps"), "i"(O_RDONLY), "i"(0)
-                 : "x0", "x1", "x2", "x8", "memory");
-    #else
-        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    if (fd < 0) return false;
-    int64_t n;
-    #if defined(__aarch64__)
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8", "memory");
-    #else
-        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    int64_t dummy;
-    #if defined(__aarch64__)
-    asm volatile("mov x8, %1; mov x0, %2; svc #0; mov %0, x0"
-                 : "=r"(dummy) : "i"(__NR_close), "r"(fd) : "x0", "x8", "memory");
-    #else
-        dummy = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    if (n <= 0) return false;
-    buf[n < (int64_t)size ? n : (int64_t)size-1] = '\0';
-    *out_len = (size_t)n;
-    return true;
-}
-
 // ─── Public API ────────────────────────────────────────────
 
+// FIX-P1-DETECT D2: 原 detectSuspiciousMemory 用 "rwx_count > 3" 判可疑, 但
+// ART JIT cache (rwxp)、linker 段、Compose 预编译 .oat 都是 rwxp, 干净设备
+// 都有 4-10 个 rwxp, 必触发误报。改为只统计匿名 rwx 映射(排除 [anon:dalvik*
+// / [anon:linker* / [anon:.bss] / [stack / [heap), 阈值提到 8; 同时若任一
+// rwx 映射的路径含已知 root 框架名(magisk/zygisk/riru/lsposed/lspd/shamiko
+// /rezygisk/zygisknext) 直接判可疑。
+static bool path_is_anon_rwx_suspicious(const char* path, size_t path_len) {
+    // Truly anonymous (empty path) — most suspicious
+    if (path_len == 0) return true;
+    // [anon:...] but exclude legitimate ART/linker/bss markers
+    if (path_len >= 6 && strncmp(path, "[anon:", 6) == 0) {
+        if (path_len >= 12 && strncmp(path, "[anon:dalvik", 12) == 0) return false;  // ART JIT / heap
+        if (path_len >= 12 && strncmp(path, "[anon:linker", 12) == 0) return false;  // linker alloc
+        if (path_len >= 11 && strncmp(path, "[anon:.bss]", 11) == 0) return false;   // bss
+        return true;
+    }
+    // anon_inode:... (anonymous inode, e.g. memfd / dmabuf) — counted as anon
+    if (path_len >= 11 && strncmp(path, "[anon_inode", 11) == 0) return true;
+    // [stack / [heap — legitimate, not suspicious
+    return false;
+}
+
+static bool path_contains_root_framework(const char* path, size_t path_len) {
+    static const char* markers[] = {
+        "magisk", "zygisk", "riru", "lsposed", "lspd",
+        "shamiko", "rezygisk", "zygisknext"
+    };
+    for (auto m : markers) {
+        size_t mlen = strlen(m);
+        if (path_len < mlen) continue;
+        // bounded substring search (path is not NUL-terminated, only [path, path+path_len))
+        for (size_t i = 0; i + mlen <= path_len; i++) {
+            if (strncmp(path + i, m, mlen) == 0) return true;
+        }
+    }
+    return false;
+}
+
 bool detectSuspiciousMemory() {
-    // /proc/self/maps on a real Android app can easily exceed 16KB
-    // (Zygote preloads, ART, Compose, etc.). Use 64KB to match other
-    // scanners in this file and avoid silent truncation.
-    char buf[65536];
-    size_t len = 0;
-    if (!read_maps(buf, sizeof(buf), &len)) return false;  // cannot read → unknown, not "suspicious"
+    std::string maps;
+    if (!read_maps_full(maps)) return false;  // cannot read → unknown, not "suspicious"
 
-    // Check for RWX mappings (unusual)
-    int rwx_count = 0;
-    char* line = buf;
-    char* end = buf + len;
+    const char* buf = maps.data();
+    size_t len = maps.size();
+    const char* end = buf + len;
+
+    int anon_rwx_count = 0;
+    const char* line = buf;
     while (line < end) {
-        char* nl = line;
+        const char* nl = line;
         while (nl < end && *nl != '\n') nl++;
-        // Only terminate when we actually have a newline in-bounds.
-        // Writing *nl = '\0' when nl == end is a stack buffer overflow.
-        if (nl < end) *nl = '\0';
+        size_t line_len = nl - line;
 
-        char* perms = line;
-        while (perms < nl && *perms && *perms != ' ') perms++;
-        if (perms < nl && *perms == ' ') perms++;
-        if (perms + 3 <= nl && strncmp(perms, "rwx", 3) == 0) rwx_count++;
+        // Parse perms field: skip addr range (first whitespace-separated token),
+        // then perms is the next token.
+        const char* p = line;
+        while (p < nl && *p != ' ' && *p != '\t') p++;
+        while (p < nl && (*p == ' ' || *p == '\t')) p++;
+        const char* perms = p;
+
+        // Check for rwx (4-char perms field rwxp)
+        if (perms + 4 <= nl &&
+            perms[0] == 'r' && perms[1] == 'w' && perms[2] == 'x') {
+            // Extract pathname: skip 5 whitespace-separated fields total
+            // (addr, perms, offset, dev, inode), path is the 6th.
+            const char* q = line;
+            for (int field = 0; field < 5; field++) {
+                while (q < nl && *q != ' ' && *q != '\t') q++;
+                while (q < nl && (*q == ' ' || *q == '\t')) q++;
+            }
+            const char* path_start = q;
+            size_t path_len = nl - q;
+            // Trim trailing whitespace from path
+            while (path_len > 0 &&
+                   (path_start[path_len-1] == ' ' || path_start[path_len-1] == '\t' ||
+                    path_start[path_len-1] == '\r')) {
+                path_len--;
+            }
+
+            // Direct hit: path matches known root framework name → immediately suspicious
+            if (path_len > 0 && path_contains_root_framework(path_start, path_len)) {
+                return true;
+            }
+
+            // Otherwise count anonymous rwx mappings (excluding ART JIT etc.)
+            if (path_is_anon_rwx_suspicious(path_start, path_len)) {
+                anon_rwx_count++;
+            }
+        }
 
         line = (nl < end) ? nl + 1 : end;
+        (void)line_len;
     }
-    return rwx_count > 3;
+
+    // Anonymous rwx mappings are rare on a clean Android app (typically 0-2 after
+    // excluding ART JIT). Threshold 8 leaves comfortable headroom for legitimate
+    // linker trampolines / ART JIT fallback, while catching injected shellcode
+    // regions created by root frameworks.
+    return anon_rwx_count > 8;
 }
 
 bool detectHiddenProcessMemory() {
@@ -178,12 +261,14 @@ bool detectHiddenProcessMemory() {
 // ─── Deep memory fingerprint scan ──────────────────────────
 
 int deepMemoryFingerprintScan(char* out_report, size_t out_size) {
-    char buf[65536];
-    size_t maps_len = 0;
-    if (!read_maps(buf, sizeof(buf), &maps_len)) {
+    // FIX-P1-DETECT D1: use dynamic maps reader to avoid 64KB truncation.
+    std::string maps_buf;
+    if (!read_maps_full(maps_buf)) {
         if (out_size > 0) out_report[0] = '\0';
         return 0;
     }
+    const char* buf = maps_buf.data();
+    size_t maps_len = maps_buf.size();
 
     int findings = 0;
     int pos = 0;
@@ -214,46 +299,59 @@ int deepMemoryFingerprintScan(char* out_report, size_t out_size) {
 }
 
 bool detectMagiskMemory() {
-    char buf[65536]; size_t len = 0;
-    return read_maps(buf, sizeof(buf), &len) &&
-           (match_lib(buf, len, "magisk") || match_lib(buf, len, "magiskinit"));
+    // FIX-P1-DETECT D1: dynamic maps reader avoids 64KB truncation.
+    std::string maps_buf;
+    if (!read_maps_full(maps_buf)) return false;
+    const char* buf = maps_buf.data();
+    size_t len = maps_buf.size();
+    return match_lib(buf, len, "magisk") || match_lib(buf, len, "magiskinit");
 }
 
 bool detectZygiskMemory() {
-    char buf[65536]; size_t len = 0;
-    return read_maps(buf, sizeof(buf), &len) &&
-           (match_lib(buf, len, "zygisk") || match_lib(buf, len, "libzygisk"));
+    std::string maps_buf;
+    if (!read_maps_full(maps_buf)) return false;
+    const char* buf = maps_buf.data();
+    size_t len = maps_buf.size();
+    return match_lib(buf, len, "zygisk") || match_lib(buf, len, "libzygisk");
 }
 
 bool detectLSPosedMemory() {
-    char buf[65536]; size_t len = 0;
-    return read_maps(buf, sizeof(buf), &len) &&
-           (match_lib(buf, len, "lspd") || match_lib(buf, len, "lsposed"));
+    std::string maps_buf;
+    if (!read_maps_full(maps_buf)) return false;
+    const char* buf = maps_buf.data();
+    size_t len = maps_buf.size();
+    return match_lib(buf, len, "lspd") || match_lib(buf, len, "lsposed");
 }
 
 bool detectShamikoMemory() {
-    char buf[65536]; size_t len = 0;
-    return read_maps(buf, sizeof(buf), &len) &&
-           (match_lib(buf, len, "shamiko") || match_anon_exec(buf, len));
+    std::string maps_buf;
+    if (!read_maps_full(maps_buf)) return false;
+    const char* buf = maps_buf.data();
+    size_t len = maps_buf.size();
+    return match_lib(buf, len, "shamiko") || match_anon_exec(buf, len);
 }
 
 bool detectFridaMemory() {
-    char buf[65536]; size_t len = 0;
-    return read_maps(buf, sizeof(buf), &len) &&
-           (match_lib(buf, len, "frida") || match_lib(buf, len, "frida-agent") ||
-            match_lib(buf, len, "gum") || match_lib(buf, len, "gadget"));
+    std::string maps_buf;
+    if (!read_maps_full(maps_buf)) return false;
+    const char* buf = maps_buf.data();
+    size_t len = maps_buf.size();
+    return match_lib(buf, len, "frida") || match_lib(buf, len, "frida-agent") ||
+           match_lib(buf, len, "gum") || match_lib(buf, len, "gadget");
 }
 
 int countRWXPages() {
-    char buf[65536]; size_t len = 0;
-    if (!read_maps(buf, sizeof(buf), &len)) return -1;
+    std::string maps_buf;
+    if (!read_maps_full(maps_buf)) return -1;
+    const char* buf = maps_buf.data();
+    size_t len = maps_buf.size();
+    const char* end = buf + len;
     int count = 0;
-    char* line = buf; char* end = buf + len;
+    const char* line = buf;
     while (line < end) {
-        char* nl = line;
+        const char* nl = line;
         while (nl < end && *nl != '\n') nl++;
-        if (nl < end) *nl = '\0';
-        char* perms = line;
+        const char* perms = line;
         while (perms < nl && *perms && *perms != ' ') perms++;
         if (perms < nl && *perms == ' ') perms++;
         if (perms + 3 <= nl && strncmp(perms, "rwx", 3) == 0) count++;
@@ -263,8 +361,10 @@ int countRWXPages() {
 }
 
 int fullMemoryFingerprintScan() {
-    char buf[65536]; size_t len = 0;
-    if (!read_maps(buf, sizeof(buf), &len)) return 0;
+    std::string maps_buf;
+    if (!read_maps_full(maps_buf)) return 0;
+    const char* buf = maps_buf.data();
+    size_t len = maps_buf.size();
     int mask = 0;
     if (match_lib(buf, len, "magisk"))       mask |= MEM_FINGERPRINT_MAGISK;
     if (match_lib(buf, len, "zygisk") ||
