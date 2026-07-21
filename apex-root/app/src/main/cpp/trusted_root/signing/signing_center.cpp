@@ -112,11 +112,19 @@ void persist_report_locked(const SignedReport& report) {
     g_last_report = report;
     g_has_last_report = true;
 
+    // v1.1.3 P2-S6: 持久化路径从 /data/local/tmp/ 改为 app 自己的 filesDir
+    // ─────────────────────────────────────────────────────────────
+    // /data/local/tmp 由 shell 用户拥有, app (UID 10xxx) 无写权 → 写文件必然 EACCES。
+    // 改用 /data/data/com.apex.root/files/ (app 内部存储, 与 Context.filesDir 对应)。
+    // 此目录由 Android 在 app 首次调用 getFilesDir() 时自动创建, 无需 mkdir。
+    // 与 key_derivation.cpp 的 DEVICE_KEY_PATH 保持一致 (P1-C12 已修复)。
+    // ─────────────────────────────────────────────────────────────
+    constexpr const char* REPORT_PATH =
+        "/data/data/com.apex.root/files/apex_last_report.bin";
+
     // Also persist to file for durability across process restarts
-    // Write to app's data directory via /data/local/tmp/apex_last_report
-    // In production, this would use the app's internal storage
-    auto fd = bs_openat(-100, "/data/local/tmp/apex_last_report.bin",
-                        0x41, 0600); // O_CREAT|O_RDWR
+    auto fd = bs_openat(-100, REPORT_PATH,
+                        0x41 | 0x200 | 0x80000, 0600); // O_CREAT|O_RDWR|O_TRUNC|O_CLOEXEC
     if (fd >= 0) {
         // Serialize report version + hash + signature
         uint8_t header[8];

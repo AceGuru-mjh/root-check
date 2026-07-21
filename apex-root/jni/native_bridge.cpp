@@ -85,3 +85,19 @@ Java_com_apex_root_data_jni_NativeBridge_getLastErrorNative(
     return env->NewStringUTF(g_fw->last_error().c_str());
 }
 
+// FIX-P2-CPP (v1.1.3): 新增 JNI_OnUnload 在库卸载时调用 destroy_fw() 释放 g_fw。
+// 原实现: ensure_fw 用 `new ApexFirewall(uid)` 创建 g_fw, 但 destroy_fw 是 static
+// 函数从未被任何 JNI 方法调用, g_fw 在进程退出前永不释放。若 ApexFirewall 持有
+// 内核资源 (perf event fd / eBPF prog fd), 不显式 close 可能泄漏到内核。
+//
+// 注意: JNI_OnUnload 仅在加载该 .so 的 ClassLoader 被 GC 时调用, 对 Android
+// 主进程而言通常等同于进程退出。更可靠的清理路径是在 Application.onTerminate
+// 或 ViewModel.onCleared 中调一个 destroyFirewallNative JNI 方法 + Kotlin 侧
+// 调用 — 本任务为最小改动只加 JNI_OnUnload, Kotlin 侧显式清理留作后续。
+extern "C" JNIEXPORT void JNICALL
+JNI_OnUnload(JavaVM *vm, void *reserved) {
+    (void)vm;
+    (void)reserved;
+    destroy_fw();
+}
+

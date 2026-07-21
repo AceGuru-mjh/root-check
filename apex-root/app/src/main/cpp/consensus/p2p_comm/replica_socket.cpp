@@ -59,19 +59,21 @@ bool send_vote(ReplicaRole role, const uint8_t* hash) {
 
 bool broadcast_result(const uint8_t* data, size_t len) {
     if (len > 65536) return false;
-    uint8_t* msg = new uint8_t[len + 2];
+    // FIX-P2-CPP (v1.1.3): 用 std::vector 替代 new[]/delete[] — RAII 保证异常/提前
+    // 返回时不会泄漏。原代码若 bs_write 之间有任何异常或控制流跳出 (理论上不会但
+    // 防御性编程), delete[] 不会执行导致内存泄漏。
+    std::vector<uint8_t> msg(len + 2);
     msg[0] = 0x03; // result type
     msg[1] = static_cast<uint8_t>(len & 0xFF);
-    std::memcpy(msg + 2, data, len);
+    std::memcpy(msg.data() + 2, data, len);
     bool ok = true;
     for (int i = 0; i < 3; i++) {
         if (g_sock_fds[i] >= 0) {
-            if (bs_write(g_sock_fds[i], msg, len + 2) != static_cast<int64_t>(len + 2)) {
+            if (bs_write(g_sock_fds[i], msg.data(), len + 2) != static_cast<int64_t>(len + 2)) {
                 ok = false;
             }
         }
     }
-    delete[] msg;
     return ok;
 }
 

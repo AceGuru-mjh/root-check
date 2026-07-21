@@ -2,7 +2,6 @@ package com.apex.root.data
 
 import android.content.Context
 import android.util.Log
-import com.apex.root.data.jni.NativeBridge
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.security.SecureRandom
@@ -100,22 +99,28 @@ class FingerprintDatabase(private val context: Context) {
     }
 
     private fun deriveDatabaseKey(): ByteArray {
-        val deviceId = NativeBridge.getDeviceIdentifier() ?: "apex-root-default"
-        val seed = deviceId.encodeToByteArray()
-        val hash = NativeBridge.sha3_512(seed)
-        // 修复：native 库未加载时 NativeBridge.sha3_512 返回 ByteArray(0)，
-        // hash.copyInto(key, 0, 0, 32) 会抛 IndexOutOfBoundsException
-        // （被上层 try-catch 捕获，但会静默降级到明文 DB，这是安全回退）。
-        // 显式检查 hash 长度，避免误把异常当成"密钥不匹配"。
-        if (hash.size < 32) {
-            // Fallback：用 JVM 自带 SHA-256 派生 key（保证即使 native 不可用也能加密）
-            val md = java.security.MessageDigest.getInstance("SHA-256")
-            val fallbackHash = md.digest(seed)
-            return fallbackHash.copyOf(32)
-        }
-        val key = ByteArray(32)
-        hash.copyInto(key, 0, 0, 32)
-        return key
+        // v1.1.3 P2-S7: 改用稳定标识派生 key, 不含时间戳
+        // ─────────────────────────────────────────────────────────────
+        // 此前用 NativeBridge.getDeviceIdentifier() 作 seed, 后者返回
+        // "serialno-hostname-bs_clock_ns()", clock_ns 每次不同 → key 每次不同
+        // → 加密的 .enc DB 永远解不开 (审计定性为死代码)。
+        //
+        // 修复: 用 ANDROID_ID + 硬编码 salt 派生稳定 key。
+        //   - ANDROID_ID 在卸载重装时会变, 但同一安装内稳定
+        //   - 加硬编码 salt 防止与其他 app 的 ANDROID_ID 派生 key 撞车
+        //
+        // 注意: assets 中只有 fingerprint_db.yaml (无 .enc), 实际走 loadPlaintextFallback,
+        // 此 key 仅用于 encryptDatabase() 构建期工具, 不影响运行时。
+        // 如果未来要发布 .enc DB, 需在 build 期用同一 salt 预生成。
+        // ─────────────────────────────────────────────────────────────
+        val androidId = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID
+        ) ?: "unknown"
+        val salt = "APEX-Root-FingerprintDB-v1"  // 硬编码 salt, 与 build 期一致
+        val seed = "$androidId-$salt"
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        return md.digest(seed.toByteArray(Charsets.UTF_8))
     }
 
     private fun aes256GcmEncrypt(plaintext: ByteArray, key: ByteArray): ByteArray {

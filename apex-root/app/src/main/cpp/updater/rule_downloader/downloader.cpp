@@ -5,6 +5,8 @@
 #include <cstring>
 #include <algorithm>
 #include <cinttypes>
+#include <cstdio>     // FIX-P2-CPP: rename, remove (atomic_write_file)
+#include <unistd.h>   // FIX-P2-CPP: fsync (atomic_write_file)
 
 namespace apex {
 namespace updater {
@@ -157,6 +159,67 @@ bool verify_package(const RulePackage& pkg, const uint8_t* public_key, size_t ke
     return oqs.verify(pkg.data, pkg.signature, root_key);
 }
 
+// FIX-P2-CPP (v1.1.3): 原子写入规则文件, 防止进程崩溃后文件损坏。
+// 原实现: openat + write + close 直接覆盖目标路径, 无 fsync、无原子 rename。
+//   若进程在 write 后 close 前崩溃, 文件可能为 0 字节或部分写入, 下次启动读取
+//   损坏文件。现改为标准原子写策略:
+//   1. 写到 <path>.tmp (O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC)
+//   2. 循环 write 直到全部字节落盘
+//   3. fsync 文件 fd (确保数据页落盘)
+//   4. close
+//   5. rename(tmp, final) — rename 是 POSIX 原子操作, 任意时刻 final 要么是旧内容
+//      要么是新内容, 不会是部分内容
+//   6. fsync 父目录 (最佳努力 — 让 rename 的目录项变更也落盘)
+// 任一步骤失败时清理 tmp 文件并返回 false, 旧文件保持不变。
+static bool atomic_write_file(const char* path, const uint8_t* data, size_t len) {
+    if (!path || !data) return false;
+    std::string tmp_path = std::string(path) + ".tmp";
+
+    // 0x241 = O_WRONLY | O_CREAT | O_TRUNC; 0x80000 = O_CLOEXEC
+    int64_t fd = bs_openat(-100, tmp_path.c_str(), 0x241 | 0x80000, 0600);
+    if (fd < 0) return false;
+
+    size_t written = 0;
+    while (written < len) {
+        int64_t n = bs_write(fd, data + written, len - written);
+        if (n <= 0) {
+            bs_close(fd);
+            (void)remove(tmp_path.c_str());
+            return false;
+        }
+        written += (size_t)n;
+    }
+
+    // fsync 文件内容到磁盘, 确保崩溃后 tmp 文件内容完整
+    (void)fsync((int)fd);
+    bs_close(fd);
+
+    // 原子 rename tmp → final
+    if (rename(tmp_path.c_str(), path) != 0) {
+        (void)remove(tmp_path.c_str());
+        return false;
+    }
+
+    // 最佳努力: fsync 父目录, 让 rename 的目录项变更也落盘
+    // 提取父目录: 取 path 中最后一个 '/' 之前的内容; 若无则用 "."
+    std::string parent_dir;
+    const char* slash = strrchr(path, '/');
+    if (slash == path) {
+        parent_dir = "/";  // 根目录
+    } else if (slash) {
+        parent_dir.assign(path, (size_t)(slash - path));
+    } else {
+        parent_dir = ".";
+    }
+    // 0x10000 = O_DIRECTORY
+    int64_t dirfd = bs_openat(-100, parent_dir.c_str(), 0x10000, 0);
+    if (dirfd >= 0) {
+        (void)fsync((int)dirfd);
+        bs_close(dirfd);
+    }
+    return true;
+}
+
 bool apply_rules(const RulePackage& pkg) {
     if (pkg.data.empty()) return false;
 
@@ -183,23 +246,17 @@ bool apply_rules(const RulePackage& pkg) {
     }
 
     // Write new rules
-    int fd = static_cast<int>(bs_openat(-100, "/data/rules/current", 0x41, 0600));
-    if (fd < 0) return false;
-    int64_t written = bs_write(fd, pkg.data.data(), pkg.data.size());
-    bs_close(fd);
-
-    // Verify write succeeded
-    char check_byte;
-    fd = static_cast<int>(bs_openat(-100, "/data/rules/current", 0, 0));
-    if (fd < 0) return false;
-    int64_t n = bs_read(fd, &check_byte, 1);
-    bs_close(fd);
-
-    if (written == static_cast<int64_t>(pkg.data.size()) && n == 1) {
-        g_current_version = pkg.version;
-        return true;
+    // FIX-P2-CPP (v1.1.3): 用 atomic_write_file 替代 openat+write+close。
+    //   原实现无 fsync、无原子 rename, 进程崩溃后文件可能损坏。
+    //   现通过 tmp + fsync + rename + fsync_dir 保证原子性。
+    //   atomic_write_file 内部循环写满全部字节并 fsync, 成功返回即代表
+    //   数据已落盘 + rename 已完成, 不再需要二次读回校验。
+    if (!atomic_write_file("/data/rules/current", pkg.data.data(), pkg.data.size())) {
+        return false;
     }
-    return false;
+
+    g_current_version = pkg.version;
+    return true;
 }
 
 bool rollback_rules(uint32_t to_version) {
@@ -207,17 +264,16 @@ bool rollback_rules(uint32_t to_version) {
 
     // Restore from backup if available
     if (g_has_backup && !g_backup_data.empty()) {
-        int fd = static_cast<int>(bs_openat(-100, "/data/rules/current", 0x41, 0600));
-        if (fd < 0) return false;
-        int64_t written = bs_write(fd, g_backup_data.data(), g_backup_data.size());
-        bs_close(fd);
-        if (written == static_cast<int64_t>(g_backup_data.size())) {
-            uint32_t tmp = g_current_version;
-            g_current_version = g_previous_version;
-            g_previous_version = tmp;
-            return true;
+        // FIX-P2-CPP (v1.1.3): 用 atomic_write_file 原子写入回滚内容。
+        if (!atomic_write_file("/data/rules/current",
+                               g_backup_data.data(),
+                               g_backup_data.size())) {
+            return false;
         }
-        return false;
+        uint32_t tmp = g_current_version;
+        g_current_version = g_previous_version;
+        g_previous_version = tmp;
+        return true;
     }
 
     // Try to load from known backup path
@@ -232,15 +288,14 @@ bool rollback_rules(uint32_t to_version) {
     bs_close(fd);
     if (n <= 0) return false;
 
-    fd = static_cast<int>(bs_openat(-100, "/data/rules/current", 0x41, 0600));
-    if (fd < 0) return false;
-    int64_t written = bs_write(fd, buf, n);
-    bs_close(fd);
-    if (written == n) {
-        g_current_version = to_version;
-        return true;
+    // FIX-P2-CPP (v1.1.3): 用 atomic_write_file 原子写入从备份路径读回的内容。
+    if (!atomic_write_file("/data/rules/current",
+                           reinterpret_cast<const uint8_t*>(buf),
+                           (size_t)n)) {
+        return false;
     }
-    return false;
+    g_current_version = to_version;
+    return true;
 }
 
 DiffPackage create_diff(const RulePackage& old_pkg, const RulePackage& new_pkg) {

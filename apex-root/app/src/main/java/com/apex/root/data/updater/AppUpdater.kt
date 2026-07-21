@@ -230,6 +230,23 @@ class AppUpdater private constructor(private val context: Context) {
             return@withContext _downloadState.value
         }
 
+        // v1.1.3 P2-S8: 下载前强制校验 release notes 含 SHA-256
+        // ─────────────────────────────────────────────────────────────
+        // 此前若 release notes 不含 "SHA-256:" 行, 直接跳过校验, APK 仍被接受。
+        // 攻击者可通过 MITM 或攻破 GitHub release 同时改 APK 和 release body
+        // (移除 SHA-256 行) 来分发恶意 APK。
+        // 修复: 下载前先校验 release notes 必须含 SHA-256, 否则拒绝下载。
+        // ─────────────────────────────────────────────────────────────
+        val preExpectedHash = extractExpectedSha256(release.releaseBody)
+        if (preExpectedHash == null) {
+            _downloadState.value = DownloadState.Failed(
+                "拒绝下载: Release notes 缺失 SHA-256 校验值。\n" +
+                "为防止安装被篡改的 APK, 要求 release 描述必须包含 'SHA-256: <hash>' 行。\n" +
+                "请检查更新源是否可信, 或联系发布者补全哈希值。"
+            )
+            return@withContext _downloadState.value
+        }
+
         cancelRequested = false
         _downloadState.value = DownloadState.Downloading(0, 0L, release.apkSize)
 
@@ -313,25 +330,32 @@ class AppUpdater private constructor(private val context: Context) {
             Log.i(TAG, "Downloaded APK SHA-256: $actualHash")
 
             // 从 release notes 中提取预期哈希 (约定格式: "SHA-256: <hex>")
+            // v1.1.3 P2-S8: SHA-256 校验从"可选"改为"强制"
+            // (下载前已在 line 233-248 校验过 release notes 含 SHA-256, 这里是
+            //  下载后的实际哈希比对; 若此处 expectedHash 仍为 null, 说明 release body
+            //  在下载过程中被篡改, 必须拒绝)
             val expectedHash = extractExpectedSha256(release.releaseBody)
-            if (expectedHash != null) {
-                if (!expectedHash.equals(actualHash, ignoreCase = true)) {
-                    Log.e(TAG, "SHA-256 mismatch! expected=$expectedHash actual=$actualHash")
-                    apkFile.delete()
-                    _downloadState.value = DownloadState.Failed(
-                        "APK 完整性校验失败: SHA-256 不匹配\n" +
-                        "预期: $expectedHash\n" +
-                        "实际: $actualHash\n" +
-                        "文件已删除,请勿安装可能被篡改的 APK"
-                    )
-                    return@withContext _downloadState.value
-                }
-                Log.i(TAG, "SHA-256 verified ✓ ($expectedHash)")
-            } else {
-                Log.w(TAG, "Release notes 中未找到 SHA-256 哈希,跳过完整性校验。" +
-                    "建议在 release 描述中添加 'SHA-256: <hash>' 行。")
-                _downloadState.value = DownloadState.Downloading(100, downloadedBytes, totalBytes)
+            if (expectedHash == null) {
+                Log.e(TAG, "SHA-256 missing in release notes after download — refusing APK")
+                apkFile.delete()
+                _downloadState.value = DownloadState.Failed(
+                    "APK 完整性校验失败: Release notes 缺失 SHA-256 校验值。\n" +
+                    "文件已删除, 拒绝安装未验证的 APK。"
+                )
+                return@withContext _downloadState.value
             }
+            if (!expectedHash.equals(actualHash, ignoreCase = true)) {
+                Log.e(TAG, "SHA-256 mismatch! expected=$expectedHash actual=$actualHash")
+                apkFile.delete()
+                _downloadState.value = DownloadState.Failed(
+                    "APK 完整性校验失败: SHA-256 不匹配\n" +
+                    "预期: $expectedHash\n" +
+                    "实际: $actualHash\n" +
+                    "文件已删除,请勿安装可能被篡改的 APK"
+                )
+                return@withContext _downloadState.value
+            }
+            Log.i(TAG, "SHA-256 verified ✓ ($expectedHash)")
 
             _downloadState.value = DownloadState.Completed(apkFile)
             Log.i(TAG, "APK downloaded to ${apkFile.absolutePath} (${apkFile.length()} bytes)")

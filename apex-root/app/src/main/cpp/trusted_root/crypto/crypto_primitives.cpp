@@ -89,7 +89,8 @@ std::array<uint8_t, 64> sha3_512(const uint8_t* data, size_t len) {
 // HMAC-SHA3-512 (RFC 2104 style with SHA3-512)
 // FIX-CPP P0-C2: k 缓冲区扩大到 144 字节，与 ipad/opad 同尺寸。
 // 原实现 uint8_t k[64] 在 key_len ∈ [65,144] 时 memcpy 越界写栈。
-static std::array<uint8_t, 64> hmac_sha3_512(
+// v1.1.3 P2-S4: 改为非 static 以便 key_derivation.cpp 调用做密钥分离派生。
+std::array<uint8_t, 64> hmac_sha3_512(
     const uint8_t* key, size_t key_len,
     const uint8_t* data, size_t data_len) {
 
@@ -287,11 +288,23 @@ std::vector<uint8_t> aes256_gcm_encrypt(const uint8_t* plain, size_t len,
     if (key_len < 32) return result;
 
     // Generate random nonce
+    // FIX-P2-KT P2-K3 (v1.1.3): 修复 nonce 移位 UB。
+    //   原实现: `nonce[i] = (r >> (i * 8)) & 0xFF;` 对 i=8..11 计算时,
+    //   i*8 = 64..88, 而 uint64_t 移位 >= 64 是 UB (C++14 [expr.shift]/1)。
+    //   实际编译器通常把 (uint64_t >> 64) 当作 >> 0 (返回原值), 但也有
+    //   架构返回 0, 导致 nonce[8..11] 在不同编译器下取值不一致 — 部分平台
+    //   nonce[8..11] 永远为 0, 有效熵从 96 bit 降到 64 bit, 在 ~2^32 次
+    //   加密后 nonce 碰撞概率显著上升 (生日攻击)。
+    //   现改用 2 次独立 bs_get_random 生成 12 字节随机 nonce, 各 8 字节熵,
+    //   取 r1 全部 8 字节 + r2 低 4 字节 = 96 bit 全熵 nonce。
+    //   注: 当前未做 nonce 重用检测, 但 96 bit 随机 nonce 在 2^48 次加密内
+    //   碰撞概率可忽略 (生日界), 远超本应用实际加密量。若未来用于高吞吐
+    //   场景, 应记录已用 nonce 集合并拒绝重用。
+    uint64_t r1 = bs_get_random();
+    uint64_t r2 = bs_get_random();
     uint8_t nonce[12];
-    for (size_t i = 0; i < 12; i++) {
-        uint64_t r = bs_get_random();
-        nonce[i] = (r >> (i * 8)) & 0xFF;
-    }
+    std::memcpy(nonce, &r1, 8);      // nonce[0..7]
+    std::memcpy(nonce + 8, &r2, 4);  // nonce[8..11] (取 r2 低 4 字节)
 
     // Build counter block from nonce
     uint8_t ctr[16];

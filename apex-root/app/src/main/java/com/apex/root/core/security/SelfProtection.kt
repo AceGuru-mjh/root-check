@@ -139,14 +139,28 @@ object SelfProtection {
             if (dexLines.isEmpty()) {
                 issues.add("No DEX/oat files in memory mapping")
             }
-            // Check for unexpected DEX files
-            val knownPrefixes = listOf("/data/app/", "/system/framework/")
+            // v1.1.3 P2-S15: 扩展合法 DEX 路径白名单, 避免误报 ART 编译缓存等
+            // ─────────────────────────────────────────────────────────────
+            // 此前 knownPrefixes 只有 /data/app/ 和 /system/framework/,
+            // 但 ART 也在 /data/dalvik-cache/ 加载 .odex/.oat, 会被误报为
+            // "Unexpected DEX location"。补充合法路径:
+            //   - /data/dalvik-cache/  ART 编译缓存 (boot.art/VEX/etc.)
+            //   - /apex/                APEX 模块 (Android 10+)
+            //   - /system/system_ext/   system_ext 分区
+            //   - /system/product/      product 分区
+            // ─────────────────────────────────────────────────────────────
+            val knownPrefixes = listOf(
+                "/data/app/",            // 用户安装的 APK
+                "/system/framework/",    // 系统框架
+                "/data/dalvik-cache/",   // ART 编译缓存 (P2-S15: 避免误报)
+                "/apex/",                // APEX 模块 (Android 10+)
+                "/system/system_ext/",   // system_ext 分区
+                "/system/product/"       // product 分区
+            )
             for (line in dexLines) {
                 val path = line.substringAfterLast(" ").trim()
                 if (path.isNotEmpty() && knownPrefixes.none { path.startsWith(it) }) {
-                    if (!path.startsWith("/apex/") && !path.startsWith("/system/")) {
-                        issues.add("Unexpected DEX location: $path")
-                    }
+                    issues.add("Unexpected DEX location: $path")
                 }
             }
         } catch (e: Exception) {
@@ -261,13 +275,27 @@ object SelfProtection {
         try {
             stopVerifier()
             val pid = android.os.Process.myPid()
+            // v1.1.3 P2-S14: 告警文件从 /data/local/tmp/ 改为 context.filesDir
+            // ─────────────────────────────────────────────────────────────
+            // /data/local/tmp 由 shell 用户拥有, app (UID 10xxx) 无写权,
+            // 即使检测到 TracerPid!=0, 告警也无法持久化。
+            // 改用 context.filesDir (app 内部存储, 有写权)。
+            // 注意: init(ctx) 必须先调用, 否则 context 为 null, 退化为不写文件只检测。
+            // ─────────────────────────────────────────────────────────────
+            val ctx = context
+            val alertFile = if (ctx != null) {
+                File(ctx.filesDir, "apex_alert.log").absolutePath
+            } else {
+                // context 未初始化 — 无法持久化告警, 但 shell 脚本仍运行做检测
+                "/dev/null"
+            }
             val builder = ProcessBuilder(
                 "sh", "-c",
                 "while kill -0 $pid 2>/dev/null; do " +
                         "if [ -f /proc/$pid/status ]; then " +
                         "tp=\$(grep 'TracerPid:' /proc/$pid/status | awk '{print \$2}'); " +
                         "if [ \"\$tp\" != \"0\" ] && [ \"\$tp\" != \"\" ]; then " +
-                        "echo \"WARNING: TracerPid=\$tp detected on parent\" > /data/local/tmp/apex_alert; " +
+                        "echo \"WARNING: TracerPid=\$tp detected on parent\" > '$alertFile'; " +
                         "fi; " +
                         "fi; " +
                         "sleep 5; " +

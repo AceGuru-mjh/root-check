@@ -104,7 +104,14 @@ bool spoof_device_fingerprint() {
 bool restore_real_hwids() {
     capture_real_hwids();
 
+    // v1.1.3 P2-S1: 在拼接到 shell 命令前校验 g_real_serial, 防止注入
+    // g_real_serial 来自 /proc/cmdline 的 androidboot.serialno=, 理论上
+    // 是字母数字, 但防御性校验所有外部输入。
     if (g_real_serial[0] != '\0') {
+        if (!utils::is_safe_value(g_real_serial)) {
+            // 含非法字符 — 拒绝拼接, 避免命令注入
+            return false;
+        }
         char cmd[256];
         snprintf(cmd, sizeof(cmd), "resetprop ro.serialno %s 2>/dev/null", g_real_serial);
         utils::exec_su_command_quiet(cmd);

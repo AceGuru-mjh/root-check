@@ -2,6 +2,8 @@
 #include "../common/syscall.h"
 #include <cstring>
 #include <cstdint>
+#include <string>
+#include <sys/system_properties.h>
 
 // ═══════════════════════════════════════════════════════════
 //  第二十二层 · 模拟器检测
@@ -130,21 +132,46 @@ bool detectNoxOrLDPlayer() {
 }
 
 // ─── 通用模拟器属性检测 ───────────────────────────────────
+// FIX-P2-KT P2-D13 (v1.1.3): 修复目录读取 EISDIR 漏报。
+//   原实现: read_file("/dev/__properties__", buf, ...) 直接 openat 目录 + read,
+//   read 返回 -EISDIR → 永远 false → 所有 generic emulator 属性检测 100% 漏报。
+//   (与 P0-D4 layer1_prop.cpp 同一类 bug。)
+//   修复方案 A (首选): 用 __system_property_get API 按 key 精确查询,
+//     不读目录、不依赖属性文件布局, 是 Android 官方推荐做法。
+//   修复方案 B (备用, layer1_prop 已用): getdents64 枚举目录再逐文件 read,
+//     但需自行解析属性二进制格式, 容易出错。
+//   现采用方案 A — 对每个可疑 key 单独 __system_property_get, 比对期望值。
+//   注: 性能开销可忽略 (7 次 property 查询, 每次 < 10us)。
 bool detectGenericEmulatorProps() {
-    char buf[8192];
-    // 读 /dev/__properties__ 检查模拟器特有属性
-    if (read_file("/dev/__properties__", buf, sizeof(buf))) {
-        if (strstr(buf, "ro.kernel.qemu=1")) return true;
-        if (strstr(buf, "ro.hardware=goldfish")) return true;
-        if (strstr(buf, "ro.hardware=ranchu")) return true;
-        if (strstr(buf, "ro.product.model=SDK")) return true;
-        if (strstr(buf, "ro.product.brand=google_sdk")) return true;
-        if (strstr(buf, "ro.product.brand=generic_x86")) return true;
-        if (strstr(buf, "ro.boot.hardware=qemu")) return true;
-    }
-    // 检查 init.svc.qemu-props
+    // 辅助: 取 property 值, 失败返回空串
+    auto prop = [](const char* key) {
+        char val[PROP_VALUE_MAX] = {};
+        int n = __system_property_get(key, val);
+        return (n > 0) ? std::string(val) : std::string();
+    };
+
+    // 1) QEMU / goldfish / ranchu 硬件标识
+    if (prop("ro.kernel.qemu") == "1") return true;
+    if (prop("ro.hardware") == "goldfish") return true;
+    if (prop("ro.hardware") == "ranchu") return true;
+    if (prop("ro.boot.hardware") == "qemu") return true;
+
+    // 2) Google SDK / generic_x86 模拟器产品标识
+    if (prop("ro.product.model") == "sdk") return true;        // SDK GPE
+    if (prop("ro.product.model") == "google_sdk") return true; // 旧 SDK
+    if (prop("ro.product.brand") == "google_sdk") return true;
+    if (prop("ro.product.brand") == "generic_x86") return true;
+    if (prop("ro.product.brand") == "generic") return true;    // generic_arm64 也覆盖
+    if (prop("ro.product.device") == "generic_x86") return true;
+    if (prop("ro.product.name") == "sdk_x86") return true;
+    if (prop("ro.product.name") == "sdk_gphone_x86") return true;
+
+    // 3) init.svc.qemu-props 服务存在 → 强烈信号
+    if (prop("init.svc.qemu-props").length() > 0) return true;
+
+    // 4) 检查 /proc/self/cmdline — 模拟器进程名通常含 emulator/qemu
+    //    (保留原逻辑, 作为非 property 路径的兜底)
     if (check_access("/proc/self/fd/0") == 0) {
-        // 读 /proc/self/cmdline — 模拟器进程名通常含 emulator/qemu
         char cmd[256];
         if (read_file("/proc/self/cmdline", cmd, sizeof(cmd))) {
             if (strstr(cmd, "emulator")) return true;

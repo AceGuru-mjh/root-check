@@ -1,11 +1,70 @@
 #include "utils.h"
 #include "syscall.h"
+#include "../bare_syscall/syscall_bridge.h"
 #include <cstring>
+#include <cctype>
 #include <fcntl.h>
 #include <sys/types.h>
 
 namespace apex {
 namespace utils {
+
+// ─────────────────────────────────────────────────────────────
+// v1.1.3 P2-S1: 命令注入防御
+// ─────────────────────────────────────────────────────────────
+// exec_su_command_quiet 实际通过 `sh -c "<cmd>"` 执行, 如果 cmd 中嵌入了
+// 用户/外部输入(如 serialno、sandbox_name、文件路径), 攻击者可注入 `;`、
+// `$(...)`、反引号 等元字符执行任意命令。这里加两层防御:
+//
+//   1. is_cmd_safe(cmd): 拒绝包含命令替换(`$(...)`/`` `...` ``)的整条命令。
+//      注意: 不拒绝 `;` `&&` `||` `2>/dev/null`, 因为正常复合命令也会用到
+//      (例如 `rmmod kernelsu 2>/dev/null`)。
+//
+//   2. is_safe_value(s): 严格白名单, 只允许 [a-zA-Z0-9._-]。
+//      调用方在把变量拼进 cmd 前, 必须先用 is_safe_value 校验。
+//
+// 这两层防御共同保证: 即使调用方漏检, exec_su_command_quiet 仍会拒绝明显
+// 含命令替换的命令; 而对单值参数, 调用方应主动调用 is_safe_value。
+// ─────────────────────────────────────────────────────────────
+
+bool is_safe_value(const char* s) {
+    if (!s || !*s) return false;
+    for (const char* p = s; *p; p++) {
+        // 只允许 [a-zA-Z0-9._-], 拒绝 ' " ; $ ` ( ) < > | & 空格 等
+        if (!(std::isalnum(static_cast<unsigned char>(*p)) ||
+              *p == '.' || *p == '_' || *p == '-')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool is_safe_path(const char* s) {
+    if (!s || !*s) return false;
+    for (const char* p = s; *p; p++) {
+        // 允许 [a-zA-Z0-9._/-], 拒绝所有 shell 元字符
+        if (!(std::isalnum(static_cast<unsigned char>(*p)) ||
+              *p == '.' || *p == '_' || *p == '-' || *p == '/')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool is_cmd_safe(const char* cmd) {
+    if (!cmd || !*cmd) return false;
+    // 拒绝命令替换模式 (注入的主要途径)
+    // 不拒绝 ; && || 等复合命令操作符 — 正常 shell 命令也会用到
+    static const char* dangerous[] = {
+        "$(",
+        "`",
+        nullptr
+    };
+    for (int i = 0; dangerous[i]; i++) {
+        if (std::strstr(cmd, dangerous[i])) return false;
+    }
+    return true;
+}
 
 bool file_exists(const char* path) {
     int64_t ret = 0;
@@ -95,6 +154,8 @@ bool delete_path(const char* path) {
 }
 
 bool exec_su_command(const char* cmd) {
+    // v1.1.3 P2-S1: 拒绝含命令替换模式的命令 (防御性, 调用方仍应避免拼接)
+    if (!is_cmd_safe(cmd)) return false;
     int64_t pid = 0;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; svc #0; mov %0, x0"
@@ -122,6 +183,8 @@ bool exec_su_command(const char* cmd) {
 }
 
 bool exec_su_command_quiet(const char* cmd) {
+    // v1.1.3 P2-S1: 拒绝含命令替换模式的命令 (防御性, 调用方仍应避免拼接)
+    if (!is_cmd_safe(cmd)) return false;
     int64_t pid = 0;
     #if defined(__aarch64__)
     asm volatile("mov x8, %1; svc #0; mov %0, x0"
@@ -308,6 +371,59 @@ std::string sha256_hash(const uint8_t* data, size_t len) {
     }
     result[64] = '\0';
     return std::string(result);
+}
+
+// ─────────────────────────────────────────────────────────────
+// v1.1.3 FIX-P2-KT P2-C5: 公共文件读取辅助函数
+// ─────────────────────────────────────────────────────────────
+// 详见 utils.h 顶部说明。这两个函数封装 bs_openat/bs_read/bs_close 循环,
+// 替代 20 个 plugin.cpp 中各自手写的 open/read/close 重复代码。
+//
+// 与旧 utils::read_file 的差异:
+//   1. 用 bs_* (绕过 libc syscall hook), 而非裸 inline asm — 多 arch 通用
+//   2. 循环 read 到 EOF/buffer 满, 修复旧 read_file 单次 read 截断 4KB bug
+//   3. 提供两套 API (std::string + raw buffer) 适配不同调用方
+//   4. read_file_to_string 有 max_len 限制, 防恶意大文件 OOM
+// ─────────────────────────────────────────────────────────────
+
+bool read_file_to_string(const char* path, std::string& out, size_t max_len) {
+    if (!path) return false;
+    int64_t fd = bs_openat(AT_FDCWD, path, O_RDONLY, 0);
+    if (fd < 0) return false;
+    out.clear();
+    char chunk[16384];
+    int64_t n;
+    while ((n = bs_read(fd, chunk, sizeof(chunk))) > 0) {
+        out.append(chunk, (size_t)n);
+        if (out.size() >= max_len) {
+            out.resize(max_len);
+            break;
+        }
+    }
+    bs_close(fd);
+    // n == 0 (EOF) 或 n < 0 (read error, 已读到部分内容仍算成功)
+    // 若 open 成功但首次 read 即失败, out 为空但函数返回 true (区分
+    // "文件存在但读失败" 与 "文件不存在")。调用方若需严格区分可查 out.empty()。
+    return true;
+}
+
+int64_t read_file_to_buffer(const char* path, char* buf, size_t buf_size) {
+    if (!path || !buf || buf_size == 0) return -1;
+    int64_t fd = bs_openat(AT_FDCWD, path, O_RDONLY, 0);
+    if (fd < 0) return -1;
+    size_t total = 0;
+    // 预留 1 字节给 NUL 终止符
+    size_t cap = buf_size - 1;
+    while (total < cap) {
+        int64_t n = bs_read(fd, buf + total, cap - total);
+        if (n <= 0) break;
+        total += (size_t)n;
+    }
+    bs_close(fd);
+    buf[total] = '\0';
+    // 若 total == 0 且 open 成功 (说明 read 全失败), 仍返回 0 而非 -1
+    // 区分语义: -1 = open 失败, 0 = 文件存在但内容为空或读失败
+    return (int64_t)total;
 }
 
 } // namespace utils

@@ -171,12 +171,26 @@ class GuardMonitorService : Service() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        // v1.1.3 P2-K4: 加 stop action 让用户快速停止监控
+        // 原通知只设 setContentIntent (点击跳主界面), 用户想停止监控需进入
+        // 应用 → 设置 → 关闭开关, 操作路径过长。现增加"停止"动作按钮,
+        // 点击即发送 ACTION_STOP 到本服务, onStartCommand 收到后走 stopGuardMonitor。
+        // 用 getService 而非 getBroadcast: ACTION_STOP 由 onStartCommand 处理,
+        // 复用 Service 生命周期管理, 不需新增 BroadcastReceiver。
+        val stopIntent = Intent(this, GuardMonitorService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 1, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, Notifier.CHANNEL_GUARD)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentTitle("APEX Root 实时防护")
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_media_pause, "停止", stopPendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()

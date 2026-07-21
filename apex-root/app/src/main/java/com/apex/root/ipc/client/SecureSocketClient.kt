@@ -21,6 +21,22 @@ import android.util.Log
  * 5. P0-K2 修复 (v1.1.1): reader loop 与 send() 均强制使用 Dispatchers.IO,
  *    防止调用方 (如 ScanViewModel.viewModelScope, 默认 Dispatchers.Main.immediate)
  *    把阻塞 I/O 调度到主线程导致 ANR。
+ *
+ * ⚠️ SECURITY WARNING (P2-K2): 类名 "Secure" 名不副实
+ *
+ * 当前实现是 hex 编码的明文 over Unix domain socket, 无 TLS/MAC/peer auth。
+ * "Secure" 仅指 Unix socket 的隐式信任 (同 UID 进程可连接), 不提供加密。
+ * 任何能 bind/connect 到该 Unix socket 的同 UID 进程均可读写消息内容、
+ * 注入伪造帧或重放历史帧。
+ *
+ * 若需真正的安全通信, 应:
+ * 1. 用 NaCl/secretbox + 预共享密钥加密 ( 推荐, 自包含 )
+ * 2. 或用 Android Binder + signature-level permission ( 系统 API, 进程级鉴权 )
+ * 3. 或用 TLS + 证书 pinning ( 适合跨设备, 但 Unix socket 场景过重 )
+ *
+ * 当前调用方 (DetectionProtocol / ScanViewModel) 仅在 app 自身进程内使用,
+ * 攻击面为同 UID 注入进程 (需已 compromise 同 sandbox), 风险中等。
+ * 计划在 v1.2.0 重命名为 LocalSocketClient 或增加真正的加密层。
  */
 class SecureSocketClient(
     private val socketName: String,

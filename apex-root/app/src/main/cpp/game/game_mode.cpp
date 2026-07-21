@@ -96,8 +96,11 @@ bool remove_game_from_monitor(const char* package_name) {
     for (int i = 0; i < g_monitored_count; i++) {
         if (strcmp(g_monitored_games[i], package_name) == 0) {
             // Shift remaining entries
+            // FIX-P2-CPP (v1.1.3): 用 memmove 替代 strcpy — src/dst 在 g_monitored_games[]
+            // 内相邻槽位, 内存可能重叠 (虽然 128 字节定长数组不会越界, 但 strcpy 在
+            // 重叠缓冲区上行为 UB)。memmove 显式按 128 字节整块搬运更安全且语义明确。
             for (int j = i; j < g_monitored_count - 1; j++)
-                strcpy(g_monitored_games[j], g_monitored_games[j + 1]);
+                memmove(g_monitored_games[j], g_monitored_games[j + 1], 128);
             g_monitored_count--;
             return true;
         }

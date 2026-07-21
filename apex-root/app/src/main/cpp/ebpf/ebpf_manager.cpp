@@ -4,6 +4,7 @@
 #include "bare_syscall/syscall_bridge.h"
 #include <cstring>
 #include <cstdio>
+#include <vector>   // FIX-P2-CPP: std::vector 替代 64KB 栈缓冲区
 #include <android/log.h>
 
 #define LOG_TAG "APEX-EBPF"
@@ -120,8 +121,11 @@ int load_bpf_program(const char* path, BpfProgType type) {
     }
 
     // Try to read the BPF object from the given path
-    char bpf_buf[65536];
-    if (!read_file(path, bpf_buf, sizeof(bpf_buf))) {
+    // FIX-P2-CPP (v1.1.3): 64KB 栈缓冲区改为堆分配。Android 工作线程栈可能仅 1MB,
+    // 多个 64KB 栈缓冲区叠加 + JNI 调用栈 + ART 内部栈可能栈溢出。改用
+    // std::vector<char> 堆分配, 容量不变。
+    std::vector<char> bpf_buf(65536);
+    if (!read_file(path, bpf_buf.data(), bpf_buf.size())) {
         // BPF object file not found - attempt to use raw kprobe via debugfs
         return -2;
     }
@@ -381,6 +385,10 @@ bool hide_process(const char* proc_name) {
 
 bool hide_file(const char* path) {
     if (!path || !path[0]) return false;
+
+    // v1.1.3 P2-S1: 路径白名单校验, 防止 path 含 ' 或 shell 元字符突破单引号包裹
+    // (path 来自调用方, 可能含外部输入; 单引号包裹可被 ' 字符突破)
+    if (!apex::utils::is_safe_path(path)) return false;
 
     // Strategy: use bind mount to hide the file by mounting over it
     // with a tmpfs empty directory or /dev/null equivalent

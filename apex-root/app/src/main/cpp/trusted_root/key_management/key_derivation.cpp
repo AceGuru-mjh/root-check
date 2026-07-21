@@ -40,6 +40,23 @@ static constexpr uint8_t PERSISTENCE_KEY[32] = {
 static DeviceKeyPair g_device_key;
 static std::once_flag g_init_once;
 
+// v1.1.3 P2-S4: 密钥分离 — 从 Dilithium secret_key 派生独立的 AES 加密密钥
+// ─────────────────────────────────────────────────────────────
+// 此前 store_encrypted/load_encrypted 直接用 g_device_key.secret_key 前 32 字节
+// 作为 AES-256 key, 违反密钥分离原则 (签名密钥 ≠ 加密密钥):
+//   - 一旦 AES key 泄露, 攻击者可伪造签名 (因 AES key 是签名 key 的子集)
+//   - Dilithium secret_key 字节分布不适合直接做 AES key
+// 修复: 用 HMAC-SHA3-512(secret_key, "APEX-ENC-V1") 派生独立 enc_key (取前 32 字节)
+// HKDF 风格: PRK = HMAC(secret_key, info), enc_key = PRK[0..31]
+// 这样 enc_key 与 secret_key 密码学独立, 泄露一方不会危害另一方。
+// ─────────────────────────────────────────────────────────────
+static void derive_enc_key(const uint8_t* secret_key, size_t key_len, uint8_t out[32]) {
+    static const uint8_t info[] = "APEX-ENC-V1";  // 不含末尾 \0
+    auto mac = crypto::hmac_sha3_512(secret_key, key_len,
+                                       info, sizeof(info) - 1);
+    std::memcpy(out, mac.data(), 32);
+}
+
 // 内部: 从持久化文件加载密钥 (用 PERSISTENCE_KEY 解密)
 // 返回 true 表示成功加载, false 表示文件不存在或解密失败
 static bool load_persisted_key(DeviceKeyPair& out) {
@@ -165,8 +182,15 @@ SessionKey generate_session_key() {
 }
 
 bool store_encrypted(const uint8_t* data, size_t len, const char* name) {
-    auto ct = crypto::aes256_gcm_encrypt(data, len,
-                                          g_device_key.secret_key.data(), 32);
+    // v1.1.3 P2-S4: 用 derive_enc_key 派生独立 enc_key, 不直接用 secret_key 前 32 字节
+    // 密钥分离: 签名密钥 ≠ 加密密钥, 泄露一方不会危害另一方
+    if (g_device_key.secret_key.size() < 32) return false;
+    uint8_t enc_key[32];
+    derive_enc_key(g_device_key.secret_key.data(),
+                    g_device_key.secret_key.size(), enc_key);
+    auto ct = crypto::aes256_gcm_encrypt(data, len, enc_key, 32);
+    // 用完立即清零, 防止内存残留
+    std::memset(enc_key, 0, sizeof(enc_key));
     if (ct.empty()) return false;
     // FIX-P1-CPP (v1.1.2): 加 O_TRUNC (0x200) 防止旧文件更长时残留 (P1-C12.3)
     // 0x41 (O_CREAT|O_RDWR) | 0x200 (O_TRUNC) = 0x241
@@ -208,9 +232,14 @@ bool load_encrypted(uint8_t* out, size_t* len, const char* name) {
     bs_close(fd);
     if (total_read != file_size) return false;
 
+    // v1.1.3 P2-S4: 用 derive_enc_key 派生独立 enc_key, 与 store_encrypted 对应
+    if (g_device_key.secret_key.size() < 32) return false;
+    uint8_t enc_key[32];
+    derive_enc_key(g_device_key.secret_key.data(),
+                    g_device_key.secret_key.size(), enc_key);
     auto pt = crypto::aes256_gcm_decrypt(
-        buf.data(), (size_t)total_read,
-        g_device_key.secret_key.data(), 32);
+        buf.data(), (size_t)total_read, enc_key, 32);
+    std::memset(enc_key, 0, sizeof(enc_key));
     if (pt.empty()) return false;
 
     if (*len < pt.size()) return false;

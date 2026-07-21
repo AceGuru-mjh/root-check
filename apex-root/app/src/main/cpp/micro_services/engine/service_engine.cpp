@@ -1,6 +1,7 @@
 #include "service_engine.h"
 #include "bare_syscall/syscall_bridge.h"
 #include "dirent_compat.h"
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -26,15 +27,16 @@ static std::mutex g_engine_mutex;
 static bool g_initialized = false;
 static bool g_plugin_loaded[MAX_SERVICES] = {false};
 
-// Inline shuffle
+// FIX-P2-CPP (v1.1.3): 用 std::shuffle + std::mt19937_64 替代手写 Fisher-Yates。
+// 原实现 `uint64_t r = bs_get_random(); int j = r % (i + 1);` 在 `i+1` 不整除 2^64
+// 时分布不均匀 (模偏差), 安全敏感场景下可被预测。改为用 bs_get_random() 仅作为
+// seed 一次性喂给 mt19937_64, 后续由 std::shuffle 内部均匀分布采样, 消除模偏差。
+// 签名保持 (int*, int) 不变, 调用方 execute_scan 无需修改。
 static void shuffle_services(int* indices, int count) {
-    for (int i = count - 1; i > 0; i--) {
-        uint64_t r = bs_get_random();
-        int j = r % (i + 1);
-        int tmp = indices[i];
-        indices[i] = indices[j];
-        indices[j] = tmp;
-    }
+    if (count <= 1) return;
+    uint64_t seed = bs_get_random();
+    std::mt19937_64 rng(seed);
+    std::shuffle(indices, indices + count, rng);
 }
 
 namespace service_engine {

@@ -314,6 +314,10 @@ bool backup_boot_partition(const char* backup_path) {
     if (!backup_path || backup_path[0] == '\0') return false;
     if (!check_root_available()) return false;
 
+    // v1.1.3 P2-S1: 路径白名单校验, 防止 backup_path 含 shell 元字符造成注入
+    // (backup_path 来自 Kotlin 层用户输入, 必须校验)
+    if (!utils::is_safe_path(backup_path)) return false;
+
     // 路径长度检查
     size_t path_len = strlen(backup_path);
     if (path_len > 200) return false;  // 留 56 字节给 prefix
@@ -333,6 +337,9 @@ bool restore_boot_partition(const char* backup_path) {
     if (!utils::file_exists(backup_path)) return false;
     if (!check_root_available()) return false;
     if (!g_destructive_confirmed) return false;  // 高危操作必须确认
+
+    // v1.1.3 P2-S1: 路径白名单校验, 防止 backup_path 含 shell 元字符造成注入
+    if (!utils::is_safe_path(backup_path)) return false;
 
     size_t path_len = strlen(backup_path);
     if (path_len > 200) return false;
