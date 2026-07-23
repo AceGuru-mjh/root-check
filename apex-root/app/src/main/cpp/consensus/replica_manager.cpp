@@ -8,6 +8,11 @@
 #include <cinttypes>
 #include <android/log.h>
 
+// P3-2: bs_fork 已删除,改用 bs_clone(SIGCHLD, ...)。SIGCHLD=17 在 Linux arm64 上。
+#ifndef SIGCHLD
+#define SIGCHLD 17
+#endif
+
 namespace apex {
 namespace consensus {
 
@@ -88,7 +93,7 @@ bool start_replica(ReplicaRole role, bool with_isolation) {
     int idx = static_cast<int>(role);
     if (g_running[idx]) return true;
 
-    int pid = static_cast<int>(bs_fork());
+    int pid = static_cast<int>(bs_clone(SIGCHLD, nullptr, nullptr, nullptr, nullptr));
     if (pid == 0) {
         if (with_isolation) {
             // Apply isolation for replicas B and C

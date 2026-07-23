@@ -5,6 +5,8 @@
 #include <cctype>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <mutex>    // std::call_once / std::once_flag (P3-10 maps cache)
+#include <string>   // std::string (P3-10 maps cache)
 
 namespace apex {
 namespace utils {
@@ -424,6 +426,55 @@ int64_t read_file_to_buffer(const char* path, char* buf, size_t buf_size) {
     // 若 total == 0 且 open 成功 (说明 read 全失败), 仍返回 0 而非 -1
     // 区分语义: -1 = open 失败, 0 = 文件存在但内容为空或读失败
     return (int64_t)total;
+}
+
+// ─────────────────────────────────────────────────────────────
+// P3-10: 公共 /proc/self/maps 检测函数
+// ─────────────────────────────────────────────────────────────
+// 详见 utils.h 注释。本函数与 layer11_hook.cpp::get_maps_cache 实现等价,
+// 但放到 utils 命名空间供所有 detect 层共用 (layer11 暂未迁移以最小化改动)。
+// 缓存策略:
+//   - 首次调用通过 std::call_once 原子读取一次 /proc/self/maps 到 static 缓存
+//   - 4MB 上限防恶意构造的 maps 耗尽内存
+//   - 后续所有调用直接 strstr 缓存, 极快
+// 线程安全: std::call_once 保证多线程并发首次调用也只读一次。
+// ─────────────────────────────────────────────────────────────
+
+static const std::string& get_maps_cache() {
+    static std::string maps_cache;
+    static std::once_flag once;
+    std::call_once(once, []() {
+        maps_cache.clear();
+        maps_cache.reserve(262144);
+
+        int64_t fd = bs_openat(AT_FDCWD, "/proc/self/maps", O_RDONLY, 0);
+        if (fd < 0) return;
+
+        char chunk[16384];
+        while (true) {
+            int64_t n = bs_read(fd, chunk, sizeof(chunk));
+            if (n <= 0) break;
+            maps_cache.append(chunk, (size_t)n);
+            if (maps_cache.size() > 4 * 1024 * 1024) break;  // 4MB sanity cap
+        }
+        bs_close(fd);
+        // std::string data() is NUL-terminated in C++11+, so strstr is safe.
+    });
+    return maps_cache;
+}
+
+const char* check_maps_for_patterns(const char* const* patterns, size_t count) {
+    if (!patterns || count == 0) return nullptr;
+    const std::string& maps = get_maps_cache();
+    if (maps.empty()) return nullptr;
+    // std::string::data() returns a NUL-terminated buffer in C++11+.
+    for (size_t i = 0; i < count; ++i) {
+        if (!patterns[i]) continue;
+        if (strstr(maps.data(), patterns[i]) != nullptr) {
+            return patterns[i];
+        }
+    }
+    return nullptr;
 }
 
 } // namespace utils

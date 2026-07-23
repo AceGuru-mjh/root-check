@@ -58,9 +58,8 @@ int64_t bs_getdents64(int64_t fd, void* dirp, size_t count) {
 }
 
 // ─── Process operations ───────────────────────────────────
-int64_t bs_fork() {
-    return (int64_t)fork();
-}
+// P3-2: bs_fork 已删除 (与 bs_clone 共用 syscall 220, fork 已弃用)。
+// 调用方应改用 bs_clone(SIGCHLD, nullptr, nullptr, nullptr, nullptr)。
 int64_t bs_exit(int status) {
     _exit(status);
     return 0;

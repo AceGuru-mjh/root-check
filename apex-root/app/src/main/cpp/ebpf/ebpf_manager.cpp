@@ -7,6 +7,13 @@
 #include <vector>   // FIX-P2-CPP: std::vector 替代 64KB 栈缓冲区
 #include <android/log.h>
 
+// P3-7: 优先使用内核 UAPI 头文件提供的常量,避免与内核头不一致。
+//   Android NDK 的 <linux/bpf.h> 不一定完整 (不同 NDK 版本覆盖度不同),
+//   因此 include 后仍用 #ifndef 守卫保留 fallback,保证编译总能通过。
+#ifdef __linux__
+    #include <linux/bpf.h>
+#endif
+
 #define LOG_TAG "APEX-EBPF"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
@@ -18,24 +25,54 @@ namespace ebpf {
 // 前向声明
 static void close_fd(int64_t fd);
 
-// BPF syscall command numbers
+// P3-7: BPF syscall 号 280 在 arm64 上,内核 UAPI <linux/bpf.h> 不直接定义
+//   (它是 syscall 号,需从 <sys/syscall.h> 的 __NR_bpf 取得)。
+//   保留硬编码但加注释:arm64 Linux __NR_bpf = 280。
 #define BPF_SYSCALL 280
-#define BPF_PROG_LOAD 5
-#define BPF_PROG_ATTACH 8
-#define BPF_PROG_DETACH 9
-#define BPF_OBJ_PIN 6
-#define BPF_OBJ_GET 7
-#define BPF_MAP_CREATE 0
-#define BPF_MAP_UPDATE_ELEM 2
-#define BPF_MAP_LOOKUP_ELEM 3
 
-// BPF program types
-#define BPF_PROG_TYPE_KPROBE 2
-#define BPF_PROG_TYPE_TRACEPOINT 3
-#define BPF_PROG_TYPE_RAW_TRACEPOINT 14
-#define BPF_PROG_TYPE_TRACING 26
+// BPF syscall command numbers — <linux/bpf.h> 已定义同名 enum (bpf_cmd)。
+// 用 #ifndef 守卫,若内核头已定义则跳过我们的 fallback。
+#ifndef BPF_PROG_LOAD
+    #define BPF_PROG_LOAD 5
+#endif
+#ifndef BPF_PROG_ATTACH
+    #define BPF_PROG_ATTACH 8
+#endif
+#ifndef BPF_PROG_DETACH
+    #define BPF_PROG_DETACH 9
+#endif
+#ifndef BPF_OBJ_PIN
+    #define BPF_OBJ_PIN 6
+#endif
+#ifndef BPF_OBJ_GET
+    #define BPF_OBJ_GET 7
+#endif
+#ifndef BPF_MAP_CREATE
+    #define BPF_MAP_CREATE 0
+#endif
+#ifndef BPF_MAP_UPDATE_ELEM
+    #define BPF_MAP_UPDATE_ELEM 2
+#endif
+#ifndef BPF_MAP_LOOKUP_ELEM
+    #define BPF_MAP_LOOKUP_ELEM 3
+#endif
 
-// Linux perf event types
+// BPF program types — 同样由 <linux/bpf.h> enum bpf_prog_type 提供。
+#ifndef BPF_PROG_TYPE_KPROBE
+    #define BPF_PROG_TYPE_KPROBE 2
+#endif
+#ifndef BPF_PROG_TYPE_TRACEPOINT
+    #define BPF_PROG_TYPE_TRACEPOINT 3
+#endif
+#ifndef BPF_PROG_TYPE_RAW_TRACEPOINT
+    #define BPF_PROG_TYPE_RAW_TRACEPOINT 14
+#endif
+#ifndef BPF_PROG_TYPE_TRACING
+    #define BPF_PROG_TYPE_TRACING 26
+#endif
+
+// Linux perf event types — <linux/perf_event.h> 提供,但本文件未 include
+// (避免引入与 NDK 不兼容的 UAPI 定义)。保留硬编码,加注释。
 #define PERF_TYPE_TRACEPOINT 0
 #define PERF_TYPE_SOFTWARE 1
 #define PERF_TYPE_HARDWARE 0

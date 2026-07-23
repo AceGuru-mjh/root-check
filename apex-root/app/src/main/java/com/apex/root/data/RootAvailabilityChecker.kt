@@ -27,7 +27,11 @@ object RootAvailabilityChecker {
         try {
             return@withContext withTimeoutOrNull(3000L) {
                 runCatching {
-                    process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+                    // P3-3: 用 ProcessBuilder.redirectErrorStream(true) 合并 stderr 到 stdout
+                    // 避免 su 在权限被拒绝时写大量 stderr 填满缓冲区,导致 waitFor 永久阻塞死锁
+                    val pb = ProcessBuilder("su", "-c", "id")
+                    pb.redirectErrorStream(true)
+                    process = pb.start()
                     val p = process!!
                     val text = p.inputStream.bufferedReader().readText()
                     val exited = p.waitFor(3000, TimeUnit.MILLISECONDS)

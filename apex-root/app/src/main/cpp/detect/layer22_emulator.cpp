@@ -13,6 +13,9 @@ static int64_t check_access(const char* path) {
     return apex_check_access(path);
 }
 
+// TODO: 切换到 apex::utils::read_file_to_string (P3-4) — 见 common/utils.h
+// 该函数有循环 read 修复单次 read 在大文件时截断 bug, 且在 arm32/x64 通过
+// bs_openat 走 libc 路径, 不再静默失败。3 个调用点 (line 66/90/176) 待迁移。
 static bool read_file(const char* path, char* buf, size_t size) {
     int64_t fd;
     #if defined(__aarch64__)

@@ -182,11 +182,18 @@ std::vector<uint8_t> OqsSignature::base64Decode(const std::string& encoded, bool
     uint8_t a4[4], a3[3];
     while (pos < (int)encoded.size() && encoded[pos] != '=') {
         auto c = encoded[pos];
-        if (!(std::isalnum(c) || c == '+' || c == '/' || c == '-' || c == '_')) {
-            pos++;
-            continue;
+        // P3-6: 严格按当前 chars 表检查成员资格, 避免下列污染:
+        //   - urlSafe=false 时, 旧逻辑允许 '-'/'_' 通过 isalnum+||检查,
+        //     但 B64_CHARS 不含这两个字符, chars.find(c) 返回 npos,
+        //     被强转 uint8_t = 255 写入 a4, 污染解码结果。
+        //   - 现在遇到任何不在 chars 表中的字符 (含 urlSafe 与非 urlSafe 不匹配的 '-'/'_'),
+        //     直接返回空 vector 表示解码失败, 由调用方处理。
+        size_t idx = chars.find(c);
+        if (idx == std::string::npos) {
+            // 非法字符, 返回空表示解码失败 (而非跳过导致结果污染)
+            return {};
         }
-        a4[i++] = (uint8_t)chars.find(c);
+        a4[i++] = (uint8_t)idx;
         if (i == 4) {
             a3[0] = (a4[0] << 2) | ((a4[1] & 0x30) >> 4);
             a3[1] = ((a4[1] & 0x0f) << 4) | ((a4[2] & 0x3c) >> 2);

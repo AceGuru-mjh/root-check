@@ -259,7 +259,10 @@ class ParallelDetectionEngine {
                     )
                     synchronized(resultsLock) { results.add(result) }
                     val done = completed.incrementAndGet()
-                    _progress.value = (done * 100 / TOTAL_LAYERS)
+                    // P3-4: 用 update { max(it, newProgress) } 防止多协程并发完成时
+                    // 后完成者用旧 done 值覆盖更新的 progress,导致进度倒退
+                    val newProgress = done * 100 / TOTAL_LAYERS
+                    _progress.update { prev -> maxOf(prev, newProgress) }
                     result
                 }
             }
@@ -332,7 +335,9 @@ class ParallelDetectionEngine {
                 val r = LayerResult(def.id, def.name, detected, def.weight, latency)
                 synchronized(resultsLock) { results.add(r) }
                 val done = completed.incrementAndGet()
-                _progress.value = (done * 100 / total)
+                // P3-4: 用 update { max(it, newProgress) } 防止进度倒退
+                val newProgress = done * 100 / total
+                _progress.update { prev -> maxOf(prev, newProgress) }
                 r
             }
         }

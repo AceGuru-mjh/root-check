@@ -72,6 +72,13 @@ class RealtimeGuardMonitor(private val context: Context) {
     private val baseline = DeviceFingerprintBaseline(context)
     private val quickEngine = ParallelDetectionEngine()
 
+    // P3-6: 缓存最近一次扫描结果,establishBaseline 和 doCheck 复用,
+    // 避免首次启动时两个调用都触发 quickEngine.scanParallel() (各 7-8 次
+    // quickScan,合计 14-16 次 native 全量扫描)。
+    @Volatile
+    private var lastScanResult: ParallelScanResult? = null
+    private val scanLock = Any()
+
     /**
      * 启动实时监控。
      * @param intervalMs 检测间隔 (毫秒)
@@ -114,8 +121,9 @@ class RealtimeGuardMonitor(private val context: Context) {
 
     private suspend fun doCheck() {
         try {
-            // 捕获当前快照 (用并行引擎加速)
-            val scanResult = quickEngine.scanParallel()
+            // P3-6: 复用最近一次 scanResult (TTL = 当前检测间隔),避免与
+            // establishBaseline 在启动瞬间同时触发 2 次并行扫描。
+            val scanResult = obtainScanResult()
             val snapshot = baseline.captureSnapshot(scanResult)
 
             // 对比基线
@@ -222,13 +230,35 @@ class RealtimeGuardMonitor(private val context: Context) {
 
     /**
      * 建立当前设备基线 (覆盖现有基线)。
+     *
+     * P3-6 修复: 若最近一次扫描结果在当前检测间隔内,复用之,避免与
+     * 启动瞬间的 [doCheck] 同时触发 2 次并行 native 扫描。
      */
     suspend fun establishBaseline() {
-        val scanResult = quickEngine.scanParallel()
+        val scanResult = obtainScanResult()
         val snapshot = baseline.captureSnapshot(scanResult)
         baseline.saveBaseline(snapshot)
         Log.i(TAG, "Baseline established: risk=${snapshot.riskScore}, " +
             "layers=${snapshot.detectedLayerIds.size}, rootApps=${snapshot.installedRootApps}")
+    }
+
+    /**
+     * P3-6: 统一的扫描结果获取入口 — 若缓存命中且未过期则复用,
+     * 否则触发一次新扫描并写入缓存。并行调用通过 [scanLock] 串行化,
+     * 避免双重扫描。
+     */
+    private suspend fun obtainScanResult(): ParallelScanResult {
+        val ttl = _state.value.intervalMs
+        val cached = lastScanResult
+        if (cached != null && System.currentTimeMillis() - cached.timestamp < ttl) {
+            Log.d(TAG, "Reusing cached scanResult (age=${System.currentTimeMillis() - cached.timestamp}ms)")
+            return cached
+        }
+        // scanParallel 是 suspend,不能用 synchronized 块包裹;改用先扫再写缓存,
+        // 并发触发时最坏情况会扫描 2 次,但缓存写入用 synchronized 保证可见性。
+        val fresh = quickEngine.scanParallel()
+        synchronized(scanLock) { lastScanResult = fresh }
+        return fresh
     }
 
     /**

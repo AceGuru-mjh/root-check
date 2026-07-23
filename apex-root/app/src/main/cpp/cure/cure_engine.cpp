@@ -354,12 +354,12 @@ bool restore_boot_partition(const char* backup_path) {
 }
 
 bool verify_cure_complete() {
-    // Re-run detection to verify
-    bool found = false;
-    found |= utils::file_exists("/data/adb/magisk");
-    found |= utils::file_exists("/data/adb/ksu");
-    found |= utils::file_exists("/data/adb/ap");
-    return !found;
+    // P3-5(3a): 复用 detect_root_solution() 的完整检测逻辑
+    //   旧实现只查 /data/adb/magisk /data/adb/ksu /data/adb/ap 3 个路径,
+    //   漏掉 SukiSU、APatch KPM、ZygiskNext、Magisk Delta/Kitsune 等 fork
+    //   (detect_root_solution 已覆盖所有这些路径,见上方 65-97 行)。
+    //   返回 true 表示无任何已知 root 方案残留。
+    return detect_root_solution() == RootType::UNKNOWN;
 }
 
 } // namespace cure

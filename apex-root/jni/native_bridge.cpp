@@ -43,11 +43,14 @@ Java_com_apex_root_data_jni_NativeBridge_enableHideModeNative(
 extern "C" JNIEXPORT void JNICALL
 Java_com_apex_root_data_jni_NativeBridge_disableHideModeNative(
     JNIEnv *env, jobject thiz) {
-    std::lock_guard<std::mutex> lock(g_fw_mutex);
-    if (g_fw) {
-        g_fw->switch_mode(ApexFirewall::MODE_DETECT);
-    }
-    LOGD("disableHideMode");
+    (void)env;
+    (void)thiz;
+    // P3-2(3a): disable 时立即释放 g_fw (BPF fd / perf event fd 等内核资源),
+    // 不等 JNI_OnUnload (后者仅在 ClassLoader GC 时触发, 对主进程等同进程退出)。
+    // destroy_fw() 内部已加 g_fw_mutex 锁并执行 switch_mode(MODE_DETECT) + delete,
+    // 故此处不再重复持锁 (避免重入死锁)。
+    destroy_fw();
+    LOGD("disableHideMode (g_fw released)");
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

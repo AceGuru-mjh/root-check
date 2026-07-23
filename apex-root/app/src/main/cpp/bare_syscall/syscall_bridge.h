@@ -32,7 +32,8 @@ int64_t bs_munmap(void* addr, size_t length);
 int64_t bs_getdents64(int64_t fd, void* dirp, size_t count);
 
 // ─── Process operations ───────────────────────────────────
-int64_t bs_fork();
+// P3-2: bs_fork 已删除 (与 bs_clone 共用 syscall 220, fork 已弃用)。
+// 调用方应改用 bs_clone(SIGCHLD, nullptr, nullptr, nullptr, nullptr)。
 int64_t bs_exit(int status);
 int64_t bs_kill(int pid, int sig);
 int64_t bs_getpid();

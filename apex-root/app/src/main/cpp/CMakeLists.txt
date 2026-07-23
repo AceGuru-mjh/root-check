@@ -46,6 +46,16 @@ if(HAVE_LIBOQS)
     add_compile_definitions(APEX_HAVE_LIBOQS)
 endif()
 
+# P3-1: 从 Gradle 注入版本号,避免手动同步 build.gradle.kts 与 apex_common.h
+# build.gradle.kts 的 externalNativeBuild.cmake.arguments 中传入:
+#   -DAPEX_VERSION_NAME=<versionName>  -DAPEX_VERSION_CODE=<versionCode>
+# apex_common.h 通过 APEX_VERSION_STR 宏读取。
+if(DEFINED APEX_VERSION_NAME)
+    add_compile_definitions(APEX_VERSION_STR="${APEX_VERSION_NAME}")
+    add_compile_definitions(APEX_VERSION_CODE=${APEX_VERSION_CODE})
+    message(STATUS "APEX version injected: ${APEX_VERSION_NAME} (code=${APEX_VERSION_CODE})")
+endif()
+
 # ─── Core include paths ─────────────────────────────────────
 # 包含 ctrl/ 和 legacy/ 目录（位于仓库根 apex-root/ 下）
 set(APEX_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../..")

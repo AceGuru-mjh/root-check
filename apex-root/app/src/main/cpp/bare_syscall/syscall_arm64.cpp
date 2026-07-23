@@ -103,7 +103,8 @@
 #define SYS_getdents64  61
 #define SYS_getcwd      17
 #define SYS_clone       220
-#define SYS_fork        220
+// P3-2: SYS_fork (220) 已移除 — 与 SYS_clone 共用同一 syscall 号,fork() 已被 Linux 弃用。
+// 调用方应改用 bs_clone(SIGCHLD, nullptr, nullptr, nullptr, nullptr)。
 #define SYS_exit        93
 #define SYS_kill        129
 #define SYS_getpid      172
@@ -153,7 +154,7 @@ SYSCALL3(fcntl, SYS_fcntl, int, int, int64_t)
 SYSCALL3(getdents64, SYS_getdents64, int64_t, void*, size_t)
 SYSCALL2(getcwd, SYS_getcwd, void*, size_t)
 SYSCALL5(clone, SYS_clone, int64_t, void*, void*, void*, void*)
-SYSCALL0(fork, SYS_fork)
+// P3-2: bs_fork 已删除 — 调用方改用 bs_clone(SIGCHLD, nullptr, nullptr, nullptr, nullptr)
 SYSCALL1(exit, SYS_exit, int)
 SYSCALL2(kill, SYS_kill, int, int)
 SYSCALL0(getpid, SYS_getpid)

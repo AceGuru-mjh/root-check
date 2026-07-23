@@ -1,34 +1,11 @@
 #include "layer8_magisk.h"
 #include "../common/syscall.h"
+#include "../common/utils.h"  // P3-4: 切换到公共 read_file_to_buffer
 #include <cstring>
 
-static void read_file_to_buf(const char* path, char* buf, size_t size) {
-    int64_t fd;
-    #if defined(__aarch64__)
-    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0)
-                 : "x0", "x1", "x2", "x8", "memory");
-    #else
-        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    if (fd < 0) { if (size > 0) buf[0] = '\0'; return; }
-    int64_t n;
-    #if defined(__aarch64__)
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8", "memory");
-    #else
-        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    int64_t d;
-    #if defined(__aarch64__)
-    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8","memory");
-    #else
-        d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    if (n <= 0) { if (size > 0) buf[0] = '\0'; return; }
-    buf[n < (int64_t)size ? n : (int64_t)size-1] = '\0';
-}
+// P3-4(2b): 已切换到 apex::utils::read_file_to_buffer (循环 read 修复
+// 单次 read 截断 bug, 且在 arm32/x64 通过 bs_openat 走 libc 路径, 不再静默失败)。
+// 原 static read_file_to_buf 已删除。
 
 bool detectMagiskDaemon() {
     char buf[4096];
@@ -102,7 +79,11 @@ bool detectMagiskDaemon() {
                     for (int i = 0; sfx[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = sfx[i];
                     cmdline_path[idx] = '\0';
 
-                    read_file_to_buf(cmdline_path, buf, sizeof(buf));
+                    // P3-4(2b): 切换到 apex::utils::read_file_to_buffer (循环 read, 修复
+                    // 单次 read 在大 cmdline 时截断 bug)。open 失败时该函数返回 -1 且
+                    // 不清零 buf, 此处先显式清零以保持与旧 read_file_to_buf 相同的语义。
+                    buf[0] = '\0';
+                    apex::utils::read_file_to_buffer(cmdline_path, buf, sizeof(buf));
                     // 扩充：检测所有 root daemon 家族
                     // magiskd / magisk / magisk32 / magisk64 / kitana / delta / kitsune
                     // ksud (KernelSU) / apd (APatch) / sukid (SukiSU)
@@ -202,49 +183,23 @@ bool detectMagiskFiles() {
 }
 
 bool detectZygiskInjection() {
-    char buf[16384];
-    // Check for Zygisk in /proc/self/maps
-    int64_t fd;
-    #if defined(__aarch64__)
-    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"("/proc/self/maps"), "i"(O_RDONLY), "i"(0)
-                 : "x0", "x1", "x2", "x8", "memory");
-    #else
-        fd = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    if (fd < 0) return false;
-    int64_t n;
-    #if defined(__aarch64__)
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)sizeof(buf)) : "x0", "x1", "x2", "x8", "memory");
-    #else
-        n = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    int64_t d;
-    #if defined(__aarch64__)
-    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8","memory");
-    #else
-        d = -1; /* arm32/x64: syscall bypass disabled, libc path used where available */
-    #endif
-    if (n <= 0) return false;
-    buf[n < (int64_t)sizeof(buf) ? n : (int64_t)sizeof(buf)-1] = '\0';
-
-    // Check for Zygisk libraries
-    // Zygisk is inherently detectable from within the same process
-    if (strstr(buf, "zygisk")) return true;
-    if (strstr(buf, "lsposed")) return true;
-    if (strstr(buf, "riru")) return true;
-
-    // FIX-P1-DETECT D6: 原代码 `if (strstr(buf, "/memfd:")) return true;` 会
-    // 误报所有 /memfd: — ART AOT 编译、MediaCodec、WebView 等系统组件都用
-    // memfd, 干净设备 100% 触发。改为只匹配 Zygisk 家族特有的 memfd 名。
-    if (strstr(buf, "memfd:zygisk")) return true;
-    if (strstr(buf, "memfd:riru")) return true;
-    if (strstr(buf, "memfd:zygisknext")) return true;
-    if (strstr(buf, "memfd:rezygisk")) return true;
-    if (strstr(buf, "anon_inode:dmabuf")) {
-        // Check for Zygisk-specific dmabuf
-    }
-    return false;
+    // P3-10: 切换到 apex::utils::check_maps_for_patterns (带缓存, 多 pattern 一次匹配)。
+    //   旧实现每次都 openat+read /proc/self/maps (单次 read 16KB 截断, maps 通常
+    //   100KB+, 后半 zygisk 段漏检), 与 layer11_hook.cpp::detectXposedFramework
+    //   逻辑高度重复 (审计 P3-10)。
+    //   现统一调用 utils::check_maps_for_patterns, 它在首次调用时缓存整个 maps,
+    //   后续 strstr 缓存, 既修复 16KB 截断 bug, 又消除重复代码。
+    static const char* const patterns[] = {
+        "zygisk",
+        "lsposed",
+        "riru",
+        // FIX-P1-DETECT D6: 只匹配 Zygisk 家族特有的 memfd 名 (普通 /memfd:
+        // 在 ART/MediaCodec/WebView 等系统组件也出现, 旧代码全匹配会误报)。
+        "memfd:zygisk",
+        "memfd:riru",
+        "memfd:zygisknext",
+        "memfd:rezygisk"
+    };
+    return apex::utils::check_maps_for_patterns(patterns,
+                                                sizeof(patterns) / sizeof(patterns[0])) != nullptr;
 }

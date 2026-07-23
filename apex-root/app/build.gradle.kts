@@ -81,11 +81,22 @@ android {
         // 全架构由 splits.abi 控制，此处不再设置 ndk.abiFilters
         // （二者不能同时存在，否则 Gradle 报 Conflicting configuration）
 
+        // P3-1: 捕获 versionName/versionCode 到局部 val,供下方 externalNativeBuild.cmake
+        // 块拼接 -DAPEX_VERSION_NAME/CODE。直接在 cmake {} 块内引用 versionName 会因
+        // Kotlin DSL 隐式 receiver 切换 (DefaultConfig → CmakeOptions) 而不可见,
+        // 故先在外层 defaultConfig 作用域捕获。
+        val apexVerName = versionName!!
+        val apexVerCode = versionCode
+
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++20 -fvisibility=hidden -fstack-protector-strong"
                 arguments += "-DANDROID_STL=c++_static"
                 arguments += "-DAPEX_USE_LIBOQS=OFF"
+                // P3-1: 从 Gradle 注入版本号到 CMake,C++ 侧 apex_common.h 通过
+                // APEX_VERSION_STR 宏读取,避免手动同步 build.gradle 与 apex_common.h
+                arguments += "-DAPEX_VERSION_NAME=$apexVerName"
+                arguments += "-DAPEX_VERSION_CODE=$apexVerCode"
             }
         }
     }

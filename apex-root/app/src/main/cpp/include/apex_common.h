@@ -7,12 +7,24 @@
 namespace apex {
 
 // Version info — P0-B1 修复: 统一到 1.1.1 (与 build.gradle.kts / module.prop 同步)
-// 注意: C++ 层无法直接读 BuildConfig,这里手动同步。
-// 未来可通过 CMake -DAPEX_VERSION 注入。
+// P3-1: 版本号由 CMake 从 Gradle 注入 (APEX_VERSION_STR 宏),避免手动同步。
+//   build.gradle.kts: arguments += "-DAPEX_VERSION_NAME=${versionName}"
+//   CMakeLists.txt:   add_compile_definitions(APEX_VERSION_STR="${APEX_VERSION_NAME}")
+// 若编译时未注入 (例如独立编译测试),fallback 到下面手动维护的值。
 constexpr uint32_t VERSION_MAJOR = 1;
 constexpr uint32_t VERSION_MINOR = 1;
 constexpr uint32_t VERSION_PATCH = 1;
-constexpr const char* VERSION_STRING = "1.1.1";
+#ifdef APEX_VERSION_STR
+    constexpr const char* VERSION_STRING = APEX_VERSION_STR;
+#else
+    // Fallback: 需与 build.gradle.kts 的 versionName 手动保持一致
+    constexpr const char* VERSION_STRING = "1.1.1";
+#endif
+#ifdef APEX_VERSION_CODE
+    constexpr uint32_t VERSION_CODE = APEX_VERSION_CODE;
+#else
+    constexpr uint32_t VERSION_CODE = 3;
+#endif
 constexpr const char* BUILD_NAME = "APEX-Root Omnipotent";
 
 // Protocol constants

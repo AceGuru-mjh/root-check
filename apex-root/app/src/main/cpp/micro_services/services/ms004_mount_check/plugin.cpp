@@ -2,6 +2,11 @@
 #include "bare_syscall/syscall_bridge.h"
 #include <cstring>
 
+// P3-2: bs_fork 已删除,改用 bs_clone(SIGCHLD, ...)。SIGCHLD=17 在 Linux arm64 上。
+#ifndef SIGCHLD
+#define SIGCHLD 17
+#endif
+
 extern "C" bool init() { return true; }
 
 extern "C" apex::engine::ServiceResult execute(const apex::engine::ScanConfig& config) {
@@ -56,7 +61,7 @@ extern "C" apex::engine::ServiceResult execute(const apex::engine::ScanConfig& c
     // Namespace fork comparison (L4 special)
     if (config.level == apex::engine::ScanLevel::DEEP ||
         config.level == apex::engine::ScanLevel::FORENSIC) {
-        int pid = static_cast<int>(bs_fork());
+        int pid = static_cast<int>(bs_clone(SIGCHLD, nullptr, nullptr, nullptr, nullptr));
         if (pid == 0) {
             bs_unshare(0x00020000);
             // Child reads mountinfo in new namespace

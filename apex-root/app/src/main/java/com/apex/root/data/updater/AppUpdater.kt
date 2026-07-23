@@ -376,15 +376,19 @@ class AppUpdater private constructor(private val context: Context) {
      * 约定格式 (任一即可):
      *   SHA-256: abc123...
      *   sha256: abc123...
-     *   hash: abc123...
+     *   SHA256: abc123...
      * 哈希必须为 64 字符的十六进制字符串。返回 null 表示未找到。
+     *
+     * P3-7 修复: 移除 `hash:` 别名 — 该关键词太通用,release notes 中
+     * "git commit hash: abc123..." 之类的非 SHA-256 内容会被误匹配。
+     * 仅匹配显式的 SHA-256 / sha256 / SHA256 形式。
      */
     // P2-5: 改为 internal 以便单元测试访问
     internal fun extractExpectedSha256(releaseBody: String): String? {
         if (releaseBody.isEmpty()) return null
-        // 匹配 SHA-256: <64 hex chars> 或 sha256: <64 hex>
+        // P3-7: 只匹配 SHA-?256,移除过宽的 "hash" 别名
         val pattern = Regex(
-            """(?i)(?:SHA-?256|hash)\s*[:：]\s*([0-9a-fA-F]{64})"""
+            """(?i)SHA-?256\s*[:：]\s*([0-9a-fA-F]{64})"""
         )
         val match = pattern.find(releaseBody) ?: return null
         return match.groupValues.getOrNull(1)?.lowercase()

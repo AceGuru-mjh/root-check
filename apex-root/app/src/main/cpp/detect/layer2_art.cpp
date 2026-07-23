@@ -5,6 +5,8 @@
 
 // ─── Helper: read file via raw syscall ─────────────────────
 
+// TODO: 切换到 apex::utils::read_file_to_buffer (P3-4) — 见 common/utils.h。
+// 该函数有循环 read 修复单次 read 截断 bug, 且在 arm32/x64 走 libc 路径。
 static bool read_file_at(const char* path, char* buf, size_t size) {
     int64_t fd;
     #if defined(__aarch64__)

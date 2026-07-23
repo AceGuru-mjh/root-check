@@ -57,6 +57,29 @@ bool read_file_to_string(const char* path, std::string& out,
 // 注: 与旧 read_file 共存以维持向后兼容, 新代码应优先用本函数。
 int64_t read_file_to_buffer(const char* path, char* buf, size_t buf_size);
 
+// ─── P3-10: 公共 /proc/self/maps 检测函数 ───────────────────
+//
+// 背景: layer8_magisk.cpp::detectZygiskInjection 和 layer11_hook.cpp::
+// detectXposedFramework 都需要打开 /proc/self/maps 找多个 pattern
+// (zygisk/lsposed/riru/...), 旧实现各写一份 openat+read+close+strstr,
+// 维护时一处改了另一处忘改 (审计 P3-10 指出)。
+//
+// 本函数提供公共入口: 首次调用时读取一次 /proc/self/maps 到 static 缓存
+// (与 layer11_hook.cpp::get_maps_cache 等价的 std::call_once 思路),
+// 后续调用在缓存中 strstr 各 pattern。
+//
+// 参数:
+//   patterns: 要查找的子字符串数组 (如 {"zygisk","riru","lsposed"})
+//   count:    patterns 数组元素个数
+// 返回:
+//   匹配到的第一个 pattern (指向 patterns 数组中的元素, 调用方保证其生命周期),
+//   无匹配或读取 maps 失败时返回 nullptr。
+//
+// 注: layer11_hook.cpp 已有自己的 get_maps_cache + check_maps_for 实现
+// (P1-D8 修复), 本函数暂只供 layer8 等其他模块使用; 后续可统一改造
+// layer11 改调本函数以彻底消除重复 (本次最小改动不动 layer11)。
+const char* check_maps_for_patterns(const char* const* patterns, size_t count);
+
 } // namespace utils
 } // namespace apex
 

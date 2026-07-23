@@ -31,6 +31,9 @@ static bool memmem_wrapper(const char* haystack, size_t hlen, const char* needle
  *
  * FIX-CPP P0-S10: 所有 inline asm 均补齐 clobber 列表 (x0/x1/x2/x8/memory)。
  */
+// TODO: 切换到 apex::utils::read_file_to_string (P3-4) — 见 common/utils.h。
+// 该函数枚举 /dev/__properties__/ 子文件逐个 read, 复杂度高, 后续 v1.2.0
+// plugin 重构时统一迁移到 utils::read_file_to_string。
 static int64_t read_properties_file(char* buf, size_t buf_size) {
     if (!buf || buf_size == 0) return -1;
 

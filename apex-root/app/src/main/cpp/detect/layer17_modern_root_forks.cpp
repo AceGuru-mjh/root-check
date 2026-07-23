@@ -1,5 +1,6 @@
 #include "layer17_modern_root_forks.h"
 #include "../common/syscall.h"
+#include "../common/utils.h"  // P3-4(2b): 切换到公共 read_file_to_buffer
 #include <cstring>
 #include <cstdint>
 
@@ -11,34 +12,8 @@ static int64_t check_access(const char* path) {
     return apex_check_access(path);
 }
 
-static bool read_file(const char* path, char* buf, size_t size) {
-    int64_t fd;
-    #if defined(__aarch64__)
-    // FIX-CPP P0-S10: 补齐 clobber 列表 (x0/x1/x2/x8/memory)。
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(fd) : "i"(__NR_openat), "i"(AT_FDCWD), "r"(path), "i"(O_RDONLY), "i"(0)
-                 : "x0", "x1", "x2", "x8", "memory");
-    #else
-        fd = -1;
-    #endif
-    if (fd < 0) return false;
-    int64_t n;
-    #if defined(__aarch64__)
-    asm volatile("mov x8, %1; mov x0, %2; mov x1, %3; mov x2, %4; svc #0; mov %0, x0"
-                 : "=r"(n) : "i"(__NR_read), "r"(fd), "r"(buf), "r"((int64_t)size) : "x0", "x1", "x2", "x8", "memory");
-    #else
-        n = -1;
-    #endif
-    int64_t d;
-    #if defined(__aarch64__)
-    asm volatile("mov x8,%1;mov x0,%2;svc #0" : "=r"(d) : "i"(__NR_close),"r"(fd) : "x0","x8","memory");
-    #else
-        d = -1;
-    #endif
-    if (n <= 0) return false;
-    buf[n < (int64_t)size ? n : (int64_t)size-1] = '\0';
-    return true;
-}
+// P3-4(2b): 原 static read_file 已删除, 切换到 apex::utils::read_file_to_buffer
+// (循环 read 修复单次 read 截断 bug, arm32/x64 通过 bs_openat 走 libc 路径)。
 
 // 扫描 /proc 枚举所有进程 cmdline
 static bool scan_proc_cmdline(const char* needle) {
@@ -99,7 +74,12 @@ static bool scan_proc_cmdline(const char* needle) {
                 for (int i = 0; sfx[i] && idx < (int)sizeof(cmdline_path)-1; i++) cmdline_path[idx++] = sfx[i];
                 cmdline_path[idx] = '\0';
                 char buf[512];
-                if (read_file(cmdline_path, buf, sizeof(buf)) && strstr(buf, needle)) {
+                // P3-4(2b): 切换到 apex::utils::read_file_to_buffer (循环 read, 修复
+                // 单次 read 在大 cmdline 时截断 bug)。open 失败返回 -1 且不清零 buf,
+                // 此处先显式清零以保持与旧 read_file (返回 false) 相同的语义。
+                buf[0] = '\0';
+                int64_t rret = apex::utils::read_file_to_buffer(cmdline_path, buf, sizeof(buf));
+                if (rret >= 0 && strstr(buf, needle)) {
                     return true;
                 }
             }
